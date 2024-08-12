@@ -1,0 +1,124 @@
+module Aoba::Thread
+
+  class TimerHandler
+    ;; Timer
+    declare :timer, as: :uint16
+  end
+
+  class TimerHandlerList < StaticRoutineClass
+    register A: 16, XY: 16
+
+    macro initialize(bank, action_ram, max_records=16, handler_class=TimerHandler)
+      @__static_locate_at_kwargs = {bank: bank}
+
+      @HandlerClass = handler_class
+      @ActionRAM = action_ram
+      @max_records = max_records
+      @thread_id = nil
+      @_calc0 = nil
+
+      @list = MemoryVariable.new("timer_handler", as: :uint16, in: action_ram)
+      @event = Aoba::Event::Emitter.new
+
+      setup_static_routines
+    end
+
+    macro __initialize_ram
+      SEI
+      LDX   #@HandlerClass.size * @max_records
+      JSL   Aoba::Memory.allocate_long
+      CLI
+      STX   dp(@list)
+      X.is_a! @HandlerClass
+
+      LDY   #@max_records
+    _loop:
+      STZ   X[:timer]
+      @HandlerClass.size.add_to_X
+      DEY
+      BNZ   _loop
+    end
+
+    macro __test_timer(_rts)
+      LDA   X[:userdata]
+      STA   dp(@_calc0)
+      LDY   #@max_records
+      LDA   dp(@list)
+    _loop:
+      CMP   dp(@_calc0)
+      BEQ   _found
+      @HandlerClass.size.add_to_A
+      DEY
+      BNZ   _loop
+      BRA   _next
+
+    _found:
+      TAY
+      @event.invoke :trigger, _rts
+      BRA   _rts
+
+    _next:
+    end
+
+    ;; @param X timer
+    ;; @returns X timer
+    ;; @returns Y timer slot
+    routine :add do
+      PHX
+      LDY   dp(@list)
+      LDX   #@max_records
+      CLC
+      Y.is_a! @HandlerClass
+    _loop:
+      LDA   Y[:timer]
+      BZE   _found_slot
+      DEX
+      @HandlerClass.size.add_to_Y
+      BNZ   _loop
+
+      fatal_error "Out of slots for TimerHandlerList"
+
+    _found_slot:
+      PLA
+      STA   Y[:timer]
+      TAX
+      TYA
+      X.is_a! Aoba::Thread::Timer::TimerInstance
+      STA   X[:userdata]
+      RTS
+    end
+
+    ;; @returns A timer
+    ;; @returns Y timer slot
+    routine :allocate do
+      Debug.access_8bit_through_16bit
+      LDA   thread_id
+      JSL   Aoba::Thread::Timer.allocate_icb_long
+      JMP   add
+    end
+
+    ;; @param Y timer slot
+    routine :free do
+      Y.is_a! @HandlerClass
+      LDX   Y[:timer]
+      LDA   #0
+      STA   Y[:timer]
+      JSL   Aoba::Thread::Timer.free_icb_long
+      RTS
+    end
+
+    macro include_to_thread(thread)
+      @thread_id = thread.thread_id
+      @_calc0 = thread._calc0
+
+      thread.event.on :initialize_ram do
+        __initialize_ram
+      end
+
+      thread.event.on :test_timer do |_rts|
+        __test_timer _rts
+      end
+    end
+  end
+
+end

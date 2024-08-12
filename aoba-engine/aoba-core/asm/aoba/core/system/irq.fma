@@ -1,0 +1,161 @@
+module Aoba
+  module IRQ
+
+    ;; Waits for vblank
+    macro wait_for_vblank
+      ;; Waits for the first VBLANK line 
+    _wait_for_vcounter_loop:
+      LDA   dp(CPU.STAT78)
+      LDA   dp(CPU.SLHV)
+      LDA   dp(CPU.OPVCT)
+      XBA
+      LDA   dp(CPU.OPVCT)
+      AND   #1
+      XBA
+      TAX
+      CPX   #SNES::Arch.ESTIMATED_VBLANK_START - 1
+      BLT   _wait_for_vcounter_loop
+
+      ;; Waits for the real VBLANK
+    _wait_for_vblank_loop:
+      LDA   CPU.HVBJOY.long
+      BPL   _wait_for_vblank_loop
+    end
+
+  end
+
+  ;; @ignore-thread-safety
+  @locate_at bank: SYSTEM_ROM_BANK
+  def sa1_irq
+    PHD
+    CPU.set A: 16, XY: 16
+    PHA
+    PHX
+    PHY
+
+    CPU.set A: 8
+    LDA   #1
+    STA   ::Memory.sa1_to_snes_irq.long
+    DEC   A
+    STA   ::Memory.snes_to_sa1_irq.long
+
+  _loop:
+    LDA   ::Memory.sa1_to_snes_irq.long
+    BNZ   _loop
+    NOP
+
+    LDA   #$80
+    STA   SA1.CIC.long
+
+    CPU.set A: 16
+    CPU.with_bank! VARIABLE_RAM_BANK do
+      Thread._pause_current_thread_temporary_icb
+    end
+
+    PLY
+    PLX
+    PLA
+    PLD
+    RTI
+  end
+
+  ;; Waits for the SA1 to allow IRQ
+  macro send_ack_to_sa1
+    CPU.set A: 8
+    LDA   #0
+    STA   ::Memory.sa1_to_snes_irq
+    CPU.set A: 16
+  end
+
+  ;; Waits for the SA1 to allow IRQ
+  macro wait_for_sa1_irq
+    CPU.set A: 8
+    LDA   #1
+    STA   ::Memory.snes_to_sa1_irq.long
+    LDA   #$80
+    STA   SA1.CCNT.long
+  _loop:
+    LDA   ::Memory.snes_to_sa1_irq.long
+    BNZ   _loop
+    CPU.set A: 16
+  end
+
+  ;; @ignore-thread-safety
+  @locate_at bank: SYSTEM_ROM_BANK
+  def irq
+    Debug.profile_irq
+    PHD
+    Debug.pretend_thread 0
+    CPU.set A: 16, XY: 16
+    PHA
+    PHX
+    PHY
+
+    PEA   #$2100
+    PLD
+
+    PHB
+    PEA   #VARIABLE_RAM_BANK << 8
+    PLB
+    PLB
+
+    if ENABLE_SA1
+      wait_for_sa1_irq
+    end
+
+    ;; Test for transactions
+    VBlank::Transaction.irq_begin
+
+    ;; Waits for VBLANK
+    CPU.set A: 8
+    IRQ.wait_for_vblank
+
+    ;; Disables the display to ensure that VBLANK can safely copied
+    LDA   #$80
+    STA   dp(PPU.INIDISP)
+    CPU.set A: 16
+
+    ;; Tasks which have to be processed during VBLANK
+    VBlank::Queue.process
+
+    ;; Invokes the composer custom callback
+    Effect.trigger_update_vblank
+    Composer::Hdma.process_vblank
+    ;; Restores the INIDISP state
+    Screen.update
+
+    ;; Tasks which can be processed >WITHOUT< VBLANK
+    Thread::Timer.update
+    VBlank::Job.notify_threads
+
+    Control.update
+
+    ;; Invokes the composer custom callback
+    LDA   Composer.composer_irq_callback.long
+    PHA
+    RTS
+  _after_composer_irq_callback:
+
+    ;; Invoke the next thread
+    CPU.set A: 8
+    Aoba::Event.invoke :irq_audio_update
+
+    Composer::Hdma.after_vblank
+    LDA   CPU.TIMEUP.long
+    CPU.set A: 16
+    if ENABLE_SA1
+      send_ack_to_sa1
+    else
+      Thread._pause_current_thread_temporary_icb
+    end
+
+    ;; Restore registers
+    PLB
+    PLY
+    PLX
+    PLA
+    PLD
+    RTI
+  end
+
+end

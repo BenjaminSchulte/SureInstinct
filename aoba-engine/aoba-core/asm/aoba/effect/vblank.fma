@@ -1,0 +1,115 @@
+module Aoba::Effect
+
+  class VBlankUpdateRecord
+    declare :next_record, as: :uint16
+    declare :callback, as: :uint16
+    declare :userdata, as: :uint16
+  end
+
+  ;; Initializes the VBLANK
+  macro initialize_vblank_update
+    SEI
+    LDX   #MAX_VBLANK_UPDATES * VBlankUpdateRecord.size
+    JSL   Aoba::Memory.allocate_long
+    CLI
+    X.is_a! VBlankUpdateRecord
+    STX   vblank_update_list_ram
+    STX   free_vblank_update_list
+    LDY   #MAX_VBLANK_UPDATES - 1
+  _loop_reset:
+    TXA
+    CLC
+    ADC   #VBlankUpdateRecord.size
+    STA   X[:next_record]
+    TAX
+    DEY
+    BNZ   _loop_reset
+    STZ   X[:next_record]
+  end
+
+  ;; Updates the record
+  def _trigger_update_vblank
+  _loop:
+    X.is_a! VBlankUpdateRecord
+    LDA   X[:callback]
+    LDY   X[:userdata]
+    PHX
+    PEA   #_after_callback.to_sym - 1
+    PHA
+    RTS
+
+  _after_callback:
+    PLX
+    X.is_a! VBlankUpdateRecord
+    LDA   X[:next_record]
+    TAX
+    BNZ   _loop
+    RTL
+  end
+
+  ;; Triggers the VBLANK update
+  macro trigger_update_vblank
+    LDX   vblank_update_list
+    BZE   _skip_update
+    JSL   _trigger_update_vblank
+  _skip_update:
+  end
+
+  ;; @param X callback
+  ;; @param Y userdata
+  def add_vblank_update
+    PHP
+    SEI
+    PHX
+    LDX   free_vblank_update_list
+    BZE   _failed_to_allocate
+    
+    X.is_a! VBlankUpdateRecord
+    LDA   X[:next_record]
+    STA   free_vblank_update_list
+    LDA   vblank_update_list
+    STA   X[:next_record]
+    PLA
+    STA   X[:callback]
+    TYA
+    STA   X[:userdata]
+    STX   vblank_update_list
+    PLP
+    RTS
+
+    ;; --
+
+  _failed_to_allocate:
+    PLX
+    fatal_error "No free vblank update record"
+  end
+
+  ;; @param X callback
+  def remove_vblank_update
+    PHP
+    SEI
+    TXA
+    LDY   #vblank_update_list
+    Y.is_a! VBlankUpdateRecord
+    
+  _loop:
+    LDX   Y[:next_record]
+    X.is_a! VBlankUpdateRecord
+    CMP   X[:callback]
+    BEQ   _found_record
+    BZE   _rts
+    TXY
+    BRA   _loop
+
+  _found_record:
+    LDA   X[:next_record]
+    STA   Y[:next_record]
+    LDA   free_vblank_update_list
+    STA   X[:next_record]
+    STX   free_vblank_update_list
+
+  _rts:
+    PLP
+  end
+
+end

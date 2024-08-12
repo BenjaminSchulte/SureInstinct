@@ -1,0 +1,9 @@
+type: CommonSprite
+
+frames:
+  cursor: {images: [{image: 0, x: -90}, {image: 1, x: 90}]}
+
+animations:
+  stand_down:
+    - frame: cursor
+      delay: 15

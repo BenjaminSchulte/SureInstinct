@@ -1,0 +1,260 @@
+module Aoba::Font::Decompress
+
+  variables = create_shared_routine_variables do
+    declare :source_address, as: :uint24
+    declare :buffer, as: :uint16
+    declare :calc, as: :uint16
+  end
+  
+  ;; Converts the translation address to the text address
+  macro __translation_address_to_text_address
+    variables.use do |source_address, buffer, calc|
+      STA   dp(source_address + 2)
+      STX   dp(source_address)
+      
+      ;; Adds the translation pointer
+      CPU.set A: 16
+      LDA   locale_id.long
+      AND   #$FF
+      CLC
+      ADC   dp(source_address)
+      STA   dp(source_address)
+
+      ;; Reads the address from the ROM
+      LDA   source_address.long.indirect
+      TAX
+      INC   dp(source_address)
+      LDA   source_address.long.indirect
+      XBA
+      CPU.set A: 8
+
+      STA   dp(source_address + 2)
+      STX   dp(source_address)
+    end
+  end
+
+  ;; Copies a single character
+  macro __copy_single_character
+    STA   0, X
+    STZ   1, X
+  end
+
+  ;; Copies a long character
+  macro __copy_long_character
+    variables.use do |source_address, buffer, calc|
+      AND   #$F
+      STA   1, X
+      INY
+      LDA   source_address.long.indirect, Y
+      STA   0, X
+    end
+  end
+
+  ;; Copy from dictionary
+  ;; @ignore-thread-safety
+  def __copy_from_dictionary
+    variables.use do |source_address, buffer, calc|
+      ;; Reads the full dictionary record ID
+      AND   #$F
+      XBA
+      INY
+      LDA   source_address.long.indirect, Y
+      PHY
+      TXY
+
+      CPU.set A: 16
+      ASL   A
+      TAX
+      LDA   DictionaryIndex.long, X
+      TAX
+      CPU.set A: 8
+      BRA   _start_loop
+
+    _loop:
+      INY
+      INY
+      INX
+    _start_loop:
+      LDA   (DictionaryIndex & $FF0000).long, X
+      BMI   _long_character
+      STA   0, Y
+      LDA   #0
+      STA   1, Y
+      BRA   _loop
+
+    _long_character:
+      CMP   #$F0
+      BEQ   _end_of_loop
+
+      AND   #$0F
+      STA   1, Y
+      INX
+      LDA   (DictionaryIndex & $FF0000).long, X
+      STA   $0, Y
+      BRA   _loop
+
+    _end_of_loop:
+      TYX
+      PLY
+    end
+  end
+
+  ;; Decompresses a text
+  ;;
+  ;; @param A text bank
+  ;; @param X text address
+  ;; @param Y target buffer address
+  def decompress_icb_long
+    routine A: 8 do
+      is_thread_safe
+      use_shared_variables variables
+      input A
+
+      execute do |source_address, buffer, calc|
+        __translation_address_to_text_address
+        
+        TYX
+        ; Y and A = 0
+        LDY   #0
+        TYA
+        XBA
+        TYA
+        BRA   _start_of_loop
+
+        ;; Loops through all characters
+      _loop:
+        INX
+        INX
+      _loop_no_x:
+        INY
+
+        ;; Reads the next command
+      _start_of_loop:
+        LDA   source_address.long.indirect, Y
+        BMI   _might_be_command
+        __copy_single_character
+        BRA   _loop
+
+        ;; Byte is >=$80
+      _might_be_command:
+        BIT   #$40
+        BNZ   _is_command
+
+        ;; Byte is <$C0
+        AND   #$0F
+        __copy_single_character
+        BRA   _loop
+
+        ;; Byte is >=$C0
+      _is_command:
+        BIT   #$20
+        BNZ   _is_special_command
+
+        ;; Byte is either $Cx or $Dx
+        BIT   #$10
+        BNZ   _is_dictionary_command
+
+        ;; Byte is $Cx: Copy long character
+      _is_long_character:
+        __copy_long_character
+        BRA   _loop
+
+        ;; Byte is $Dx: Copy from dictionary
+      _is_dictionary_command:
+        __copy_from_dictionary
+        BRA   _loop_no_x
+
+        ;; Byte is >=$E0: Commands
+      _is_special_command:
+        CMP   #$F0
+        BEQ   _end_of_loop
+        BLT   _is_decompress_command
+
+      _is_rendering_command:
+        ;; Subtracts the minimum value to the command
+        __copy_rendering_command
+        BRA   _loop
+
+      _is_decompress_command:
+        ;; Processes the decompress command
+        AND   #$F
+        ASL   A
+        STX   dp(buffer)
+        TAX
+        JSR   special_commands.indirect, X
+        LDX   dp(buffer)
+        BRA   _loop_no_x
+
+      _end_of_loop:
+        STZ   0, X
+        LDA   #$80
+        STA   1, X
+      end
+    end
+    RTL
+  end
+
+  ;; Copies the command specified by
+  ;; @ignore-thread-safety
+  def __copy_rendering_command
+    variables.use do |source_address, buffer, calc|
+      ;; Remembers the command
+      SEC
+      SBC   #$F0
+      STA   dp(calc)
+
+      ;; Stores the command to the buffer
+      STA   0, X
+      LDA   #$80
+      STA   1, X
+      STX   dp(buffer)
+
+      ;; Reads how many bytes we need to copy
+      LDA   dp(calc)
+      CPU.set A: 16
+      AND   #$FF
+      TAX
+      CPU.set A: 8
+      LDA   command_length.long, X
+      BZE   _skip_copy
+
+      ;; Copies command parameters as take from command_length
+      STA   dp(calc)
+      LDX   dp(buffer)
+    _copy_loop:
+      INY
+      LDA   source_address.long.indirect, Y
+      INX
+      STA   1, X
+      DEC   dp(calc)
+      BNZ   _copy_loop
+      RTS
+
+      ;; --
+
+    _skip_copy:
+      LDX   dp(buffer)
+    end
+  end
+
+  ;; Length of the command
+  datablock command_length
+    db   $00          ; $E0 - end of text
+    db   $00          ; $E1 - color 0
+    db   $00          ; $E2 - color 1
+    db   $00          ; $E3 - color 2
+    db   $00          ; $E4 - align left
+    db   $00          ; $E5 - align middle
+    db   $00          ; $E6 - align right
+    db   $00          ; $E7 - new line
+    db   $00          ; $E8 - new page
+    db   $00          ; $E9 - option
+    db   $00          ; $EA - confirm
+    db   $01          ; $EB - delay
+    db   $00          ; $EC
+    db   $00          ; $ED
+    db   $00          ; $EE
+    db   $00          ; $EF
+  end
+
+end

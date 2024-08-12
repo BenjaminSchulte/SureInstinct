@@ -1,0 +1,38 @@
+module Aoba::Script
+  command Opcode::ASL_IMMEDIATE, :asl do
+    read_current_script_value
+    INY
+    AND   dp(x00FF)
+    BZE   _skip
+    TAX
+
+    LDA   dp(register_a)
+  _loop:
+    ASL   A
+    ROL   dp(register_a) + 2
+    DEX
+    BNZ   _loop
+    STA   dp(register_a)
+
+  _skip:
+  end
+
+  command Opcode::LSR_IMMEDIATE, :lsr do
+    read_current_script_value
+    INY
+    AND   dp(x00FF)
+    BZE   _skip
+    TAX
+
+    LDA   dp(register_a) + 2
+  _loop:
+    LSR   A
+    ROR   dp(register_a)
+    DEX
+    BNZ   _loop
+    STA   dp(register_a) + 2
+
+  _skip:
+  end
+
+end

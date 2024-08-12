@@ -1,0 +1,177 @@
+module Aoba::Dialog::Action::Render
+
+  ;; Sends the text rendering request to the font thread
+  def __trigger_text_rendering
+    ;; Triggers the event
+    CPU.set A: 8
+    LDA   #Aoba::Thread::Event::USEREVENT_ID
+    JSL   Aoba::Thread::Event.allocate_icb_long
+    X.is_a! Aoba::Font::Event::RenderText::Event
+    LDA   #Aoba::Font::Event::RenderText::ID
+    STA   X[:event_id]
+    CPU.set A: 16
+    LDA   dp(current_dialog)
+    CLC
+    ADC   #Aoba::Dialog::Hdma::Configuration.offset_of(:font_state)
+    TAY
+    STA   X[:renderer_state]
+    
+    Y.is_a! Font::Render::State
+    CPU.set A: 8
+    LDA   #0
+    STA   Y[:state]
+    LDA   dp(current_tilemap_y)
+    STA   Y[:current_line_index]
+    CPU.set A: 16
+
+    LDA   Aoba::Font.thread_id
+    JSL   Aoba::Thread::send_event_icb_long
+  end
+
+  ;; Sends the text rendering request to the font thread
+  def __trigger_resume_text_rendering
+    ;; Triggers the event
+    CPU.set A: 8
+    LDA   #Aoba::Thread::Event::USEREVENT_ID
+    JSL   Aoba::Thread::Event.allocate_icb_long
+    X.is_a! Aoba::Font::Event::ResumeRenderText::Event
+    LDA   #Aoba::Font::Event::ResumeRenderText::ID
+    STA   X[:event_id]
+    CPU.set A: 16
+    LDA   dp(current_dialog)
+    CLC
+    ADC   #Aoba::Dialog::Hdma::Configuration.offset_of(:font_state)
+    TAY
+    STA   X[:renderer_state]
+    
+    Y.is_a! Font::Render::State
+    CPU.set A: 8
+    LDA   #0
+    STA   Y[:state]
+    CPU.set A: 16
+
+    ;; Reverts render uploading to prevent broken characeter
+    _revert_one_tile
+
+    ;; Sends the event
+    LDA   Aoba::Font.thread_id
+    JSL   Aoba::Thread::send_event_icb_long
+  end
+
+  ;; Initializes slow rendering
+  macro _initialize_render_slow
+    LDA   #16
+    STA   dp(next_x_position)
+    STZ   dp(current_x_position)
+    CPU.set A: 8
+    STZ   dp(current_x_tile)
+    CPU.set A: 16
+  end
+  
+  ;; Reads the dialog status
+  macro _read_dialog_status
+    LDX   dp(current_dialog)
+    X.is_a! Aoba::Dialog::Hdma::Configuration
+    CPU.set A: 8
+    LDA   X[:font_state] + Font::Render::State.offset_of(:state)
+    CPU.set A: 16
+  end
+
+  ;; Reverts one tile
+  macro _revert_one_tile
+    LDA   dp(current_x_position)
+    STA   dp(next_x_position)
+    SEC
+    SBC   #16
+    BMI   _reset_to_zero
+    STA   dp(current_x_position)
+    CPU.set A: 8
+    LDA   dp(current_x_tile)
+    DEC   A
+    DEC   A
+    DEC   A
+    DEC   A
+    STA   dp(current_x_tile)
+    CPU.set A: 16
+    BRA   _resume_after_reset
+
+  _reset_to_zero:
+    _initialize_render_slow
+
+  _resume_after_reset:
+  end
+
+  ;; Advances to the next tile
+  macro _advance_to_next_tile
+    ;; Increments the X tile
+    LDA   dp(current_x_tile)
+    INC   A
+    INC   A
+    INC   A
+    INC   A
+    STA   dp(current_x_tile)
+
+    ;; Increments the current pixel
+    LDA   dp(next_x_position)
+    STA   dp(current_x_position)
+    CLC
+    ADC   #16
+    STA   dp(next_x_position)
+  end
+
+  ;; Renders the whole row at once
+  ;; @ignore-thread-safety
+  def _render_slow_row
+    _initialize_render_slow
+
+  _loop:
+    ;; Waits the delay time
+    _wait_delay_time
+  _loop_without_delay:
+    _read_dialog_status
+    BMI   _is_finished
+
+    ;; Rendering is still in progress, check if there is data available
+  _not_finished:
+    LSR   A
+    BCC   _wait_one_tick
+  
+    ;; Tests whether the data buffer provides enough data to render
+    LDA   X[:font_state] + Font::Render::State.offset_of(:current_x_position)
+    CMP   dp(next_x_position)
+    BGE   _render_one_tile
+
+    ;; Wait one tick and try again
+  _wait_one_tick:
+    _wait_1_frame
+    BRA   _loop_without_delay
+  
+    ;; The rendering is finished, check whether we actual have data
+  _is_finished:
+    LSR   A
+    BCC   _end_of_input
+
+    ;; Test if we already rendered all content
+  _is_finished_with_data:
+    LDA   X[:font_state] + Font::Render::State.offset_of(:current_x_position)
+    CMP   dp(current_x_position)
+    BGE   _render_one_tile
+
+    ;; We finishes rendering, check if there is any action requested by the renderer
+  _end_of_input:
+    LDA   X[:font_state] + Font::Render::State.offset_of(:state)
+    AND   #Font::Render::Status.ACTION_BITMASK
+    BZE   _rts
+    TAX
+    JMP   _process_action_command.indirect, X
+
+  _rts:
+    RTS
+
+    ;; Renders one tile
+  _render_one_tile:
+    _upload_current_tile
+    JMP   _loop
+  end
+
+end

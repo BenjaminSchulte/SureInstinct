@@ -1,0 +1,6 @@
+/.vscode
+/build
+/bsnes_debug.out
+/bsnes_debug.json
+/bsnes_debug.html
+/node_modules

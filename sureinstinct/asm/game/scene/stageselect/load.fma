@@ -1,0 +1,199 @@
+module Game::Scene::StageSelect::Load
+
+  ;; The event RAM
+  scope :TempRAM, in: Control.ActionRAM
+
+  ;; Pointer to the level list
+  declare :level_list, as: :uint24, in: TempRAM
+
+  ;; Level counter
+  declare :counter, as: :uint16, in: TempRAM
+
+  ;; VRAM address
+  declare :vram_address, as: :uint16, in: TempRAM
+
+  ;; Loads the SRAM to the RAM
+  macro load_level_list_header
+    LDA   level_list_pointer
+    STA   dp(level_list)
+    LDA   level_list_pointer + 1
+    STA   dp(level_list) + 1
+
+    LDA   level_list.indirect.long
+    STA   max_num_stages
+
+    LDY   #LevelListRomFormat.offset_of(:visible_level_variable)
+    LDA   level_list.indirect.long, Y
+    JSL   Aoba::GameVariable.load_number_long
+Debug.only do
+LDX #5
+end
+Debug.log "NUM STAGES VISIBLE {X}"
+    STX   num_stages_visible
+
+    LDY   #LevelListRomFormat.offset_of(:unlocked_level_variable)
+    LDA   level_list.indirect.long, Y
+    JSL   Aoba::GameVariable.load_number_long
+    TXA
+    BNZ   _is_valid_down
+    INC   A
+  _is_valid_down:
+    CMP   max_num_stages
+    BLT   _is_valid_up
+    LDA   max_num_stages
+  _is_valid_up:
+Debug.only do
+LDA #5
+end
+Debug.log "NUM STAGES AVAILABLE {A}"
+    STA   num_stages_available
+
+    LDA   #$8000
+    STA   selected_stage
+  end
+
+  macro load_level_list_images
+    LDA   num_stages_available
+    STA   dp(counter) 
+    LDA   #$7000 >> 1
+    STA   dp(vram_address)
+    LDA   level_list_pointer
+    CLC
+    ADC   #LevelListRomFormat.size + LevelListLevelRomFormat.offset_of(:stage_name_image)
+
+  _loop_load_level_list:
+    STA   dp(level_list)
+
+    ;; Loads the image
+    LDA   dp(vram_address)
+    TAY
+    CLC
+    ADC   #$20 * 4
+    STA   dp(vram_address)
+    LDA   level_list.indirect.long
+    AND   #$FF
+    LDX   #Assets::Image::StageSelect
+    JSL   Aoba::Composer::Api.load_image_tiles_ex
+
+    ;; Must be before DEC counter
+    LDA   dp(level_list)
+    CLC
+    ADC   #LevelListLevelRomFormat.size
+    DEC   dp(counter)
+    BNZ   _loop_load_level_list
+
+    LDX   #Assets::Image::StageSelect
+    LDY   #$7600 >> 1
+    LDA   #Assets::Image::StageSelectVariant::Feedback
+    JSL   Aoba::Composer::Api.load_image_tiles_ex
+  end
+
+  def start_level
+    LDA   selected_stage
+    CMP   #4
+    BGE   _load_special_stage
+
+    LDY   level_list_pointer + 1
+    STY   dp(level_list) + 1
+    JSL   _level_id_to_data_pointer
+    STA   dp(level_list)
+    LDY   #LevelListLevelRomFormat.offset_of(:level_address)
+    LDA   level_list.indirect.long, Y
+    STA   level_to_load_address
+    BRA   _quit
+
+  _load_special_stage:
+    LDA   #$FFFF
+    STA   level_to_load_address
+
+  _quit:
+    MinimapEffect.stop
+    Control::Thread.kill_from_self
+  end
+
+  def set_selected_stage
+    CMP   selected_stage
+    BNE   _update
+    RTS
+
+  _update:
+    PHA
+
+    LDA   selected_stage
+    CMP   #$8000
+    BEQ   _invalid_old_stage
+
+    STZ   dp(counter)
+    JSR   load_image
+
+    LDA   Aoba::Audio::Preset.menu_select
+    JSL   Aoba::Audio::Api.play_sfx_icb_long
+
+  _invalid_old_stage:
+    PLA
+    BIT   #$8000
+    BZE   _is_positive
+    CMP   #$FFFF
+    BEQ   _is_in_range
+    LDA   num_stages_available
+    DEC   A
+  _is_positive:
+    CMP   num_stages_available
+    BLT   _is_in_range
+    LDA   #$FFFF
+  _is_in_range:
+    STA   selected_stage
+    LDA   #1
+    STA   dp(counter)
+
+  load_image:
+    ;; Calculate VRAM address
+    LDA   selected_stage
+    BMI   _load_feedback_image
+    (32 * 4).multiplicated_register_A
+    CLC
+    ADC   #$7000 >> 1
+    TAX
+
+    LDA   selected_stage
+    LDY   level_list_pointer + 1
+    STY   dp(level_list) + 1
+    JSL   _level_id_to_data_pointer
+    STA   dp(level_list)
+    LDY   #LevelListLevelRomFormat.offset_of(:stage_name_image)
+    LDA   level_list.indirect.long, Y
+    CLC
+    ADC   dp(counter)
+    AND   #$FF
+
+    TXY    
+    LDX   #Assets::Image::StageSelect
+    JSL   Aoba::Composer::Api.load_image_tiles_ex
+    RTS
+
+  _load_feedback_image:
+    LDX   #Assets::Image::StageSelect
+    LDY   #$7600 >> 1
+    LDA   #Assets::Image::StageSelectVariant::Feedback
+    CLC
+    ADC   dp(counter)
+    JSL   Aoba::Composer::Api.load_image_tiles_ex
+  end
+
+  macro load
+    load_level_list_header
+    load_level_list_images
+
+    LDA   num_stages_available
+    DEC   A
+    CMP   #4
+    ; do not select challenges at start
+    BNE   _no_dec
+    DEC   A
+  _no_dec:
+    set_selected_stage
+
+    MinimapEffect.start
+  end
+
+end

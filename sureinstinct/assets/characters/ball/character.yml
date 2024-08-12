@@ -1,0 +1,4 @@
+name: Ball
+
+sprite: ball
+sprite_dedicated_palette_slot: true

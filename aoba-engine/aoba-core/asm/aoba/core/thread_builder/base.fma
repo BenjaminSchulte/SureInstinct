@@ -1,0 +1,344 @@
+module Aoba::Thread::Builder
+
+  class BaseBuilder
+    macro initialize(thread)
+      @thread = thread
+    end
+
+    macro event_class(klass)
+      @thread.EventClass = klass
+    end
+
+    macro use_dp_ram(RAM)
+      @thread.DirectPageRam = RAM
+    end
+
+    macro use_temporary(calc)
+      @thread._calc0 = calc
+    end
+
+    macro enable_script_support(name)
+      __create_thread_script_commands name, @thread
+    end
+
+    macro locate_at(*args, **kwargs)
+      @thread.__static_locate_at_args = args
+      @thread.__static_locate_at_kwargs = kwargs
+      @thread._callback_builder.locate_at *args, **kwargs
+    end
+
+    macro priority(*args, **kwargs)
+      @thread._callback_builder.priority *args, **kwargs
+    end
+
+    macro on(id, &block)
+      @thread.event.on id, &block
+    end
+
+    macro initialize_ram(&block)
+      @thread.event.on :initialize_ram, &block
+    end
+
+    macro use(other)
+      other.include_to_thread @thread
+    end
+
+    macro load(&block)
+      @thread.event.on :load, &block
+    end
+
+    macro unload(&block)
+      @thread.event.on :unload, &block
+    end
+
+    macro after_unload(&block)
+      @thread.event.on :after_unload, &block
+    end
+  end
+
+  class Base < StaticRoutineEngineObject
+    register A: 16, XY: 16
+
+    macro initialize(id)
+      super
+
+      @thread_id = MemoryVariable.new("#{id}_thread_id", as: :uint8, in: ::Memory::VariableRAM)
+      @_calc0 = nil
+      @DirectPageRam = nil
+
+      @id = id
+      @_callback_builder = ThreadCallbackBuilder.new(id)
+      @_callback_builder.execute do
+        _main
+      end
+      @event = Aoba::Event::Emitter.new
+      @EventClass = Aoba::Thread::Event::Base
+
+      Aoba::Event.on :system_initialize_A8_VARRAM do
+        STZ   thread_id
+      end
+    end
+
+    macro allocate_and_queue
+      @callback.allocate_and_queue
+    end
+
+    macro finalize
+      raise "Thread #{@id} needs RAM declaration" if @DirectPageRam.nil?
+
+      @current_event = MemoryVariable.new("#{id}_current_event", as: :uint16, in: @DirectPageRam)
+
+      @callback = @_callback_builder._create
+      setup_static_routines
+
+      @event_list = Aoba::Thread::EventHandlerList.new(@__static_locate_at_kwargs[:bank])
+    end
+
+    macro send_kill_request
+      JSL   _send_kill_request
+    end
+
+    macro kill_from_self
+      JMP   _die
+    end
+
+    routine :_send_kill_request do
+      LDA   #Aoba::Thread::Event::SYSTEMEVENT_ID
+      JSL   Aoba::Thread::Event.allocate_icb_long
+      LDA   #Aoba::Thread::Event::KILLEVENT_ID
+      STA   Aoba::Thread::Event::Base.size, X
+      LDA   thread_id.long
+      JML   Aoba::Thread.send_event_icb_long
+    end
+
+    routine :_die do
+      ;; Resets the stack to a safe spot
+      CPU.set A: 16, XY: 16
+      PEA   #VARIABLE_RAM_BANK << 8
+      PLB
+      PLB
+      TDC
+      AND   #$FF00
+      TCD
+      ORA   #$FD
+      TCS
+
+      ;; Unloads the last event
+      LDX   dp(@current_event)
+      JSL   Thread::Event.free_icb_long
+
+      ;; Unloads the data
+      @event.invoke :before_unload
+      @event.invoke :unload
+
+      Debug.access_8bit_through_16bit
+      LDA   thread_id
+      AND   #$FF00
+      Debug.access_8bit_through_16bit
+      STA   thread_id
+
+      @event.invoke :after_unload
+
+      JML   Aoba::Thread.on_exit
+    end
+
+    routine :_initialize_ram do
+      @event.invoke :initialize_ram
+      RTS
+    end
+
+    routine :_controls_event do
+      A.pretend_size 8
+      X.is_a! Aoba::Control::ControlEvent
+      @event.invoke :before_controls_event
+      
+      TXY
+      LDA   X[:event_id]
+      CPU.set A: 16
+      AND   #$FF
+      DEC   A
+      CMP   #4 ; we only support 4 events currently
+      BGE   _rts
+      ASL   A
+      TAX
+      JMP   _event_list.indirect, X
+
+    _rts:
+      PLX
+      RTS
+
+    _event_list:
+      if @event.any_handler_for?(:keydown)
+        dw _keydown
+      else
+        dw _rts
+      end
+      if @event.any_handler_for?(:keyup)
+        dw _keyup
+      else
+        dw _rts
+      end
+      if @event.any_handler_for?(:mouseconnected)
+        dw _mouseconnected
+      else
+        dw _rts
+      end
+      if @event.any_handler_for?(:mousedisconnected)
+        dw _mousedisconnected
+      else
+        dw _rts
+      end
+
+    _keydown:
+      if @event.any_handler_for?(:keydown)
+        Y.is_a! Aoba::Control::ControlEvent
+        @event.invoke :keydown
+        PLX
+        RTS
+      end
+    _keyup:
+      if @event.any_handler_for?(:keyup)
+        Y.is_a! Aoba::Control::ControlEvent
+        @event.invoke :keyup
+        PLX
+        RTS
+      end
+    _mouseconnected:
+      if @event.any_handler_for?(:mouseconnected)
+        Y.is_a! Aoba::Control::ControlEvent
+        @event.invoke :mouseconnected
+        PLX
+        RTS
+      end
+    _mousedisconnected:
+      if @event.any_handler_for?(:mousedisconnected)
+        Y.is_a! Aoba::Control::ControlEvent
+        @event.invoke :mousedisconnected
+        PLX
+        RTS
+      end
+    end
+
+    routine :_event_handler do
+      PHX
+
+      CPU.set A: 8
+      X.is_a! @EventClass
+      @event.invoke :event
+      LDA   X[:event_bitmask]
+      BMI   _system_event
+      ASL   A
+      BMI   _ready_event
+
+    _invoke_custom_event:
+      if @event_list.empty?
+        Debug.log "Thread does not support custom events"
+      else
+        TXY
+        LDA   Aoba::Thread::Event::Base.size, X
+        Debug.profile_event_start
+
+        CPU.set A: 16
+        AND   #$FF
+        DEC   A
+        Debug.test_A_less_than @event_list.max_event_id, "#{@id} Event ID out of range"
+        ASL   A
+        TAX
+        JSR   @event_list.routines.indirect, X
+        Debug.profile_event_stop
+      end
+      PLX
+      RTS
+
+      ; ---
+
+    _kill_request:
+      kill_from_self
+
+      ; ---
+
+      A.pretend_size 8
+
+    _system_event:
+      X.is_a! @EventClass
+      LDA   X[:sender_thread_id]
+      BMI   _test_special_event
+      LDA   Aoba::Thread::Event::Base.size, X
+      CMP   #Aoba::Thread::Event::KILLEVENT_ID
+      BEQ   _kill_request
+      Debug.warn "+++ Thread {byte(long(add(word(long(add(D,$FE),#{FIXED_RAM_BANK})),2),#{VARIABLE_RAM_BANK}))}: SKIP SYSTEM EVENT {X}"
+      PLX
+      CPU.set A: 16
+      RTS
+
+      ; ---
+
+    _ready_event:
+      Debug.warn "+++ Thread {byte(long(add(word(long(add(D,$FE),#{FIXED_RAM_BANK})),2),#{VARIABLE_RAM_BANK}))}: SKIP READY EVENT {X}"
+      PLX
+      CPU.set A: 16
+      RTS
+
+      ; ---
+
+    _test_special_event:
+      INC   A
+      BZE   _invoke_timer_event
+      INC   A
+      INC   A
+      BNZ   _skip_controls_event
+      JMP   _controls_event
+
+    _skip_controls_event:
+      fatal_error "Unexpected event in #{@id} handler"
+
+      ; ---
+
+    _invoke_timer_event:
+      X.is_a! Thread::Timer::TimerEvent
+      CPU.set A: 16
+      LDA   X[:timer]
+      TAX
+      X.is_a! Thread::Timer::TimerInstance
+      @event.invoke :timer, _end_of_routine
+      @event.invoke :test_timer, _end_of_routine
+
+    _end_of_routine:
+      PLX
+      RTS
+    end
+
+    routine :_main do
+      CLI
+      _initialize_ram
+
+      CPU.set A: 8
+      LDA   Memory::active_thread_id
+      Debug.log "Thread {A}: #{@id}"
+      STA   thread_id
+      CPU.set A: 16
+
+      @event.invoke :load
+
+    _loop:
+      LDA   #$FE
+      JSL   Thread.wait_for_event_icb_long
+      STX   dp(@current_event)
+      _event_handler
+      JSL   Thread::Event.free_icb_long
+      BRA   _loop
+
+      ;; TODO: UNLOAD THREAD
+      @event.invoke :unload
+    end
+  end
+
+  macro create(id, &block)
+    base = Base.new(id)
+    builder = BaseBuilder.new(base)
+    block.call with_context builder
+    base.finalize
+    return base
+  end
+
+end

@@ -1,0 +1,21 @@
+module Command::UploadSfxDatabase
+
+  def process
+    MOV   dp(IPC::Transfer.transfer_target_address), #SFX::sfx_directory
+    MOV   dp(IPC::Transfer.transfer_target_address + 1), #SFX::sfx_directory >> 8
+    JMP   general_upload_command
+  end
+
+  def general_upload_command
+    ; Read and store data size
+    MOVW  YA, dp(SPC.PORT2)
+    MOVW  dp(IPC::Transfer.transfer_data_size), YA
+
+    ; ACK
+    MOV   dp(SPC.PORT0), dp(IPC.last_ipc_value)
+
+    ; Transfer
+    JMP   IPC::Transfer.transfer
+  end
+
+end

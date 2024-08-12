@@ -1,0 +1,44 @@
+module Aoba::Mouse::Api
+
+  macro add_region(left, top, width, height, thread, event, hover=false, mousedown=false, mouseup=false, userdata=nil)
+    JSL   allocate_region_icb_long
+    X.is_a! Region
+    LDA   #left
+    STA   X[:left]
+    LDA   #top
+    STA   X[:top]
+    LDA   #left + width - 1
+    STA   X[:right]
+    LDA   #top + height - 1
+    STA   X[:bottom]
+    CPU.set A: 8
+    LDA   thread
+    STA   X[:thread_id]
+    LDA   event
+    STA   X[:event_id]
+    _flags = 0
+    _flags |= RegionFlag.HOVER if hover
+    _flags |= RegionFlag.MOUSEDOWN if mousedown
+    _flags |= RegionFlag.MOUSEUP if mouseup
+    LDA   #_flags
+    STA   X[:flags]
+    
+    unless userdata.nil?
+      LDA   userdata
+      STA   X[:userdata]
+    end
+
+    LDA   #Aoba::Thread::Event::USEREVENT_ID
+    PHX
+    JSL   Aoba::Thread::Event.allocate_icb_long
+    X.is_a! Aoba::Mouse::Event::AddRegion::Event
+    LDA   #Aoba::Mouse::Event::AddRegion::ID
+    STA   X[:event_id]
+    CPU.set A: 16
+    PLA
+    STA   X[:region]
+    LDA   Aoba::MouseThread.thread_id
+    JSL   Aoba::Thread.send_event_icb_long
+  end
+
+end

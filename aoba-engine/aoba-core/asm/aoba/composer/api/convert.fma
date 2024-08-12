@@ -1,0 +1,70 @@
+module Aoba::Composer::Api
+
+  ;; Converts 2BPP buffer to 4BPP
+  ;; @param X buffer
+  ;; @param Y num tiles
+  def convert_2bpp_to_4bpp_icb_long
+    routine from_A: 16, from_XY: 16 do
+      is_thread_safe
+
+      declare :calc1, as: :uint16
+      declare :calc2, as: :uint16
+      declare :counter, as: :uint16
+
+      execute do |calc1, calc2, counter|
+        STX   dp(calc1)
+        STY   dp(counter)
+        DEY
+        TYA
+        16.multiplicated_register_A
+        STA   dp(calc2)
+        CLC
+        ADC   dp(calc1)
+        TAY
+        LDA   dp(calc2)
+        ASL   A
+        CLC
+        ADC   dp(calc1)
+        TAX
+
+      _copy_loop:
+        STZ   $1E, X
+        STZ   $1C, X
+        STZ   $1A, X
+        STZ   $18, X
+        STZ   $16, X
+        STZ   $14, X
+        STZ   $12, X
+        STZ   $10, X
+        LDA   $0E, Y
+        STA   $0E, X
+        LDA   $0C, Y
+        STA   $0C, X
+        LDA   $0A, Y
+        STA   $0A, X
+        LDA   $08, Y
+        STA   $08, X
+        LDA   $06, Y
+        STA   $06, X
+        LDA   $04, Y
+        STA   $04, X
+        LDA   $02, Y
+        STA   $02, X
+        LDA   $00, Y
+        STA   $00, X
+        TYA
+        SEC
+        SBC   #16
+        TAY
+        TXA
+        SEC
+        SBC   #32
+        TAX
+        DEC   dp(counter)
+        BNZ   _copy_loop
+      end
+    end
+    RTL
+  end
+
+end

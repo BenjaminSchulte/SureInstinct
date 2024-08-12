@@ -1,0 +1,19 @@
+module Game::Level
+
+  macro update_sfx_wait_time
+    LDA   sfx_wait_time
+    BZE   _skip
+    DEC   sfx_wait_time
+  _skip:
+  end
+
+  @locate_at bank: Aoba::SPRITE_ROM_BANK
+  def play_sfx_long
+    LDX   sfx_wait_time
+    BNZ   _rtl
+    JML   Aoba::Audio::Api.play_sfx_icb_long
+  _rtl:
+    RTL
+  end
+
+end

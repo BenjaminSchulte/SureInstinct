@@ -1,0 +1,123 @@
+module Aoba::Script
+
+  command Opcode::AND8_IMMEDIATE, :and8_immediate do
+    read_current_script_value
+    AND   dp(x00FF)
+    INY
+    AND   dp(register_a)
+    STA   dp(register_a)
+    STZ   dp(register_a) + 2
+  end
+
+  command Opcode::AND16_IMMEDIATE, :and16_immediate do
+    read_current_script_value
+    INY
+    AND   dp(register_a)
+    STA   dp(register_a)
+    STZ   dp(register_a) + 2
+  end
+
+  command Opcode::ADD8_IMMEDIATE, :add8_immediate do
+    CPU.set A: 8
+    read_current_script_value
+    INY
+    CPU.set A: 16
+    BIT   #$80
+    BZE   _is_positive
+
+  _is_negative:
+    ORA   #$FF00
+    CLC
+    ADC   dp(register_a)
+    STA   dp(register_a)
+    LDA   dp(register_a + 2)
+    ADC   #$FFFF
+    STA   dp(register_a + 2)
+    RTS
+
+  _is_positive:
+    AND   dp(x00FF)
+    CLC
+    ADC   dp(register_a)
+    STA   dp(register_a)
+    LDA   dp(register_a + 2)
+    ADC   #0
+    STA   dp(register_a + 2)
+  end
+
+  command Opcode::ADD8_STACK_SIGNED, :add8_stack do
+    DEC   dp(stack_pointer)
+    LDX   dp(stack_pointer)
+    LDA   0, X
+    BIT   #$80
+    BZE   _is_positive
+
+  _is_negative:
+    ORA   #$FF00
+    CLC
+    ADC   dp(register_a)
+    STA   dp(register_a)
+    LDA   dp(register_a + 2)
+    ADC   #$FFFF
+    STA   dp(register_a + 2)
+    RTS
+
+  _is_positive:
+    AND   dp(x00FF)
+    CLC
+    ADC   dp(register_a)
+    STA   dp(register_a)
+    LDA   dp(register_a + 2)
+    ADC   #0
+    STA   dp(register_a + 2)
+  end
+
+  command Opcode::ADD16_STACK_SIGNED, :add16_stack do
+    DEC   dp(stack_pointer)
+    DEC   dp(stack_pointer)
+    LDX   dp(stack_pointer)
+    LDA   0, X
+    BIT   #$8000
+    BZE   _is_positive
+
+    CLC
+    ADC   dp(register_a)
+    STA   dp(register_a)
+    LDA   dp(register_a + 2)
+    ADC   #$FFFF
+    STA   dp(register_a + 2)
+    RTS
+
+  _is_positive:
+    CLC
+    ADC   dp(register_a)
+    STA   dp(register_a)
+    LDA   dp(register_a + 2)
+    ADC   #0
+    STA   dp(register_a + 2)
+  end
+
+  command Opcode::SUB8_IMMEDIATE, :sub8_immediate do
+    CPU.set A: 8
+    read_current_script_value
+    INY
+    CPU.set A: 16
+    BIT   #$80
+    BZE   _is_positive
+
+    Debug.BRK
+    NOP
+
+  _is_positive:
+    AND   dp(x00FF)
+    STA   dp(calc0)
+    LDA   dp(register_a)
+    SEC
+    SBC   dp(calc0)
+    STA   dp(register_a)
+    LDA   dp(register_a + 2)
+    SBC   #0
+    STA   dp(register_a + 2)
+  end
+
+end

@@ -1,0 +1,319 @@
+module Aoba::Sprite::Collision::NPC
+
+  ;; The temporary RAM
+  scope :TempRAM, in: Action::Move::SharedTempRAM
+
+  ;; Number of NPCs
+  declare :npc_counter, as: :uint16, in: TempRAM
+
+  ;; Number of NPCs
+  declare :npc_table_pointer, as: :uint16, in: TempRAM
+
+  ;; Shift direction
+  declare :shift_x_speed, as: :uint16, in: TempRAM
+
+  ;; Shift direction
+  declare :shift_y_speed, as: :uint16, in: TempRAM
+
+  ;; 0 if can not be shifted, 1 if can be shifted
+  declare :can_shift, as: :uint16, in: TempRAM
+
+  ;; The last entertrigger sprite ÍD
+  declare :last_entertrigger_sprite_id, as: :uint8, in: TempRAM
+
+  ;; Recalculates the bounding box
+  macro _recalculate_bounding_box(x, y)
+    LDA   Y[:collisionbox_id]
+    AND   #$FF
+    TAX
+
+    LDA   x
+    SEC
+    SBC   __asset_characterset_hitbox_left.long, X
+    STA   Y[:boundingbox_left]
+    CLC
+    ADC   __asset_characterset_hitbox_width.long, X
+    STA   Y[:boundingbox_right]
+    LDA   y
+    SEC
+    SBC   __asset_characterset_hitbox_top.long, X
+    STA   Y[:boundingbox_top]
+    CLC
+    ADC   __asset_characterset_hitbox_height.long, X
+    STA   Y[:boundingbox_bottom]
+  end
+
+  ;; Initial calculation of bounding box
+  def recalculate_bounding_box_in_dp
+    Thread.assert_thread thread_id
+    TXY
+    Y.is_a! Instance
+    _recalculate_bounding_box dp(Action::Move.pos_x), dp(Action::Move.pos_y)
+    TYX
+  end
+
+  ;; Initial calculation of bounding box
+  def recalculate_bounding_box_in_X
+    Thread.assert_thread thread_id
+    TXY
+    Y.is_a! Instance
+    _recalculate_bounding_box Y[:x], Y[:y]
+    TYX
+  end
+
+  ;; Loads the NPC list
+  macro _load_npc_list(_rts)
+    LDA   X[:basic_flags]
+    BIT   #BasicFlag::NPC_SPRITE_GROUP
+    BNZ   _collide_against_players
+    BIT   #BasicFlag::PLAYER_SPRITE_GROUP
+    BZE   _rts
+
+  _collide_against_npcs:
+    LDY   #npc_sprite_index_table
+    LDA   num_npc_sprites
+    BZE   _rts
+    BRA   _load_table
+
+  _collide_against_players:
+    LDY   #player_sprite_index_table
+    LDA   num_player_sprites
+    BZE   _rts
+
+  _load_table:
+    STY   dp(npc_table_pointer)
+    LSR   A
+    STA   dp(npc_counter)
+  end
+
+  ;; Leave event
+  def _trigger_npc_leave_event
+    X.is_a! Instance
+    A.pretend_size 8
+
+    LDA   X[:automation_script_id]
+    BZE   _resume
+
+    STA   dp(_calc0) + 2
+    LDA   X[:id]
+    STA   dp(_calc0)
+    STX   dp(_calc1)
+
+    LDA   #Aoba::Thread::Event::USEREVENT_ID
+    JSL   Aoba::Thread::Event.allocate_icb_long
+    X.is_a! Aoba::Thread::Event::ReadyEvent
+    LDA   #Aoba::Script::EventId::LEAVE_SPRITE_AREA
+    STA   X[:event_id]
+    LDA   dp(_calc0)
+    STA   X[:userdata]
+    LDA   dp(_calc0) + 2
+    JSL   Aoba::Thread.send_event_icb_long
+    LDX   dp(_calc1)
+
+  _resume:
+    CPU.set A: 16
+    RTS
+  end  
+
+  ;; Triggers the enter event
+  def _trigger_npc_enter_event
+    Y.is_a! Instance
+    X.is_a! Instance
+
+    CPU.set A: 8
+    LDA   Y[:id]
+    CMP   dp(last_entertrigger_sprite_id)
+    STA   X[:current_entertrigger_sprite_id]
+    BEQ   _resume
+    LDA   X[:automation_script_id]
+    BZE   _resume
+
+    ;; Sends the enter event to the player
+    STY   dp(_calc0) + 2
+    STX   dp(_calc0)
+    STA   dp(_calc1)
+
+    LDA   #Aoba::Thread::Event::USEREVENT_ID
+    JSL   Aoba::Thread::Event.allocate_icb_long
+    X.is_a! Aoba::Thread::Event::ReadyEvent
+    LDA   #Aoba::Script::EventId::ENTER_SPRITE_AREA
+    STA   X[:event_id]
+    LDY   dp(_calc0) + 2
+    Y.is_a! Instance
+    LDA   Y[:id]
+    STA   X[:userdata]
+    LDA   dp(_calc1)
+    JSL   Aoba::Thread.send_event_icb_long
+    LDX   dp(_calc0)
+    LDY   dp(_calc0) + 2
+
+  _resume:
+    CPU.set A: 16
+    JMP   process_collision._loop_next
+  end
+
+  ;; Tests whether the NPC collided with another one
+  ;;
+  ;; @param X Sprite
+  def process_collision
+    Thread.assert_thread thread_id
+
+    X.is_a! Instance
+    recalculate_bounding_box_in_dp
+
+    _load_npc_list _direct_rts
+
+    CPU.set A: 8
+    LDA   X[:current_entertrigger_sprite_id]
+    STA   dp(last_entertrigger_sprite_id)
+    STZ   X[:current_entertrigger_sprite_id]
+    CPU.set A: 16
+    BRA   _start_loop
+
+  _after_loop:
+    CPU.set A: 8
+    LDA   X[:current_entertrigger_sprite_id]
+    BNZ   _direct_rts
+    CMP   dp(last_entertrigger_sprite_id)
+    BEQ   _direct_rts
+    JMP   _trigger_npc_leave_event
+
+  _direct_rts:
+    CPU.set A: 16
+    RTS
+
+  _loop_next:
+    DEC   dp(npc_counter)
+    BZE   _after_loop
+
+  _start_loop:
+    LDY   dp(npc_table_pointer)
+    LDA   0, Y
+    INY
+    INY
+    STY   dp(npc_table_pointer)
+    TAY
+    Y.is_a! Instance
+
+    ;; Tests collision planes on both axis
+    LDA   Y[:collision_x_bitmask]
+    AND   dp(Action::Move.collision_x_bitmask)
+    BZE   _loop_next
+    LDA   Y[:collision_y_bitmask]
+    AND   dp(Action::Move.collision_y_bitmask)
+    BZE   _loop_next
+
+    ;; NPCs seems to be close to each other. Let's test collision
+    LDA   X[:boundingbox_right]
+    CMP   Y[:boundingbox_left]
+    BLT   _loop_next
+    LDA   Y[:boundingbox_right]
+    CMP   X[:boundingbox_left]
+    BLT   _loop_next
+
+    LDA   X[:boundingbox_bottom]
+    CMP   Y[:boundingbox_top]
+    BLT   _loop_next
+    LDA   Y[:boundingbox_bottom]
+    CMP   X[:boundingbox_top]
+    BLT   _loop_next
+
+  _collided:
+    LDA   Y[:collision_flags]
+    BIT   #CollisionFlag::IS_ENTER_TRIGGER
+    BNZ   _test_enter_trigger
+
+    ;; Lets test in which direction we are moving
+    LDA   dp(Action::Move.speed_x)
+    BMI   _move_left_test_diag
+    ORA   dp(Action::Move.speed_x_decimal)
+    BZE   _no_move_x
+
+  _move_right_test_diag:
+    LDA   dp(Action::Move.speed_y)
+    BMI   _move_right_up
+    ORA   dp(Action::Move.speed_y_decimal)
+    BNZ   _move_right_down
+
+    STZ   dp(shift_y_speed)
+  _move_right:
+    LDA   #NPC_SHIFT_SPEED
+    STA   dp(shift_x_speed)
+    JMP   _update_movement_after_npc_collision
+
+    ;; ---
+
+    ;; This is no real collision but is an enter trigger
+  _test_enter_trigger:
+    LDA   X[:collision_flags]
+    BIT   #CollisionFlag::TRIGGER_EXIT_EVENTS
+    BZE   _loop_next
+    JMP   _trigger_npc_enter_event
+
+    ;; ---
+
+  _move_right_up:
+    LDA   #0-NPC_SHIFT_SPEED
+    STA   dp(shift_y_speed)
+    BRA   _move_right
+
+  _move_right_down:
+    LDA   #NPC_SHIFT_SPEED
+    STA   dp(shift_y_speed)
+    BRA   _move_right
+
+    ;; ---
+
+  _move_left_test_diag:
+    LDA   dp(Action::Move.speed_y)
+    BMI   _move_left_up
+    ORA   dp(Action::Move.speed_y_decimal)
+    BNZ   _move_left_down
+
+    STZ   dp(shift_y_speed)
+  _move_left:
+    LDA   #0-NPC_SHIFT_SPEED
+    STA   dp(shift_x_speed)
+    JMP   _update_movement_after_npc_collision
+
+    ;; ---
+
+  _move_left_up:
+    LDA   #0-NPC_SHIFT_SPEED
+    STA   dp(shift_y_speed)
+    BRA   _move_left
+
+  _move_left_down:
+    LDA   #NPC_SHIFT_SPEED
+    STA   dp(shift_y_speed)
+    BRA   _move_left
+
+    ;; ---
+
+  _no_move_x:
+    STZ   dp(shift_x_speed)
+    LDA   dp(Action::Move.speed_y)
+    BMI   _move_up
+    ORA   dp(Action::Move.speed_y_decimal)
+    BZE   _no_move
+
+  _move_down:
+    LDA   #NPC_SHIFT_SPEED
+    STA   dp(shift_y_speed)
+    JMP   _update_movement_after_npc_collision
+
+  _move_up:
+    LDA   #0-NPC_SHIFT_SPEED
+    STA   dp(shift_y_speed)
+    JMP   _update_movement_after_npc_collision
+
+    ;; ---
+
+  _no_move:
+    Debug.BRK
+    ; When do we get here?
+    JMP   _loop_next
+
+  end
+
+end

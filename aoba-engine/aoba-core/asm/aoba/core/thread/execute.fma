@@ -1,0 +1,161 @@
+module Aoba::Thread
+
+  ;; @ignore-thread-safety
+  def pause_current_thread_icb
+    X.pretend_size 16
+
+    test_thread_disabled_SYSTEMBANK
+
+    Debug.pretend_thread 0
+
+    ; -------------------------
+    ;   Pause thread
+    ; -------------------------
+    PHP
+    SEI
+    CPU.set A: 8
+
+    LDX   current_thread
+    BZE   _execute
+    X.is_a! Instance
+    BIT   #$1
+    BNZ   _break_thread_unexpected
+
+    ;; The thread has been paused on demand
+    STA   X[:event_mask]
+    CPU.set A: 16
+    TSC
+    STA   X[:stack_address]
+
+    ;; Test whether the event is already triggered
+    LDY   X[:first_event]
+    LDA   X[:event_mask]
+    Event.find_matching_event_in_thread_icb
+    CPY   #0
+    BEQ   _break_wait_for_event
+
+    ;; Queues the thread because event already exists
+  _queue_thread_directly:
+    queue_icb
+    BRA   _execute
+
+  _break_wait_for_event:
+    LDA   paused_threads
+    STA   X[:next_thread]
+    STX   paused_threads
+    CPU.set A: 8
+    LDA   #Status::PAUSED
+    STA   X[:status]
+    BRA   _execute
+
+    ;; Pause thread unexpected (by NMI)
+  _break_thread_unexpected:
+    LDA   #Status::SUSPENDED
+    STA   X[:status]
+    CPU.set A: 16
+    TSC
+    STA   X[:stack_address]
+    JSR   queue_icb
+
+    ; -------------------------
+    ;   Execute thread
+    ; -------------------------
+    ;; Executes the next thread from queue
+  _execute:
+    Debug.pretend_thread 0
+    LDX   queued_threads
+    BNZ   _execute_thread_in_X
+
+    ;; There is no thread which has anything to do
+  _wait_for_next_event:
+    Debug.profile_idle
+    STZ   Memory.active_thread_id
+    CPU.set A: 16
+    STZ   current_thread
+
+    ;; Ensure we don't override the whole RAM with each iteration
+    LDA   #fallback_stack + $1F
+    TCS
+    CLI
+  _die:
+    WAI
+    BRA   _die
+
+    ;; Executes the thread stored currently in register X
+  _execute_thread_in_X:
+    X.is_a! Instance
+
+    CPU.set A: 16
+  
+    ;; Pops out the address
+    LDA   X[:next_thread]
+    STA   queued_threads
+    STZ   X[:next_thread]
+    STX   current_thread
+
+    ;; Sets up the stack
+    LDA   X[:stack_address]
+    TCS
+
+    CPU.set A: 8
+    ;; Copy basic attributes
+    LDA   X[:id]
+    STA   Memory::active_thread_id
+    Debug.profile_thread_enter
+
+    ;; Proceed depending on status
+    LDA   X[:status]
+    BZE   _execute_new_thread
+    DEC
+    BZE   _execute_suspended_thread
+
+    ;; Executes a thread which has been paused before
+  _execute_paused_thread:
+    LDA   #Status::RUNNING
+    STA   X[:status]
+    Event.pop_matching_event_in_thread_icb
+    TYX
+    PLP
+    ;Debug.log "THREAD: EXECUTE PAUSED"
+    RTS
+    X.is_a! Instance
+
+    ;; Executes a thread which has been suspended by NMI
+  _execute_suspended_thread:
+    LDA   #Status::RUNNING
+    STA   X[:status]
+    PLP
+    ;Debug.log "THREAD: EXECUTE SUSPENDED"
+    RTS
+
+    ;; This thread is new
+  _execute_new_thread:
+    LDA   #Status::RUNNING
+    STA   X[:status]
+    CPU.set A: 16
+    LDA   X[:stack_address]
+    AND   #$FF00
+    TCD
+    ;Debug.log "THREAD: EXECUTE NEW"
+    RTL
+  end
+
+  ;; @ignore-thread-safety
+  def _pause_current_thread_temporary_icb
+    LDA   #$1
+    JMP   pause_current_thread_icb
+  end
+
+  ;; @ignore-thread-safety
+  def pause_current_thread_temporary_icb_long
+    PHD
+    LDA   #$1
+    JSR   pause_current_thread_icb
+    PLD
+    RTL
+  end
+
+  start = pause_current_thread_icb._execute
+  execute_thread_in_X = pause_current_thread_icb._execute_thread_in_X
+
+end

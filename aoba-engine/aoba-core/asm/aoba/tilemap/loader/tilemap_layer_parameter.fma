@@ -1,0 +1,41 @@
+module Aoba::Tilemap::Loader
+
+  class TilemapLayerParameter < Parameter
+    macro initialize(layer, storage, compression)
+      super
+      @layer = layer
+      @storage = storage
+      @compression = compression
+    end
+
+    macro preconfigure
+      @compression.include_ram_to_tilemap_loader @loader
+    end
+
+    macro size_in_bytes
+      return 2
+    end
+
+    macro load
+      ;; Configures the decompressor
+      if @compression.requires_map_size?
+        LDA   @storage.width.long
+        AND   #$FF
+        TAX
+        LDA   @storage.height.long
+        AND   #$FF
+        TAY
+      end
+      LDA   #@storage.tiles[@layer]
+      @compression.configure_decompress
+
+      ;; Calculates the source address
+      @loader.read_header_at @offset
+      LDX   dp(@loader.header_address) + 1
+      @compression.configure_source_address
+
+      @compression.decompress
+    end
+  end
+
+end

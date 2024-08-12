@@ -1,0 +1,78 @@
+#1
+Welcome to Sure Instinct!
+
+Try to get yourself familiar with the controls.
+You can control the ball with the mouse
+or the directional buttons on your controller.
+
+#2
+Well done!
+
+Can you see the goal below?
+Your objective in this stage is to reach the goal.
+
+You can collect gems on your
+way to increase your score.
+
+#3
+By rolling onto this striped area below
+you can change the perspective from
+the top to the bottom of the level.
+
+It's the same level, just from below! Give it a try!
+
+#4
+Levels can look very different
+from the bottom side.
+
+You might need to keep a
+good orientation in some stages.
+
+#5
+Be careful at some places!
+
+Do not roll into this acid or any lasers.
+If you lose all of your energy
+you have to restart the stage.
+
+#6
+This door still seems to be locked,
+but maybe it can be opened from
+the other perspective of the map.
+
+Also, be careful with fragile floors,
+as they will break the same way on both sides. 
+
+#7
+Looks like you just found some keys.
+Do you remember a place with a blue door?
+
+#8
+You can collect money to buy items.
+
+Try to buy this parachute.
+
+#9
+If you fall into an abyss you will lose a life.
+
+Fortunately, you just got to buy a parachute:
+Should you fall into the abyss, hold down
+\"B\" or the left mouse button to save yourself.
+
+Feel free to try it out, it's just the tutorial level. 
+
+#10
+If you're out of money you can still steal items
+by rolling onto the item and wait for a short time.
+
+However...
+Stealing items will cost you some energy.
+
+#11
+This item here is a "bridge".
+
+Select it by using \"Y\" or the right mouse button
+until you see it bottom, left of the screen.
+
+Hold the \"B\" button or the left mouse button while
+rolling onto an abyss to build a bridge.

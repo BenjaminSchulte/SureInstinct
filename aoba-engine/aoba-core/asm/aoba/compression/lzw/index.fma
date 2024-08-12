@@ -1,0 +1,9 @@
+module Aoba
+
+  COMPRESSION_LZW_ROM_BANK ||= $C0
+
+end
+
+require "configuration"
+require "memory"
+require "decompress"

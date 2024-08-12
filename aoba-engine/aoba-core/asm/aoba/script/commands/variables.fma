@@ -1,0 +1,113 @@
+module Aoba::Script
+
+  command Opcode::BVC, :bvc do
+    read_current_script_value
+    INY
+    INY
+    STY   dp(calc0)
+    JSL   Aoba::GameVariable.load_number_long
+    STX   dp(calc0 + 2)
+    TYA
+    ORA   dp(calc0 + 2)
+    BZE   _is_zero
+  
+  _is_set:
+    LDY   dp(calc0)
+    INY
+    INY
+    RTS
+
+  _is_zero:
+    LDY   dp(calc0)
+    read_current_script_value
+    STA   dp(script_pointer)
+    LDY   #0
+  end
+
+  command Opcode::BVS, :bvs do
+    read_current_script_value
+    INY
+    INY
+    STY   dp(calc0)
+    JSL   Aoba::GameVariable.load_number_long
+    STX   dp(calc0 + 2)
+    TYA
+    ORA   dp(calc0 + 2)
+    BZE   _is_zero
+  
+  _is_set:
+    LDY   dp(calc0)
+    read_current_script_value
+    STA   dp(script_pointer)
+    LDY   #0
+    RTS
+
+  _is_zero:
+    LDY   dp(calc0)
+    INY
+    INY
+  end
+
+  command Opcode::SET_VARIABLE, :sev do
+    read_current_script_value
+    INY
+    INY
+    STY   dp(calc0)
+    LDX   #1
+    LDY   #0
+    JSL   Aoba::GameVariable.write_number_long
+    LDY   dp(calc0)
+  end
+
+  command Opcode::CLR_VARIABLE, :clv do
+    read_current_script_value
+    INY
+    INY
+    STY   dp(calc0)
+    LDX   #0
+    TXY
+    JSL   Aoba::GameVariable.write_number_long
+    LDY   dp(calc0)
+  end
+
+  command Opcode::LDA_VARIABLE, :lda_variable do
+    read_current_script_value
+    INY
+    INY
+    STY   dp(calc0)
+    JSL   Aoba::GameVariable.load_number_long
+    STX   dp(register_a)
+    STY   dp(register_a + 2)
+    LDY   dp(calc0)
+  end
+
+  command Opcode::STA_VARIABLE, :sta_variable do
+    read_current_script_value
+    INY
+    INY
+    STY   dp(calc0)
+    LDX   dp(register_a)
+    LDY   dp(register_a) + 2
+    JSL   Aoba::GameVariable.write_number_long
+    LDY   dp(calc0)
+  end
+
+  command Opcode::LDI_VARIABLE, :ldi_variable do
+    read_current_script_value
+    INY
+    INY
+    STY   dp(calc0)
+    PHA
+    JSL   Aoba::GameVariable.load_number_long
+    STX   dp(register_a)
+    STY   dp(register_a + 2)
+    PLA
+    INX
+    BNZ   _no_inc_Y
+    INY
+  _no_inc_Y:
+    JSL   Aoba::GameVariable.write_number_long
+    LDY   dp(calc0)
+  end
+
+end

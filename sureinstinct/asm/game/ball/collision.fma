@@ -1,0 +1,370 @@
+module Game::Ball::Collision
+  class Handler < Aoba::StaticRoutineClass
+    locate_at bank: Aoba::SPRITE_ROM_BANK
+    register A: 16, XY: 16
+
+    macro initialize
+      setup_static_routines
+
+      @parent = nil
+
+      @TempRAM        = MemoryScope.new("ball_collision_handler", in: nil, for: ::SNES::MemoryMap::RAM)
+      @SharedTempRAM  = MemoryScope.new("shared_temp_rum", in: @TempRAM, shared: true)
+      @ball_hit_speed = MemoryVariable.new("ball_hit_speed", as: :uint16, in: @TempRAM)
+      @ball_speed     = MemoryVariable.new("ball_speed", as: :uint16, in: @TempRAM)
+      @ball_angle     = MemoryVariable.new("ball_angle", as: :uint16, in: @TempRAM)
+      @hit_flag       = MemoryVariable.new("hit_flag", as: :uint16, in: @TempRAM)
+      
+
+      @_wall_angle = Aoba::Sprite._calc1
+      @_new_angle = Aoba::Sprite._calc1
+      @_new_speed = Aoba::Sprite._calc1 + 2
+    end
+
+    macro include_to_sprite_collision(collision)
+      @parent = collision
+      @parent.SharedTempRAM.include @TempRAM
+      
+      collision.event.on :collided do
+        update
+      end
+      collision.event.on :event_collided do
+        update_event
+      end
+    end
+
+    ;; Calculates the collision angle
+    macro _calculate_collision_angle
+      LDA   dp(@parent._test._hitbox)
+      LDX   #0
+      LDY   #0
+
+      ;; Calculates X = left collision tile, Y = right collision tile
+    _loop_left:
+      LSR   A
+      BCS   _end_of_loop_left
+      INX
+      INY
+      BRA   _loop_left
+    _end_of_loop_left:
+      BZE   _end_of_loop_right
+    _loop_right:
+      INY
+      LSR   A
+      BNE   _loop_right
+
+    _end_of_loop_right:
+      ;; Calculates the center of the X collision
+      ; x = ((right*2 - left*2) >> 1) + left - 12
+      TXA
+      ASL   A
+      STA   dp(Aoba::Sprite._calc0)
+      TYA
+      ASL   A
+      SEC
+      SBC   dp(Aoba::Sprite._calc0)
+      LSR   A
+      CLC
+      ADC   dp(Aoba::Sprite._calc0)
+      SEC
+      SBC   #12
+      TAX
+
+      ; y = ((bottom*2 - top*2) >> 1) + top - 12
+      LDY   #0
+      LDA   dp(@parent._test._hitbox_bottom)
+      BMI   _no_collision_y
+      ASL   A
+      TAY 
+      AND   #$1FF
+      STA   dp(Aoba::Sprite._calc0)
+      TYA
+      AND   #$FE00
+      XBA
+      SEC
+      SBC   dp(Aoba::Sprite._calc0)
+      LSR   A
+      CLC
+      ADC   dp(Aoba::Sprite._calc0)
+      SEC
+      SBC   #12
+      TAY
+    _no_collision_y:
+
+      JSL   Aoba::Math.xy_to_direction_long
+      AND   #$FF
+      ASL   A
+      STA   dp(@_wall_angle)
+    end
+
+    macro _calculate_ball_angle
+      LDX   dp(Aoba::Sprite.current_sprite)
+      X.is_a! Aoba::Sprite.Instance
+      LDA   Aoba::VARIABLE_RAM_BANK.as_bank(Aoba::Sprite.Instance.offset_of(:speed_y) - 1).long, X
+      TAY
+      LDA   Aoba::VARIABLE_RAM_BANK.as_bank(Aoba::Sprite.Instance.offset_of(:speed_x) - 1).long, X
+      TAX
+      JSL   Aoba::Math.xy_to_direction_long
+      AND   #$FF
+      ASL   A
+      STA   dp(@ball_angle)
+    end
+
+    macro _calculate_new_ball_angle
+      LDA   dp(@ball_angle)
+      TAY
+      SEC
+      SBC   dp(@_wall_angle)
+      STA   dp(Aoba::Sprite._calc0)
+      
+      ;; Make angle positive
+      BPL   _is_positive
+      CLC
+      ADC   #$200
+    _is_positive:
+      ;; When difference is bigger than 45deg: return old angle
+;      AND   #$180
+;      BZE   _ok
+;      CMP   #$180
+;      BEQ   _ok
+;      TYA
+;      BRA   _rts
+;
+;      ;; --
+;
+;    _ok:
+      ;; result = wallangle + 90deg - difference
+      LDA   dp(@_wall_angle)
+      CLC
+      ADC   #$100
+      SEC
+      SBC   dp(Aoba::Sprite._calc0)
+      AND   #$1FF
+      LSR   A
+
+    _rts:
+      STA   dp(@_new_angle)
+    end
+
+    macro _calculate_ball_speed
+      LDX   dp(Aoba::Sprite.current_sprite)
+      LDA   Aoba::VARIABLE_RAM_BANK.as_bank(Aoba::Sprite.Instance.offset_of(:speed_y) - 1).long, X
+      TAY
+      LDA   Aoba::VARIABLE_RAM_BANK.as_bank(Aoba::Sprite.Instance.offset_of(:speed_x) - 1).long, X
+      TAX
+      JSL   Aoba::Math.quick_distance_far_long
+      STA   dp(@ball_hit_speed)
+      LSR   A
+      STA   dp(Aoba::Sprite._calc0)
+      LSR   A
+      CLC
+      ADC   dp(Aoba::Sprite._calc0)
+      STA   dp(@ball_speed)
+    end
+
+    macro _set_new_ball_speed
+      CPU.with_bank Aoba::VARIABLE_RAM_BANK, from_bank: Aoba::FIXED_RAM_BANK do
+        LDX   dp(Aoba::Sprite.current_sprite)
+        X.is_a! Aoba::Sprite.Instance
+        LDA   dp(@ball_speed)
+        STA   X[:walk_speed]
+        CPU.set A: 8
+        LDA   dp(@_new_angle)
+        STA   X[:move_angle]
+        Aoba::Sprite::Action::MoveSprite.set_movespeed_from_angle_and_speed
+        CPU.set A: 16
+      end
+    end
+
+    macro _set_safe_ball_position
+      ;; Sum Y top/bottom 
+      LDA   dp(@parent._test._collision_flags)
+      TAX
+      XBA
+      AND   #7
+      STA   dp(Aoba::Sprite._calc0)
+      TXA
+      AND   #7
+      SEC
+      SBC   dp(Aoba::Sprite._calc0)
+      TAY
+
+      ;; Tests diagonal Y
+      TXA
+      BIT   #Aoba::Sprite::Collision::Pixel::Flag::COL_DIAG_TOP
+      BZE   _no_diag_top
+      INY
+    _no_diag_top:
+      BIT   #Aoba::Sprite::Collision::Pixel::Flag::COL_DIAG_BOTTOM
+      BZE   _no_diag_bottom
+      DEY
+    _no_diag_bottom:
+      
+      ;; Updates the X speed
+      TYA
+      BZE   _resume_after_y
+      XBA
+      BPL   _not_negative_y
+      AND   #$FF00
+    _not_negative_y:
+      CLC
+      ADC   dp(Aoba::Sprite::Action::Move.speed_y_decimal) + 1
+      STA   dp(Aoba::Sprite::Action::Move.speed_y_decimal) + 1
+      BMI   _minus_y
+    _plus_y:
+      LDA   dp(Aoba::Sprite::Action::Move.speed_y)
+      AND   #$FF
+      STA   dp(Aoba::Sprite::Action::Move.speed_y)
+      BRA   _resume_after_y
+    _minus_y:
+      LDA   dp(Aoba::Sprite::Action::Move.speed_y)
+      ORA   #$FF00
+      STA   dp(Aoba::Sprite::Action::Move.speed_y)
+    _resume_after_y:
+
+
+      ;; Sum X left/right
+      LDX   #0
+      LDA   dp(@parent._test._collision_left_right)
+      TAY
+      AND   #$F
+      BZE   _no_col_left
+    _loop_col_left:
+      INX
+      LSR   A
+      BNZ   _loop_col_left
+    _no_col_left:
+      TYA
+      AND   #$F000 >> 3
+      BZE   _no_col_right
+      ASL   A
+      ASL   A
+      ASL   A
+    _loop_col_right:
+      DEX
+      ASL   A
+      BNZ   _loop_col_right
+    _no_col_right:
+
+
+      ;; Tests diagonal X
+      LDA   dp(@parent._test._collision_flags)
+      BIT   #Aoba::Sprite::Collision::Pixel::Flag::COL_DIAG_LEFT
+      BZE   _no_diag_left
+      INX
+    _no_diag_left:
+      BIT   #Aoba::Sprite::Collision::Pixel::Flag::COL_DIAG_RIGHT
+      BZE   _no_diag_right
+      DEX
+    _no_diag_right:
+      
+      ;; Updates the X speed
+      TXA
+      BZE   _resume_after_x
+      XBA
+      BPL   _not_negative_x
+      AND   #$FF00
+    _not_negative_x:
+      CLC
+      ADC   dp(Aoba::Sprite::Action::Move.speed_x_decimal) + 1
+      STA   dp(Aoba::Sprite::Action::Move.speed_x_decimal) + 1
+      BMI   _minus_x
+    _plus_x:
+      LDA   dp(Aoba::Sprite::Action::Move.speed_x)
+      AND   #$FF
+      STA   dp(Aoba::Sprite::Action::Move.speed_x)
+      BRA   _resume_after_x
+    _minus_x:
+      LDA   dp(Aoba::Sprite::Action::Move.speed_x)
+      ORA   #$FF00
+      STA   dp(Aoba::Sprite::Action::Move.speed_x)
+    _resume_after_x:
+    end
+
+    routine :calculate_tile_xy do
+      LDA   dp(Aoba::Sprite::Action::Move.pos_x)
+      CLC
+      ADC   #@parent.sprite_offset_x
+      16.divided_register_A
+      TAX
+      LDA   dp(@hit_flag)
+      BIT   #Aoba::Sprite::Collision::Pixel::Flag::COL_TILE_RIGHT
+      BZE   _is_left
+      INX
+    _is_left:
+      LDA   dp(Aoba::Sprite::Action::Move.pos_y)
+      CLC
+      ADC   #@parent.sprite_offset_y
+      16.divided_register_A
+      TAY
+      LDA   dp(@hit_flag)
+      BIT   #Aoba::Sprite::Collision::Pixel::Flag::COL_TILE_BOTTOM
+      BZE   _is_top
+      LDA   dp(@parent._test._collision_flags)
+      BIT   #Aoba::Sprite::Collision::Pixel::Flag::COL_TILE_HAS_TOP
+      BZE   _is_top
+      INY
+    _is_top:
+      RTS
+    end
+
+    routine :_invoke_hit_event do
+      STY   dp(@hit_flag)
+
+      AND   #$3F
+      ASL   A
+      TAX
+
+      LDY   dp(Aoba::Sprite.current_sprite)
+      CPU.with_bank Aoba::VARIABLE_RAM_BANK, from_bank: Aoba::FIXED_RAM_BANK do
+        JSR   @parent.hit_events.index.indirect, X
+      end
+      RTS
+    end
+
+    macro _test_tile_event(flag, index)
+      BIT   #flag
+      BZE   _rts
+
+      NOP
+      LDA   dp(@parent._test._tile_data[index])
+      BIT   #$C0
+      BNZ   _rts_load
+      AND   #$FF
+      ;BZE   _rts_load
+      LDY   #flag
+      _invoke_hit_event
+
+    _rts_load:
+      LDA   dp(@parent._test._collision_flags)
+
+    _rts:
+    end
+
+    routine :_test_tile_events do
+    ;Debug.BRK
+      LDA   dp(@parent._test._collision_flags)
+      _test_tile_event Aoba::Sprite::Collision::Pixel::Flag::COL_TILE_BOTTOMLEFT, 2
+      _test_tile_event Aoba::Sprite::Collision::Pixel::Flag::COL_TILE_TOPLEFT, 0
+      _test_tile_event Aoba::Sprite::Collision::Pixel::Flag::COL_TILE_BOTTOMRIGHT, 3
+      _test_tile_event Aoba::Sprite::Collision::Pixel::Flag::COL_TILE_TOPRIGHT, 1
+      RTS
+    end
+
+    macro update
+      _calculate_collision_angle
+      _calculate_ball_angle
+      _calculate_ball_speed
+      
+      _test_tile_events
+
+      _calculate_new_ball_angle
+      _set_new_ball_speed
+      _set_safe_ball_position
+    end
+
+    macro update_event
+      _test_tile_events
+    end
+  end
+end

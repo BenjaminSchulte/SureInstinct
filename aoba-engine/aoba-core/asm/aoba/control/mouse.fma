@@ -1,0 +1,230 @@
+module Aoba::Control
+
+  ;; Updates the mouse speed
+  def _update_speed
+    return unless MOUSE_SUPPORT
+
+    _update_vars.use do |keys, tmp2|
+      Y.is_a! GamepadPlayer
+
+      CPU.set A: 8
+      LDA   Y[:flags]
+      AND   #Flag.MOUSE_SPEED_MASK
+      STA   dp(keys)
+
+      CPU.with_bank 0, from_bank: VARIABLE_RAM_BANK do
+        Debug.log "MOUSE UPDATE SPEED"
+        LDA   #$10
+        STA   dp(tmp2 + 1)
+
+      _loop:
+        LDA   #1
+        STA   CPU.JOYSER0
+        LDA   CPU.JOYSER0
+        STZ   CPU.JOYSER0
+
+        LDA   #1
+        STA   CPU.JOYSER0
+        STZ   CPU.JOYSER0
+        STZ   dp(tmp2)
+      
+        PHY
+        LDY   #10
+      _skip_bits:
+        LDA   CPU.JOYSER0
+        DEY
+        BNZ   _skip_bits
+        PLY
+
+        LDA   CPU.JOYSER0
+        LSR   A
+        ROL   dp(tmp2)
+
+        LDA   CPU.JOYSER0
+        LSR   A
+        ROL   dp(tmp2)
+
+        Y.is_a! GamepadPlayer
+        LDA   dp(tmp2)
+        CMP   dp(keys)
+        BEQ   _ok
+    
+        DEC   dp(tmp2 + 1)
+        BNZ   _loop
+
+      _ok:
+      end
+      LDA   Y[:flags]
+      AND   #$FF ^ Flag.MOUSE_UPDATE_SPEED
+      STA   Y[:flags]
+      CPU.set A: 16
+    end
+  end
+
+  def _dispatch_mouse_event
+    routine from_A: 16, from_XY: 16 do
+      is_thread_safe
+      input A
+
+      declare :event_id, as: :uint16
+      declare :gamepad, as: :uint16
+
+      execute do |event_id, gamepad|
+        STA   dp(event_id)
+        STY   dp(gamepad)
+
+        LDX   global_listeners
+        BZE   _end_of_list
+
+      _loop:
+        X.is_a! Listener
+        LDA   X[:listener_flags]
+        LSR   A
+        BCC   _skip
+
+        PHX
+        CPU.set A: 8
+        LDA   #Aoba::Thread::Event.SYSTEMEVENT_ID
+        JSL   Aoba::Thread::Event.allocate_icb_long
+        X.is_a! ControlEvent
+        LDA   #CONTROL_THREAD_ID
+        STA   X[:sender_thread_id]
+        LDY   dp(gamepad)
+        Y.is_a! GamepadPlayer
+        LDA   Y[:id]
+        STA   X[:gamepad_id]
+        LDA   dp(event_id)
+        STA   X[:event_id]
+        CPU.set A: 16
+        LDA   Y[:keys]
+        STA   X[:keys]
+        LDA   1, S
+        TAY
+        Y.is_a! Listener
+        LDA   Y[:thread_id]
+        JSL   Aoba::Thread.send_event_icb_long
+        PLX
+
+      _skip:
+        X.is_a! Listener
+        LDA   X[:next_listener]
+        TAX
+        BNZ   _loop
+
+      _end_of_list:
+        LDY   dp(gamepad)
+      end
+    end
+  end
+
+  ;; Disconnects the mouse
+  macro _disconnect_mouse
+    Y.is_a! GamepadPlayer
+    AND   #$FFFF ^ (Flag::MOUSE_CONNECTED << 8)
+    STA   Y[:flags] - 1
+    LDA   #MOUSE_DISCONNECT_EVENT_ID
+    _dispatch_mouse_event
+  end
+
+  ;; Updates the mouse control
+  def _update_mouse
+    return unless MOUSE_SUPPORT
+
+    Debug.only do
+      TXA
+      BZE   _is_slot_0
+      Debug.fatal "MOUSE ONLY SUPPORTS SLOT 0 YET"
+      NOP
+    _is_slot_0:
+    end
+
+    _update_vars.use do |keys, tmp2|
+      LDA   dp(keys)
+      AND   #$C0
+      XBA
+      STA   dp(keys)
+
+      Y.is_a! GamepadPlayer
+      LDA   Y[:flags] - 1
+      BMI   _skip_connect_mouse
+
+    _connect_mouse:
+      LDA   #MOUSE_CONNECT_EVENT_ID
+      _dispatch_mouse_event
+
+      LDA   #Flag.MOUSE_UPDATE_SPEED | Flag::MOUSE_CONNECTED
+      STA   Y[:flags]
+
+    _clear_mouse_rts:
+      LDA   #0
+      STA   Y[:mouse_x]
+      STA   Y[:mouse_y]
+      RTS
+
+      ;; ---
+
+    _skip_connect_mouse:
+      BIT   #Flag.MOUSE_UPDATE_SPEED << 8
+      BZE   _no_update_speed
+      PHY
+      _update_speed
+      PLY
+      BRA   _clear_mouse_rts
+
+      ;; ---
+
+    _no_update_speed:
+      LDA   dp(keys)
+      PHX
+      _update_control
+      PLX
+
+      CPU.set A: 8
+      CPU.with_bank 0, from_bank: VARIABLE_RAM_BANK do
+        STZ   dp(keys) + 1
+        STZ   dp(tmp2) + 1
+        PHY
+        LDY   #16
+      _loop_y:
+        LDA   CPU.JOYSER0
+        LSR   A
+        Debug.allow_invalid_ram_access 2
+        ROL   dp(tmp2)
+        ROL   dp(keys)
+        DEY
+        BNZ   _loop_y
+        PLY
+
+        LDA   dp(keys)
+        BPL   _no_negative_y
+        EOR   #$7F
+        INC   A
+        STA   dp(keys)
+        BZE   _no_negative_y
+        DEC   dp(keys) + 1
+      _no_negative_y:
+        LDA   dp(tmp2)
+        BPL   _no_negative_x
+        EOR   #$7F
+        INC   A
+        STA   dp(tmp2)
+        BZE   _no_negative_x
+        DEC   dp(tmp2) + 1
+      _no_negative_x:
+      end
+      CPU.set A: 16
+
+      LDA   dp(keys)
+      CLC
+      ADC   Y[:mouse_y]
+      STA   Y[:mouse_y]
+      LDA   dp(tmp2)
+      CLC
+      ADC   Y[:mouse_x]
+      STA   Y[:mouse_x]
+
+    _after_mouse:
+    end
+  end
+
+end

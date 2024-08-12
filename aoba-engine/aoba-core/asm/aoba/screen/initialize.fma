@@ -1,0 +1,49 @@
+module Aoba::Screen
+
+  ;; Initializes the screen
+  ;; @ignore-thread-safety
+  def initialize_icb
+    Debug.enter_threadsafe_ram_access
+
+    LDA   #$0080
+    STA   register.INIDISP
+
+    STZ   register.BGMODE
+    STZ   register.BG1SC
+    STZ   register.BG3SC
+    STZ   register.BG12NBA
+    STZ   register.W12SEL
+    STZ   register.WOBJSEL
+    STZ   register.WH1
+    STZ   register.WH3
+    STZ   register.WOBJLOG
+    STZ   register.TS
+    STZ   register.TSW
+    STZ   register.CGADSUB
+    STZ   register.OBSEL
+
+    STZ   register.BG1HOFS
+    STZ   register.BG1VOFS
+    STZ   register.BG2HOFS
+    STZ   register.BG2VOFS
+    STZ   register.BG3HOFS
+    STZ   register.BG3VOFS
+    STZ   register.BG4HOFS
+    STZ   register.BG4VOFS
+
+    LDA   #Flag::ALL_8
+    STA   update_registers_8
+
+    LDA   #Flag::ALL_16
+    STA   update_registers_16
+
+    Debug.leave_threadsafe_ram_access
+  end
+
+  ;; Initializes the screen
+  def initialize_icb_long
+    initialize_icb
+    RTL
+  end
+
+end

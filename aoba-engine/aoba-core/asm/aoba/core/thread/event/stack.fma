@@ -1,0 +1,205 @@
+module Aoba::Thread::Event
+
+  macro __initialize_pop_event_stack
+    PHP
+    PHD
+    PHX
+    TSC
+    TCD
+    X.is_a! Instance
+  end
+
+  macro __fail_pop_event
+    LDY   #0
+    PLX
+    PLD
+    PLP
+  end
+
+  ;; @param X Thread
+  ;; @param Y Expected timer
+  ;; @returns Y ThreadEvent
+  def pop_timer_event_in_thread_icb
+    __initialize_pop_event_stack
+    
+    ;CPU.set A: 8
+    TYA
+    TXY
+    LDX   Y[:first_event]
+    BZE   _skip
+
+Debug.BRK
+    STY   dp(1)
+    LDY   #0
+    X.is_a! Timer::TimerEvent
+
+  _loop:
+    CMP   X[:timer]
+    BNE   _resume
+
+    Debug.BRK
+    LDA   X[:sender_thread_id]
+    AND   #$FF
+    EOR   #TIMER_THREAD_ID
+    BZE   _found
+
+  _resume:
+    TXY
+    LDX   Y[:next_event]
+    BNZ   _loop
+
+  _skip:
+    __fail_pop_event
+    RTS
+
+  _found:
+    JMP   pop_matching_event_in_thread_icb._found
+  end
+
+  ;; @param X Thread
+  ;; @param Y Expected thread
+  ;; @returns Y ThreadEvent
+  def pop_thread_event_in_thread_icb
+    __initialize_pop_event_stack
+
+    CPU.set A: 8
+    TYA
+    TXY
+    LDX   Y[:first_event]
+    BZE   _skip
+
+    STY   dp(1)
+    LDY   #0
+    X.is_a! Base
+
+  _loop:
+    CMP   X[:sender_thread_id]
+    BEQ   _found
+    TXY
+    LDX   Y[:next_event]
+    BNZ   _loop
+
+  _skip:
+    __fail_pop_event
+    RTS
+
+  _found:
+    JMP   pop_matching_event_in_thread_icb._found
+  end
+
+  def pop_thread_event_in_thread_icb_long
+    pop_thread_event_in_thread_icb
+    RTL
+  end
+
+  ;; @param X Thread
+  ;; @return Y ThreadEvent
+  ;; @ignore-thread-safety
+  def pop_matching_event_in_thread_icb
+    __initialize_pop_event_stack
+
+    CPU.set A: 8
+    TXY
+    LDX   Y[:first_event]
+    BZE   _skip
+
+    STY   dp(1)
+    LDA   Y[:event_mask]
+    LDY   #0
+    X.is_a! Base
+
+  _loop:
+    BIT   X[:event_bitmask]
+    BNZ   _found
+    TXY
+    LDX   Y[:next_event]
+    BNZ   _loop
+
+  _skip:
+    __fail_pop_event
+    RTS
+
+  _found:
+    ;; X = matching event
+    ;; Y = previous event
+    CPU.set A: 16
+    LDA   X[:next_event]
+    BZE   _is_last_event
+
+  _test_is_mid_event:
+    CPY   #0
+    BZE   _is_first_event
+
+  _is_mid_event:
+    ;; NOT last and NOT first event
+    STA   Y[:next_event]
+    TXY
+    BRA   _return
+
+  _is_last_event:
+    CPY   #0
+    BZE   _is_only_event
+
+  _only_last_event:
+    ;; IS last but NOT first event
+    LDA   #0
+    Debug.allow_invalid_ram_access 2
+    STA   Y[:next_event]
+    TYA
+    TXY
+    LDX   dp(1)
+    X.is_a! Instance
+    STA   X[:last_event]
+    BRA   _return
+
+  _is_only_event:
+    ;; IS last and IS first event
+    TXY
+    LDX   dp(1)
+    X.is_a! Instance
+    STZ   X[:first_event]
+    STZ   X[:last_event]
+    BRA   _return
+
+  _is_first_event:
+    ;; NOT last event but IS first 
+    TXY
+    LDX   dp(1)
+    STA   X[:first_event]
+
+  _return:
+    PLX
+    PLD
+    PLP
+    X.is_a! Instance
+  end
+
+  ;; @ignore-thread-safety
+  @param Y: Base
+  def find_matching_event_in_thread_icb
+    CPY #0
+    BEQ _skip
+
+    PHP
+    PHX
+
+    CPU.set A: 8
+    TYX
+
+  _loop:
+    BIT   X[:event_bitmask]
+    BNZ   _found_record
+    TXY
+    LDX   Y[:next_event]
+    BNZ   _loop
+
+  _found_record:
+    TXY
+
+    PLX
+    PLP
+
+  _skip:
+  end
+
+end

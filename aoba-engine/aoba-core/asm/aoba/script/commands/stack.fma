@@ -1,0 +1,122 @@
+module Aoba::Script
+
+  command Opcode::PUSH8_IMMEDIATE8, :push8_immediate8 do
+    read_current_script_value
+    INY
+    LDX   dp(stack_pointer)
+    STA   0,X
+    INC   dp(stack_pointer)
+  end
+
+  command Opcode::PUSH16_IMMEDIATE8, :push16_immediate8 do
+    read_current_script_value
+    INY
+    AND   dp(x00FF)
+    LDX   dp(stack_pointer)
+    STA   0,X
+    INC   dp(stack_pointer)
+    INC   dp(stack_pointer)
+  end
+
+  command Opcode::PUSH16_IMMEDIATE16, :push16_immediate16 do
+    read_current_script_value
+    INY
+    INY
+    LDX   dp(stack_pointer)
+    STA   0,X
+    INC   dp(stack_pointer)
+    INC   dp(stack_pointer)
+  end
+
+  command Opcode::PUSH24_IMMEDIATE8, :push24_immediate8 do
+    NOP
+    Debug.BRK
+    NOP
+    NOP
+  end
+
+  command Opcode::PUSH24_IMMEDIATE16, :push24_immediate16 do
+    NOP
+    Debug.BRK
+    NOP
+    NOP
+  end
+
+  command Opcode::PUSH24_IMMEDIATE24, :push24_immediate24 do
+    NOP
+    Debug.BRK
+    NOP
+    NOP
+  end
+
+  command Opcode::PUSH32_IMMEDIATE32, :push32_immediate32 do
+    NOP
+    Debug.BRK
+    NOP
+    NOP
+  end
+
+  command Opcode::PHC0, :phc do
+    LDA   dp(register_c0)
+    LDX   dp(stack_pointer)
+    STA   0,X
+    INC   dp(stack_pointer)
+    INC   dp(stack_pointer)
+  end
+
+  command Opcode::PHA8, :pha8 do
+    LDA   dp(register_a)
+    LDX   dp(stack_pointer)
+    STA   0, X
+    INC   dp(stack_pointer)
+  end
+
+  command Opcode::PHA16, :pha16 do
+    LDA   dp(register_a)
+    LDX   dp(stack_pointer)
+    STA   0,X
+    INC   dp(stack_pointer)
+    INC   dp(stack_pointer)
+  end
+
+  command Opcode::PLC0, :plc do
+    LDX   dp(stack_pointer)
+    DEX
+    DEX
+    STX   dp(stack_pointer)
+    LDA   0,X
+    STA   dp(register_c0)
+  end
+
+  command Opcode::PLA8, :pla8 do
+    DEC   dp(stack_pointer)
+    LDX   dp(stack_pointer)
+    LDA   0,X
+    AND   dp(x00FF)
+    STA   dp(register_a)
+    STZ   dp(register_a + 2)
+  end
+
+  command Opcode::PLA16, :pla16 do
+    DEC   dp(stack_pointer)
+    DEC   dp(stack_pointer)
+    LDX   dp(stack_pointer)
+    LDA   0,X
+    STA   dp(register_a)
+    STZ   dp(register_a + 2)
+  end
+
+  command Opcode::PLA32, :pla32 do
+    LDX   dp(stack_pointer)
+    DEX
+    DEX
+    LDA   0,X
+    STA   dp(register_a)
+    DEX
+    DEX
+    LDA   0,X
+    STA   dp(register_a) + 2
+    STX   dp(stack_pointer)
+  end
+
+end

@@ -1,0 +1,150 @@
+module Game::Scene::StageSelect::Control
+
+  locate_at bank: CUSTOM_ROM_BANK
+
+  ;; The thread RAM
+  scope :RAM, in: ::Memory::ThreadRAM
+
+  ;; The event RAM
+  scope :ActionRAM, in: RAM, shared: true
+
+  ;; Temporary variable
+  declare :_calc0, as: :uint32, in: RAM
+  
+  ;; Event listener
+  declare :gamepad_listener, as: :uint16, in: RAM
+
+
+  ;; Controls thread
+  Thread = Aoba::Thread::Builder.create "StageControls" do
+    locate_at bank: CUSTOM_ROM_BANK
+    priority LEVEL_CONTROL_PRIORITY
+
+    enable_script_support "StageSelect"
+
+    use_dp_ram RAM
+    use_temporary _calc0
+
+    load do
+      Aoba::MouseThread.allocate_and_queue
+      Load.load
+      Aoba::Thread.wait_for_thread Aoba::MouseThread.thread_id
+
+      Aoba::Mouse::Api.add_region 5*0, 24+27*0, 110, 22, Thread.thread_id, #MouseEventId, true, true, false, #0
+      Aoba::Mouse::Api.add_region 5*1, 24+27*1, 110, 22, Thread.thread_id, #MouseEventId, true, true, false, #1
+      Aoba::Mouse::Api.add_region 5*2, 24+27*2, 110, 22, Thread.thread_id, #MouseEventId, true, true, false, #2
+      Aoba::Mouse::Api.add_region 5*3, 24+27*3, 110, 22, Thread.thread_id, #MouseEventId, true, true, false, #3
+      Aoba::Mouse::Api.add_region 5*4, 24+27*4, 110, 22, Thread.thread_id, #MouseEventId, true, true, false, #4
+      Aoba::Mouse::Api.add_region 5*5, 24+27*5, 110, 22, Thread.thread_id, #MouseEventId, true, true, false, #5
+      Aoba::Mouse::Api.add_region 5*6, 24+27*6, 110, 22, Thread.thread_id, #MouseEventId, true, true, false, #-1
+
+      LDX   #Assets::Sprite::Cursor::ID
+      LDY   #Assets::Sprite::Cursor::PaletteID
+      JSL   Aoba::Mouse::Api.enable_mouse
+
+      Debug.access_8bit_through_16bit
+      LDA   Thread.thread_id
+      LDX   gamepad
+      LDY   #Aoba::Control::Key.bitmap(:up, :down, :b, :a, :start)
+      JSL   Aoba::Control.attach_new_listener_icb_long
+      STY   dp(gamepad_listener)
+
+      LDA   #1
+      STA   wait_before_confirm
+    end
+
+    unload do
+      Aoba::MouseThread.send_kill_request
+      Aoba::Thread.wait_for_unload Aoba::MouseThread.thread_id
+
+      LDX   gamepad
+      LDY   dp(gamepad_listener)
+      JSL   Aoba::Control.detach_and_free_listener_icb_long
+    end
+
+    after_unload do
+      LDA   level_to_load_address
+      BMI   _goto_special_stage
+
+      LDX   #__com_aobastudio_sureinstinct_stageselect_startlevel.bank
+      LDA   #__com_aobastudio_sureinstinct_stageselect_startlevel
+      JSL   Aoba::Scene::Api.execute_script_long
+      BRA   _rts
+
+    _goto_special_stage:
+      LDA   selected_stage
+      BMI   _goto_feedback
+
+    _goto_challenge:
+      LDX   #__com_aobastudio_sureinstinct_stageselect_challenge.bank
+      LDA   #__com_aobastudio_sureinstinct_stageselect_challenge
+      JSL   Aoba::Scene::Api.execute_script_long
+      BRA   _rts
+
+    _goto_feedback:
+      LDX   #__com_aobastudio_sureinstinct_stageselect_feedback.bank
+      LDA   #__com_aobastudio_sureinstinct_stageselect_feedback
+      JSL   Aoba::Scene::Api.execute_script_long
+
+    _rts:
+    end
+
+    on :keydown do
+      LDA   Y[:keys]
+      BIT   #Aoba::Control::Key.KEY_UP
+      BZE   _no_up
+      LDA   selected_stage
+      DEC   A
+      Load.set_selected_stage
+      BRA   _rts
+
+    _no_up:
+      BIT   #Aoba::Control::Key.KEY_DOWN
+      BZE   _no_down
+      LDA   selected_stage
+      INC   A
+      Load.set_selected_stage
+      BRA   _rts
+
+    _no_down:
+      BIT   #Aoba::Control::Key.bitmap(:b, :a, :start)
+      BZE   _no_start
+
+      LDA   wait_before_confirm
+      BNZ   _no_start
+      JMP   Load.start_level
+    
+    _no_start:
+  
+    _rts:
+    end
+  end
+
+  MouseEventId = Thread.event_list.create "OnMouseEvent" do
+    Y.is_a! Aoba::Mouse::RegionEvent
+    LDA   Y[:userdata]
+    AND   #$FF
+    CMP   #$FF
+    BEQ   _feedback
+    CMP   num_stages_available
+    BGE   _rts
+
+  _ok:
+    PHY
+    Load.set_selected_stage
+    PLY
+    
+    LDA   Y[:flags]
+    BIT   #Aoba::Mouse::RegionFlag::MOUSEDOWN
+    BZE   _rts
+
+    Load.start_level
+    BRA   _rts
+
+  _feedback:
+    LDA   #$FFFF
+    BRA   _ok
+
+  _rts:
+  end
+end

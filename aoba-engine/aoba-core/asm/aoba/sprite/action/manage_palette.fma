@@ -1,0 +1,275 @@
+module Aoba::Sprite::Action::ManagePalette
+
+  ;; Usage counter per slot index
+  declare :slot_usage_counter, as: :uint8, in: ::Memory::VariableRAM, length: NUM_SPRITE_PALETTE_SLOTS
+
+  ;; Usage counter per slot index
+  declare :slot_palette, as: :uint16, in: ::Memory::VariableRAM, length: NUM_SPRITE_PALETTE_SLOTS
+
+  ;; True, if the sprite palettes need to be updated
+  declare :slot_needs_update, as: :uint8, in: RAM
+
+  ;; Allocates a slot
+  ;;
+  ;; @param Y palette ID
+  ;; @return X slot index * 2
+  ;; @return C set if no slot is free
+  def allocate_slot
+    Thread.assert_thread thread_id
+    CPU.set A: 8
+
+    LDX   #NUM_SPRITE_PALETTE_SLOTS - 1
+  _loop:
+    LDA   slot_usage_counter, X
+    BZE   _found_free_slot
+    DEX
+    BPL   _loop
+
+  _no_free_slot_found:
+    SEC
+    RTS
+
+  _found_free_slot:
+    INC   dp(slot_needs_update)
+    CPU.set A: 16
+    TXA
+    ASL   A
+    TAX
+    TYA
+    STA   Aoba::Palette.requested_sprite_palette_ids, X
+    CLC
+  end
+
+  ;; Finds a slot with an existing palette
+  ;;
+  ;; @param A palette ID
+  ;; @return X slot index * 2
+  ;; @return Y slot index
+  ;; @return C set if not slot found
+  def find_slot_with_palette
+    Thread.assert_thread thread_id
+
+    LDX   #NUM_SPRITE_PALETTE_SLOTS * 2 - 2
+  _loop:
+    CMP   slot_palette, X
+    BEQ   _found_slot
+  _resume_find_slot:
+    DEX
+    DEX
+    BPL   _loop
+  _no_slot_found:
+    SEC
+    RTS
+
+  _resume_find_slot_with_PLA:
+    PLA
+    DEX
+    DEX
+    BPL   _loop
+  _no_slot_found_with_PLA:
+    SEC
+    RTS
+
+  _found_slot:
+    PHA
+    TXA
+    LSR   A
+    TAY
+    CPU.set A: 8
+    LDA   slot_usage_counter, Y
+    CPU.set A: 16
+    BZE   _resume_find_slot_with_PLA
+    PLA
+    CLC
+  end
+
+  ;; Allocates a slot for the sprite
+  ;;
+  ;; @param X Instance
+  def reallocate_sprite_slot
+    Thread.assert_thread thread_id
+    X.is_a! Instance
+
+    LDA   X[:renderable_flags]
+    BIT   #RenderableFlag::DEDICATED_PALETTE_SLOT
+    BZE   _use_shared_palette
+
+  _use_dedicated_palette:
+    LDA   X[:palette_slot_x2]
+    AND   #$FF
+    TAY
+    LDA   X[:palette_id]
+    STA   Aoba::Palette.requested_sprite_palette_ids, Y
+    send_palette_thread_event
+    LDX   dp(current_sprite)
+    RTS
+
+  _use_shared_palette:
+    fatal_error "reallocate_sprite_slot with shared palette"
+  end
+
+  ;; Frees the sprite slot
+  ;;
+  ;; @param X Instance
+  def free_sprite_slot
+    Thread.assert_thread thread_id
+    X.is_a! Instance
+
+    LDA   X[:renderable_flags]
+    BIT   #RenderableFlag::DEDICATED_PALETTE_SLOT
+    BZE   _use_shared_palette
+
+  _use_dedicated_palette:
+    LDA   X[:palette_slot_x2]
+    AND   #$FF
+    TAY
+    LDA   #0
+    STA   slot_palette, Y
+    TYA
+    LSR   A
+    TAY
+    CPU.set A: 8
+    LDA   #0
+    STA   slot_usage_counter, Y
+    CPU.set A: 16
+    RTS
+
+    ;; ---
+
+  _use_shared_palette:
+    LDA   X[:palette_slot_x2]
+    AND   #$FF
+    LSR   A
+    TAY
+    CPU.set A: 8
+    LDA   slot_usage_counter, Y
+    DEC   A
+    STA   slot_usage_counter, Y
+    CPU.set A: 16
+    BNZ   _rts
+
+    TYA
+    ASL   A
+    TAY
+    LDA   #0
+    STA   slot_palette, Y
+
+  _rts:
+  end
+
+  ;; Allocates a slot for the sprite
+  ;;
+  ;; @param X Instance
+  def allocate_sprite_slot
+    Thread.assert_thread thread_id
+    X.is_a! Instance
+
+    LDA   X[:renderable_flags]
+    BIT   #RenderableFlag::DEDICATED_PALETTE_SLOT
+    BZE   _use_shared_palette
+
+    ;; The palette should NOT be shared
+  _use_dedicated_palette:
+    LDY   X[:palette_id]
+    PHX
+    allocate_slot
+    BCC   _assign_palette_slot
+
+    ;; Error
+  _failed_to_allocate:
+    ; PLX
+    fatal_error "palette slot failed to allocate"
+
+    ;; The palette CAN be shared
+  _use_shared_palette:
+    LDA   X[:palette_id]
+    PHX
+    find_slot_with_palette
+    BCC   _reuse_shared_palette_slot
+    PLX
+    BRA   _use_dedicated_palette
+
+  _assign_palette_slot:
+    ; X = palette_slot_x2
+    ; Y = palette_slot
+    TXA
+    LSR   A
+    TAY
+
+  _reuse_shared_palette_slot:
+    CPU.set A: 8
+    TXA
+    PLX
+    STA   X[:palette_slot_x2]
+    LDA   X[:renderable_flags]
+    AND   #$F1
+    ORA   X[:palette_slot_x2]
+    STA   X[:renderable_flags]
+    
+    ;; Sets the slot usage
+    LDA   slot_usage_counter, Y
+    INC   A
+    STA   slot_usage_counter, Y
+
+    ;; Sets the palette pointer
+    LDA   #0
+    XBA
+    LDA   X[:palette_slot_x2]
+    TAY
+    LDA   X[:renderable_flags]
+    BIT   #RenderableFlag::DEDICATED_PALETTE_SLOT
+    CPU.set A: 16
+    BZE   _set_real_palette_pointer
+
+  _set_fake_palette_pointer:
+    LDA   #$FFFF
+    STA   slot_palette, Y
+    RTS ;;;;;;; EARLY RETURN
+
+  _set_real_palette_pointer:
+    LDA   X[:palette_id]
+    STA   slot_palette, Y
+  end
+
+  ;; Sends a message to the palette thread
+  def send_palette_thread_event
+    Thread.assert_thread thread_id
+
+    CPU.set A: 8
+    LDA   #Aoba::Thread::Event.USEREVENT_ID
+    JSL   Aoba::Thread::Event.allocate_icb_long
+    X.is_a! Aoba::Palette::Event::UpdateSpritePalettes::Event
+    LDA   #Aoba::Palette::Event::UpdateSpritePalettes::ID
+    STA   X[:event_id]
+    LDA   Aoba::Palette.thread_id
+    JSL   Aoba::Thread.send_event_icb_long
+    STZ   dp(slot_needs_update)
+    CPU.set A: 16
+  end
+
+  ;; Notifies the palette thread if necessary
+  macro _notify_palette_thread_if_necessary
+    Debug.access_8bit_through_16bit
+    LDA   dp(slot_needs_update)
+    AND   dp(x00FF)
+    BZE   _no_notificate
+    send_palette_thread_event
+  _no_notificate:
+  end
+
+
+  ::Aoba::Event.on :sprite_initialize_ram8 do
+    STZ   dp(slot_needs_update)
+  end
+
+  ::Aoba::Event.on :sprite_initialize_ram16 do
+    STZ   slot_usage_counter
+    STZ   slot_usage_counter + 2
+    STZ   slot_usage_counter + 4
+    STZ   slot_usage_counter + 6
+    NUM_SPRITE_PALETTE_SLOTS.times do |i|
+      STZ   slot_palette + i + i
+    end
+  end
+
+end

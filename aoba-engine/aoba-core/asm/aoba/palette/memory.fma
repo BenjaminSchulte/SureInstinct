@@ -1,0 +1,159 @@
+module Aoba::Palette
+
+  locate_at bank: PALETTE_ROM_BANK
+
+  ;; Palette effect slots
+  class PaletteEffectSlot
+    ;; Pointer to the timer
+    declare :timer, as: :uint16
+
+    ;; The effect ID
+    declare :effect_id, as: :uint8
+
+    ;; The palette row
+    declare :palette, as: :uint8
+
+    ;; The column
+    declare :color_index, as: :uint8
+
+    ;; The size
+    declare :size, as: :uint8
+  end
+
+  module PaletteFlag
+    ;; Whether a fade is currently active
+    IS_FADING = $01
+
+    ;; Whether the palette is currently restoring
+    IS_RESTORING = $02
+  end
+  
+
+  ;; The thread RAM
+  scope :RAM, in: ::Memory::ThreadRAM
+
+  ;; The static RAM
+  scope :StaticRAM, in: ::Memory::FixedRAM
+  
+  ;; The thread ID for the tileset thread
+  declare :thread_id, as: :uint8, in: ::Memory::VariableRAM
+
+  ;; Temporary RAM for events
+  scope :TempRAM, in: RAM, shared: true
+
+  ;; RAM for 0x00FF 
+  declare :x00FF, as: :uint16, in: RAM
+
+  ;; The first CGRAM index that changed
+  ;declare :first_modified_color, as: :uint16, in: RAM
+
+  ;; The last CGRAM index that changed
+  ;last_modified_color = first_modified_color + 1
+
+  ;; Calculation register
+  declare :_calc0, as: :uint32, in: RAM
+
+  ;; The fade stimer
+  declare :fade_timer, as: :uint16, in: RAM
+
+  ;; The copy of the CGRAM
+  declare :cgram, as: :uint16, in: StaticRAM, length: 256 + 16
+
+  ;; Palette effect relevant registers
+  declare :cgram_red, as: :uint16, in: StaticRAM, length: 256 + 16
+
+  ;; Palette effect relevant registers
+  declare :cgram_green, as: :uint16, in: StaticRAM, length: 256 + 16
+
+  ;; Palette effect relevant registers
+  declare :cgram_blue, as: :uint16, in: StaticRAM, length: 256 + 16
+
+  ;; The original colors before fading a palette
+  declare :original_cgram, as: :uint16, in: StaticRAM, length: 256
+
+  ;; Palette effect relevant registers
+  declare :cgram_red_calc, as: :uint16, in: StaticRAM, length: 256
+
+  ;; Palette effect relevant registers
+  declare :cgram_green_calc, as: :uint16, in: StaticRAM, length: 256
+
+  ;; Palette effect relevant registers
+  declare :cgram_blue_calc, as: :uint16, in: StaticRAM, length: 256
+
+  ;; Steps for a palette calculation in total
+  declare :num_palette_calc_steps, as: :uint8, in: StaticRAM, length: 16
+
+  ;; Current step in palette calculation
+  declare :current_palette_step, as: :uint8, in: StaticRAM, length: 16
+
+  ;; Delay for each shift step
+  declare :palette_calculation_delay, as: :uint8, in: StaticRAM, length: 16
+
+  ;; Delay for each shift step
+  declare :palette_calculation_delay_counter, as: :uint8, in: StaticRAM, length: 16
+
+  ;; List of fading palettes
+  declare :fading_palette_bitmask, as: :uint16, in: StaticRAM
+
+  ;; Bitmask of palettes which have an active fade
+  declare :palette_flags, as: :uint8, in: StaticRAM, length: 16 + 1
+
+  ;; The current tilemap palette
+  declare :tilemap_palette_address, as: :uint16, in: StaticRAM
+
+  ;; List of all palette effects
+  declare :tilemap_effects, as: PaletteEffectSlot, size: NUM_TILEMAP_PALETTE_EFFECTS, in: StaticRAM
+
+  ;; Whether the sprite palettes have been modified
+  declare :sprite_palette_is_modified, as: :uint8, in: ::Memory::VariableRAM
+
+  ;; Sprite palette index
+  declare :loaded_sprite_palette_ids, as: :uint16, in: ::Memory::VariableRAM, length: 8
+
+  ;; Sprite palette index
+  declare :requested_sprite_palette_ids, as: :uint16, in: ::Memory::VariableRAM, length: 8
+
+  ;; Shift RAM
+  declare :shift_code, as: :uint8, in: StaticRAM, length: 7
+
+  ;; Initializes the RAM
+  ;; @ignore-thread-safety
+  def initialize_ram
+    LDA   #$FF
+    STA   dp(x00FF)
+    STZ   dp(fade_timer)
+
+    LDX   #16 - 2
+  _loop_sprite_palette_ids:
+    STZ   loaded_sprite_palette_ids, X
+    STZ   requested_sprite_palette_ids, X
+    DEX
+    DEX
+    BPL   _loop_sprite_palette_ids
+
+    CPU.set A: 8
+    STZ   sprite_palette_is_modified
+    CPU.set A: 16
+
+    CPU.with_bank FIXED_RAM_BANK, from_bank: VARIABLE_RAM_BANK do
+      NUM_TILEMAP_PALETTE_EFFECTS.times do |i|
+        STZ   tilemap_effects + i * PaletteEffectSlot.size
+      end
+
+      STZ   fading_palette_bitmask
+      8.times do |i|
+        STZ   palette_flags + i * 2
+      end
+      STZ   palette_flags + 15
+
+      LDA   #$4A4A
+      STA   shift_code
+      STA   shift_code + 2
+      STA   shift_code + 4
+
+      LDA   #$FFFF
+      STA   tilemap_palette_address
+    end
+  end
+
+end

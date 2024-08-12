@@ -1,0 +1,24 @@
+all:
+  properties: 
+    com.aobastudio.snes.debug_enabled: false
+    com.aobastudio.aoba.core.game_code: SUIN
+    com.aobastudio.aoba.core.game_title: Sure Instinct
+
+pal:
+  extends: all
+  arch: pal
+  properties:
+    com.aobastudio.aobabuild.gamma_correction: 1
+    com.aobastudio.aoba.core.destination: germany
+
+ntsc:
+  extends: all
+  arch: ntsc
+  properties:
+    com.aobastudio.aobabuild.gamma_correction: 1
+    com.aobastudio.aoba.core.destination: japan
+
+debug_ntsc:
+  extends: ntsc
+  properties: 
+    com.aobastudio.snes.debug_enabled: true

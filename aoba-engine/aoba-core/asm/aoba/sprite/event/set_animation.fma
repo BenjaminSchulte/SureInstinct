@@ -1,0 +1,53 @@
+module Aoba::Sprite::Event::SetAnimation
+
+  ;; The event
+  class Event < Base 
+    ;; The config address
+    declare :sprite_id, as: :uint8
+
+    ;; The new animation
+    declare :animation_id, as: :uint8
+
+    ;; The palette index 
+    declare :palette_index_id, as: :uint8
+    ;;;; NOT SUPPORTED YET
+  end
+
+  ;; Temporary RAM
+  scope :TempRAM, in: ActionRAM
+
+  ;; Creates the sprite
+  ;; @ignore-thread-safety
+  ID = List.create "SetAnimation" do
+    Y.is_a! Event
+    X.is_a! Instance
+
+    LDA   Y[:sprite_id]
+    Action::ManageSprite.find_sprite_by_sprite_id
+    CPU.set A: 8
+
+    LDA   X[:new_move_angle]
+    STA   X[:move_angle]
+    STZ   X[:queued_animation_id]
+    LDA   Y[:animation_id]
+    CMP   X[:animation_id]
+    BNE   _is_new_animation
+    
+  _test_direction_change:
+    LDA   X[:direction]
+    CMP   X[:new_direction]
+    BEQ   _only_update_movement
+
+  _is_new_animation:
+    LDA   X[:new_direction]
+    STA   X[:direction]
+    LDA   Y[:animation_id]
+    CPU.set A: 16
+    JMP   Action::ManageSprite.assign_animation_and_reset_movement
+
+  _only_update_movement:
+    CPU.set A: 16
+    JMP   Action::MoveSprite.set_simple_movespeed_from_angle_and_speed
+  end
+
+end

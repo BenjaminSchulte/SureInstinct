@@ -1,0 +1,148 @@
+module Aoba::Compression::TilesetIndex
+
+  ;; Reads the header
+  macro _read_from_source_address
+    LDA   State.offset_of(:source_address).indirect.long
+  end
+
+  ;; Write to target address
+  macro _write_to_target_address_Y
+    STA   State.offset_of(:target_address).indirect.long, Y
+  end
+
+  ;; Execute decompression
+  ;; @ignore-thread-safety
+  @register A: 16, XY: 16
+  def execute_long
+    PHD
+    TCD
+
+    ; Stores data size
+    _read_from_source_address
+    STA   dp(State.offset_of(:size))
+
+    CPU.set A: 8
+
+    ; Sets up DB/X to source address
+    PHB
+    LDA   dp(State.offset_of(:source_address)) + 2
+    PHA
+    PLB
+    LDX   dp(State.offset_of(:source_address))
+    INX
+    INX
+    LDY   #0
+
+    ; Initialize RAM
+    STZ   dp(State.offset_of(:high_last_byte))
+    STZ   dp(State.offset_of(:low_last_byte))
+
+    decompress_loop
+
+    PLB
+    CPU.set A: 16
+    PLD
+    RTL
+  end
+
+  ;; Loads the next low byte
+  ;; @ignore-thread-safety
+  def load_low_byte
+    LDA   $0, X
+    AND   #$F
+    STA   dp(State.offset_of(:low_num_new))
+    LDA   $0, X
+    LSR   A
+    LSR   A
+    LSR   A
+    LSR   A
+    STA   dp(State.offset_of(:low_num_inc))
+    INX
+  end
+
+  ;; Loads the next high byte
+  ;; @ignore-thread-safety
+  def load_high_byte
+    LDA   $0, X
+    AND   #$F
+    STA   dp(State.offset_of(:high_num_new))
+    LDA   $0, X
+    LSR   A
+    LSR   A
+    LSR   A
+    LSR   A
+    STA   dp(State.offset_of(:high_num_copy))
+    INX
+  end
+
+  ;; Decompression loop
+  macro decompress_loop
+    load_low_byte
+    load_high_byte
+
+    ; Is there any NEW bytes left to write?  
+  _low_loop:
+    DEC   dp(State.offset_of(:low_num_new))
+    BMI   _low_inc
+
+    ; Copy byte from source
+  _low_new:
+    LDA   $0, X
+    INX
+    _write_to_target_address_Y
+    STA   dp(State.offset_of(:low_last_byte))
+    INY
+    BRA   _high_loop
+
+    ; Is there any REUSED bytes left to write?
+  _low_inc:
+    DEC   dp(State.offset_of(:low_num_inc))
+    BPL   _low_write_reused
+    load_low_byte
+    BRA   _low_loop
+
+    ; Reuse old byte
+  _low_write_reused:
+    INC   dp(State.offset_of(:low_last_byte))
+    LDA   dp(State.offset_of(:low_last_byte))
+    _write_to_target_address_Y
+    INY
+
+    ; Is there any NEW bytes left to write?
+  _high_loop:
+    DEC   dp(State.offset_of(:high_num_new))
+    BMI   _high_copy
+
+    ; Copy byte from source
+  _high_new:
+    LDA   $0, X
+    INX
+    _write_to_target_address_Y
+    STA   dp(State.offset_of(:high_last_byte))
+    INY
+    BRA   _test_size
+
+    ; Is there any REUSED bytes left to write?
+  _high_copy:
+    DEC   dp(State.offset_of(:high_num_copy))
+    BPL   _high_write_reused
+    load_high_byte
+    BRA   _high_loop
+
+    ; Reuse old byte
+  _high_write_reused:
+    LDA   dp(State.offset_of(:high_last_byte))
+    _write_to_target_address_Y
+    INY
+
+    ; Check whether there is data left to write
+  _test_size:
+    DEC   dp(State.offset_of(:size))
+    BNZ   _low_loop
+    DEC   dp(State.offset_of(:size)) + 1
+    BPL   _low_loop
+
+  _end_of_loop:
+  end
+
+end

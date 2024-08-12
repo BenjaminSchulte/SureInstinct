@@ -1,0 +1,5 @@
+Aoba::Script::ActionRAM.include Aoba::Dialog::ScriptTempRAM
+
+require "dialog"
+require "configure"
+require "face"

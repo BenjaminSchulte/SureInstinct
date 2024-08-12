@@ -1,0 +1,383 @@
+module Aoba::Script
+
+  command Opcode::BRK, :brk do
+    fatal_error "Invalid Script Command"
+  end
+
+  command Opcode::EXIT, :exit do
+    LDA   #Flag::RETURN
+    Debug.access_8bit_through_16bit
+    TSB   dp(flags)
+  end
+
+  command Opcode::RTS, :rts do
+    LDA   dp(stack_pointer)
+    DEC
+    DEC
+    DEC
+    STA   dp(stack_pointer)
+    TAX
+    LDA   0, X
+    STA   dp(script_pointer)
+    LDA   1, X
+    STA   dp(script_pointer) + 1
+    LDY   #0
+  end
+
+  command Opcode::SWITCH, :switch do
+    read_current_script_value
+    INY
+    AND   dp(x00FF)
+    BZE   _otherwise
+
+    TAX
+    LDA   dp(register_a)
+  _loop:
+    CMP   script_pointer.long.indirect, Y
+    BEQ   _match
+    INY
+    INY
+    INY
+    INY
+    DEX
+    BNZ   _loop
+    BRA   _otherwise
+  
+  _match:
+    INY
+    INY
+  _otherwise:
+    read_current_script_value
+    STA   dp(script_pointer)
+    LDY   #0
+  end
+  
+  command Opcode::JSR, :jsr do
+    LDX   dp(stack_pointer)
+    TYA
+    SEC
+    ADC   dp(script_pointer)
+    INC   A
+    STA   0, X
+    CPU.set A: 8
+    LDA   dp(script_pointer + 2)
+    STA   2, X
+    CPU.set A: 16
+    INX
+    INX
+    INX
+    STX   dp(stack_pointer)
+    Debug.BRK
+    read_current_script_value
+    STA   dp(script_pointer)
+    INY
+    INY
+    CPU.set A: 8
+    read_current_script_value
+    STA   dp(script_pointer + 2)
+    CPU.set A: 16
+    LDY   #0
+  end
+
+  def _jsr_short
+    LDX   dp(stack_pointer)
+    TYA
+    SEC
+    ADC   dp(script_pointer)
+    INC   A
+    STA   0, X
+    CPU.set A: 8
+    LDA   dp(script_pointer + 2)
+    STA   2, X
+    CPU.set A: 16
+    INX
+    INX
+    INX
+    STX   dp(stack_pointer)
+    read_current_script_value
+    STA   dp(script_pointer)
+    LDY   #0
+  end
+
+  command Opcode::CZE, :cze do
+    LDA   dp(register_a)
+    ORA   dp(register_a + 2)
+    BNZ   _skip
+    JMP   _jsr_short
+  _skip:
+    INY
+    INY
+  end
+
+  command Opcode::BZE, :bze do
+    LDA   dp(register_a)
+    ORA   dp(register_a + 2)
+    BNZ   _skip
+    read_current_script_value
+    STA   dp(script_pointer)
+    LDY   #0
+    RTS
+  _skip:
+    INY
+    INY
+  end
+
+  command Opcode::CNZ, :cnz do
+    LDA   dp(register_a)
+    ORA   dp(register_a + 2)
+    BZE   _skip
+    JMP   _jsr_short
+  _skip:
+    INY
+    INY
+  end
+
+  command Opcode::BNZ, :bnz do
+    LDA   dp(register_a)
+    ORA   dp(register_a + 2)
+    BZE   _skip
+    read_current_script_value
+    STA   dp(script_pointer)
+    LDY   #0
+    RTS
+  _skip:
+    INY
+    INY
+  end
+
+  command Opcode::BLT, :blt do
+    LDX   dp(stack_pointer)
+    DEX
+    DEX
+    STX   dp(stack_pointer)
+
+    LDA   dp(register_a + 2)
+    BNZ   _branch
+    LDA   0, X
+    CMP   dp(register_a)
+    BLT   _skip
+
+  _branch:
+    read_current_script_value
+    STA   dp(script_pointer)
+    LDY   #0
+    RTS
+
+  _skip:
+    INY
+    INY
+  end
+
+  command Opcode::BGE, :bge do
+    LDX   dp(stack_pointer)
+    DEX
+    DEX
+    STX   dp(stack_pointer)
+
+    LDA   dp(register_a + 2)
+    BNZ   _branch
+    LDA   0, X
+    CMP   dp(register_a)
+    BGE   _skip
+
+  _branch:
+    read_current_script_value
+    STA   dp(script_pointer)
+    LDY   #0
+    RTS
+
+  _skip:
+    INY
+    INY
+  end
+
+  command Opcode::BBS, :bbs do
+    read_current_script_value
+    INY
+    AND   dp(x00FF)
+    ASL   A
+    TAX
+    LDA   PowerOfTwo16.long, X
+    AND   dp(register_a)
+    BZE   _skip
+
+  _branch:
+    read_current_script_value
+    STA   dp(script_pointer)
+    LDY   #0
+    RTS
+
+  _skip:
+    INY
+    INY
+  end
+
+  command Opcode::BBC, :bbc do
+    read_current_script_value
+    INY
+    AND   dp(x00FF)
+    ASL   A
+    TAX
+    LDA   PowerOfTwo16.long, X
+    AND   dp(register_a)
+    BNZ   _skip
+
+  _branch:
+    read_current_script_value
+    STA   dp(script_pointer)
+    LDY   #0
+    RTS
+
+  _skip:
+    INY
+    INY
+  end
+
+  command Opcode::BLT_IMMEDIATE, :blt_immediate do
+    read_current_script_value
+    STA   dp(calc0)
+    INY
+    INY
+
+    LDA   dp(register_a + 2)
+    BNZ   _branch
+    LDA   dp(calc0)
+    CMP   dp(register_a)
+    BLT   _skip
+
+  _branch:
+    read_current_script_value
+    STA   dp(script_pointer)
+    LDY   #0
+    RTS
+
+  _skip:
+    INY
+    INY
+  end
+
+  command Opcode::BGE_IMMEDIATE, :bge_immediate do
+    read_current_script_value
+    STA   dp(calc0)
+    INY
+    INY
+
+    LDA   dp(register_a + 2)
+    BNZ   _branch
+    LDA   dp(calc0)
+    CMP   dp(register_a)
+    BGE   _skip
+
+  _branch:
+    read_current_script_value
+    STA   dp(script_pointer)
+    LDY   #0
+    RTS
+
+  _skip:
+    INY
+    INY
+  end
+
+  command Opcode::INVOKE, :invoke do
+    PEA   #(SCRIPT_ROM_BANK << 8) | (((_return_after_action - 1) >> 8) & $FF)
+    LDA   dp(current_command)
+    AND   #$F
+    ORA   #(((_return_after_action - 1) << 8) & $FF00) | (SCRIPT_ACTION_FIRST_BANK)
+    PHA
+    read_current_script_value
+    PHA
+    INY
+    INY
+    update_script_pointer
+    RTL
+
+  _return_after_action:
+    LDY   #0
+  end
+  command_alias Opcode::INVOKE + $1, :invoke
+  command_alias Opcode::INVOKE + $2, :invoke
+  command_alias Opcode::INVOKE + $3, :invoke
+  command_alias Opcode::INVOKE + $4, :invoke
+  command_alias Opcode::INVOKE + $5, :invoke
+  command_alias Opcode::INVOKE + $6, :invoke
+  command_alias Opcode::INVOKE + $7, :invoke
+  command_alias Opcode::INVOKE + $8, :invoke
+  command_alias Opcode::INVOKE + $9, :invoke
+  command_alias Opcode::INVOKE + $A, :invoke
+  command_alias Opcode::INVOKE + $B, :invoke
+  command_alias Opcode::INVOKE + $C, :invoke
+  command_alias Opcode::INVOKE + $D, :invoke
+  command_alias Opcode::INVOKE + $E, :invoke
+  command_alias Opcode::INVOKE + $F, :invoke
+
+  command Opcode::JSR, :jsr do
+    read_current_script_value
+    INY
+    INY
+    STA   dp(calc0)
+    TYA
+    CLC
+    ADC   dp(script_pointer)
+    LDX   dp(stack_pointer)
+    STA   0, X
+    CPU.set A: 8
+    LDA   dp(script_pointer + 2)
+    STA   2, X
+    LDA   dp(current_command)
+    AND   #$F
+    ORA   #CUSTOM_SCRIPT_FIRST_BANK
+    STA   dp(script_pointer + 2)
+    CPU.set A: 16
+    LDA   dp(calc0)
+    STA   dp(script_pointer)
+    INX
+    INX
+    INX
+    STX   dp(stack_pointer)
+    LDY   #0
+  end
+  command_alias Opcode::JSR + $1, :jsr
+  command_alias Opcode::JSR + $2, :jsr
+  command_alias Opcode::JSR + $3, :jsr
+  command_alias Opcode::JSR + $4, :jsr
+  command_alias Opcode::JSR + $5, :jsr
+  command_alias Opcode::JSR + $6, :jsr
+  command_alias Opcode::JSR + $7, :jsr
+  command_alias Opcode::JSR + $8, :jsr
+  command_alias Opcode::JSR + $9, :jsr
+  command_alias Opcode::JSR + $A, :jsr
+  command_alias Opcode::JSR + $B, :jsr
+  command_alias Opcode::JSR + $C, :jsr
+  command_alias Opcode::JSR + $D, :jsr
+  command_alias Opcode::JSR + $E, :jsr
+  command_alias Opcode::JSR + $F, :jsr
+
+  command Opcode::JMP, :jmp do
+    read_current_script_value
+    STA   dp(script_pointer)
+    CPU.set A: 8
+    LDA   dp(current_command)
+    AND   #$F
+    ORA   #CUSTOM_SCRIPT_FIRST_BANK
+    STA   dp(script_pointer + 2)
+    CPU.set A: 16
+    LDY   #0
+  end
+  command_alias Opcode::JMP + $1, :jmp
+  command_alias Opcode::JMP + $2, :jmp
+  command_alias Opcode::JMP + $3, :jmp
+  command_alias Opcode::JMP + $4, :jmp
+  command_alias Opcode::JMP + $5, :jmp
+  command_alias Opcode::JMP + $6, :jmp
+  command_alias Opcode::JMP + $7, :jmp
+  command_alias Opcode::JMP + $8, :jmp
+  command_alias Opcode::JMP + $9, :jmp
+  command_alias Opcode::JMP + $A, :jmp
+  command_alias Opcode::JMP + $B, :jmp
+  command_alias Opcode::JMP + $C, :jmp
+  command_alias Opcode::JMP + $D, :jmp
+  command_alias Opcode::JMP + $E, :jmp
+  command_alias Opcode::JMP + $F, :jmp
+
+end

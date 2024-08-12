@@ -1,0 +1,25 @@
+module Aoba::Compression::SimplePalette
+
+  locate_at bank: COMPRESSION_SIMPLEPALETTE_ROM_BANK
+
+  class State
+    ;; The source address
+    declare :source_address, as: :uint24
+
+    ;; The target address
+    declare :target_address, as: :uint24
+
+    ;; Number of colors to decompress
+    declare :num_colors, as: :uint16
+
+    ;; Calc register
+    declare :calc0, as: :uint16
+
+    ;; Calc register
+    declare :current_value, as: :uint8
+
+    ;; Last color
+    declare :last_color, as: :uint16
+  end
+
+end

@@ -1,0 +1,59 @@
+module Audio
+
+  ;; Initializes the audio engine
+  def init
+    ; Reset the last missing direct page register to 0
+    MOVW  dp(Initialize.write_address), YA
+
+    ; Save some RAM by storing this register earlies
+    MOV   X, #SPC.DSP_DATA
+
+    ; Reset flags
+    MOV   dp(SPC.DSP_ADDR), #DSP.FLG
+    MOV   dp(SPC.DSP_DATA), #DSP.FLG_ECHO_DISABLE | DSP.FLG_RESET | DSP.FLG_MUTE
+
+    SET5  dp(DSP.flags)
+
+    ; Set values to zero
+    MOV   A, #0
+    MOV   dp(SPC.DSP_ADDR), #DSP.EON
+    MOV   indirect(X), A
+    MOV   dp(SPC.DSP_ADDR), #DSP.EVOL_L
+    MOV   indirect(X), A
+    MOV   dp(SPC.DSP_ADDR), #DSP.EVOL_R
+    MOV   indirect(X), A
+    MOV   dp(SPC.DSP_ADDR), #DSP.EFB
+    MOV   indirect(X), A
+    MOV   dp(SPC.DSP_ADDR), #DSP.MVOL_L
+    MOV   indirect(X), A
+    MOV   dp(SPC.DSP_ADDR), #DSP.MVOL_R
+    MOV   indirect(X), A
+    MOV   dp(SPC.DSP_ADDR), #DSP.PMON
+    MOV   indirect(X), A
+    MOV   dp(SPC.DSP_ADDR), #DSP.NON
+    MOV   indirect(X), A
+    MOV   dp(SPC.CONTROL), A
+    MOV   dp(SPC.TIMER0), A
+    MOV   dp(SPC.TIMER1), A
+    MOV   dp(SPC.TIMER2), A
+
+    ; Set the sample directory
+    MOV   dp(SPC.DSP_ADDR), #DSP.DIR
+    MOV   dp(SPC.DSP_DATA), #Sample.sample_directory >> 8
+
+    ; SPC flags
+    MOV   A, #SPC.CTRL_TIMER0 | SPC.CTRL_TIMER1
+    MOV   dp(SPC.control), A
+    MOV   dp(SPC.CONTROL), A
+
+    ; The last value we received on PORT0
+    MOV   A, #$00
+    MOV   dp(IPC.last_ipc_value), A
+    MOV   dp(SPC.PORT0), A
+
+    DEC   dp(Stream.stream_disabled_voices)
+
+    Command::Reset.reset_sample_index
+  end
+
+end

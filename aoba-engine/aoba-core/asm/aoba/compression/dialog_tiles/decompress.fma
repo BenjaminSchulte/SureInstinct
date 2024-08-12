@@ -1,0 +1,122 @@
+module Aoba::Compression::DialogTiles
+
+  ;; Execute decompression
+  ;;
+  ;; @param X source address
+  ;; @param Y write address
+  ;; @ignore-thread-safety
+  @register A: 16, XY: 16
+  def execute_icb_long
+    BANK = Aoba::Dialog::DIALOG_TILEMAP_ROM_BANK
+
+    PHD
+    TCD
+
+    LDA   BANK.as_bank.long, X
+    STA   dp(State.offset_of(:size))
+    INX
+    INX
+
+    STZ   dp(State.offset_of(:mode))
+    STZ   dp(State.offset_of(:repeat_times))
+
+  _loop_from_header:
+    ;; Decompresses the header
+    CPU.set A: 8
+    LDA   BANK.as_bank.long, X
+    AND   #$C0
+    STA   dp(State.offset_of(:mode) + 1)
+    LDA   BANK.as_bank.long, X
+    AND   #$3F
+    STA   dp(State.offset_of(:repeat_times))
+    CPU.set A: 16
+    INX
+
+    ;; Writes the tile to the target buffer
+    LDA   BANK.as_bank.long, X
+    INX
+    INX
+    CLC
+    ADC   dp(State.offset_of(:tile_index_offset))
+    STA   dp(State.offset_of(:current_tile))
+    STA   0, Y
+    INY
+    INY
+
+    ;; Test finished
+    DEC   dp(State.offset_of(:size))
+    BZE   _end_of_routine
+
+    ;; Test compression style
+    LDA   dp(State.offset_of(:repeat_times))
+    BZE   _loop_from_header
+
+  _resume_depending_on_header:
+    ;; Resumes depending on the header
+    LDA   dp(State.offset_of(:mode))
+    ASL   A
+    BCC   _mode_0x
+
+  _mode_1x:
+    BMI   _mode_11
+  _mode_10: ;; -2 mode
+    LDA   #-2
+    BRA   _copy_data
+
+  _mode_0x:
+    BMI   _mode_01
+  _mode_00: ;; copy mode
+    LDA   #0
+    BRA   _copy_data
+
+  _mode_01: ;; +2 mode
+    LDA   #2
+
+    ;; Repeats <repeat_times> a copy with an adjusted value of <A>
+  _copy_data:
+    STA   dp(State.offset_of(:mode))
+    LDA   dp(State.offset_of(:current_tile))
+  _loop_copy_data:
+    CLC
+    ADC   dp(State.offset_of(:mode))
+    STA   0, Y
+    INY
+    INY
+    DEC   dp(State.offset_of(:size))
+    DEC   dp(State.offset_of(:repeat_times))
+    BNZ   _loop_copy_data
+
+  _test_end_of_loop:
+    LDA   dp(State.offset_of(:size))
+    BNZ   _loop_from_header
+
+    ;; Finished decompression
+  _end_of_routine:
+    PLD
+    RTL
+
+  _mode_11: ;; Toggle mode +2 then -2 repeat
+    LDA   dp(State.offset_of(:current_tile))
+  _loop_toggle:
+    INC   A
+    INC   A
+    STA   0, Y
+    INY
+    INY
+    DEC   dp(State.offset_of(:size))
+    DEC   dp(State.offset_of(:repeat_times))
+    BZE   _test_end_of_loop
+    
+    DEC   A
+    DEC   A
+    STA   0, Y
+    INY
+    INY
+    DEC   dp(State.offset_of(:size))
+    DEC   dp(State.offset_of(:repeat_times))
+    BNZ   _loop_toggle
+    BRA    _test_end_of_loop
+  end
+
+end
+

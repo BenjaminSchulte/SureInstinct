@@ -1,0 +1,14 @@
+dark GIMP
+H  -11
+L  -35
+S  -20
+
+pause GIMP
+H  0
+L  -100
+S  -90
+
+2x pause
+H  0
+L  -50
+S  -50

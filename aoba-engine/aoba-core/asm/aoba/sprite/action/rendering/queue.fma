@@ -1,0 +1,114 @@
+module Aoba::Sprite::Action::Rendering
+
+  ;; Queues a sprite for changing the animation
+  ;;
+  ;; @param X Instance
+  def queue_sprite
+    PHP
+    SEI
+
+    LDY   animation_queue_first
+    CPY   animation_queue_last
+    BEQ   _is_new_record
+
+    TXA
+  _find_old_record_loop:
+    CMP   animation_queue, Y
+    BEQ   _skip_queue_record
+
+    PHA
+    TYA
+    INC   A
+    INC   A
+    AND   #(MAX_ANIMATION_QUEUE_SIZE*2).bitmask
+    TAY
+    PLA
+    CPY   animation_queue_last
+    BNE   _find_old_record_loop
+
+  _is_new_record:
+    ;LDY   animation_queue_last (is already set by previous code)
+    TXA
+    STA   animation_queue, Y
+    TYA
+    INC   A
+    INC   A
+    AND   #(MAX_ANIMATION_QUEUE_SIZE*2).bitmask
+    STA   animation_queue_last
+
+  _skip_queue_record:
+    PLP
+  end
+
+  ;; Unqueues a sprite
+  ;;
+  ;; @param X Instance
+  def unqueue_sprite
+    Thread.assert_thread thread_id
+
+    LDY   animation_queue_first
+    CPY   animation_queue_last
+    BEQ   _skip_unqueue
+
+  _find_old_record_loop:
+    TXA
+    CMP   animation_queue, Y
+    BEQ   _unqueue
+
+    PHA
+    TYA
+    INC   A
+    INC   A
+    AND   #(MAX_ANIMATION_QUEUE_SIZE*2).bitmask
+    TAY
+    PLA
+    CPY   animation_queue_last
+    BNE   _find_old_record_loop
+
+  _skip_unqueue:
+    RTS
+
+  _unqueue:
+    LDA   #0
+    STA   animation_queue, Y
+  end
+
+  ;; Iterated every frame
+  def on_timer
+    X.is_a! Instance
+    
+    CPU.set A: 8
+    ;; Tests if there is any animation running currently?
+    LDA   X[:animation_duration]
+    BZE   _test_queued_animation
+
+    ;; Delays until the next frame is executed
+    DEC   A
+    STA   X[:animation_duration]
+    BNZ   _skip_animation
+
+    ;; Queues the sprite for animation
+    CPU.set A: 16
+    queue_sprite
+    BRA   _skip_animation
+
+  _test_queued_animation:
+    A.pretend_size 8
+    LDA   X[:queued_animation_id]
+    BZE   _skip_animation
+    
+    LDA   X[:new_direction]
+    STA   X[:direction]
+    LDA   X[:new_move_angle]
+    STA   X[:move_angle]
+    LDA   X[:queued_animation_id]
+    STZ   X[:queued_animation_id]
+    DEC   A
+    CPU.set A: 16
+    ManageSprite.assign_animation_and_reset_movement
+
+  _skip_animation:
+    CPU.set A: 16
+  end
+
+end

@@ -1,0 +1,95 @@
+module Aoba::Control
+
+  ;; Returns any mouse gamepad
+  ;; @returns X gamepad (or null)
+  def find_mouse_gamepad_icb_long
+    routine do
+      make_thread_safe
+
+      execute do
+        LDX   #MAX_GAMEPADS * 2 - 2
+      _loop:
+        LDY   gamepad_map, X
+        BZE   _next
+        
+        Y.is_a! GamepadPlayer
+        LDA   Y[:flags] - 1
+        BPL   _next
+        TYX
+        BRA   _rts
+
+      _next:
+        DEX
+        DEX
+        BPL   _loop
+        LDX   #0
+
+      _rts:
+      end
+    end
+
+    RTL
+  end
+
+  ;; Returns a free gamepad instance
+  def _allocate_free_gamepad
+    routine from_A: 16, from_XY: 16 do
+      assert_thread_safe
+
+      execute do
+        LDY   #0
+        (MAX_GAMEPADS - 1).times do |i|
+          LDX   free_gamepads + i + i
+          BNZ   _found_slot
+          INY
+          INY
+        end
+        LDX   free_gamepads + MAX_GAMEPADS * 2 - 2
+        BZE   _found_slot
+
+      _failed:
+        fatal_error "unable to allocate gamepad"
+
+      _found_slot:
+        X.is_a! GamepadPlayer
+        STZ   X[:listener]
+        STZ   X[:keys]
+        STZ   X[:old_keys]
+        STZ   X[:flags]
+        STZ   X[:mouse_x]
+        STZ   X[:mouse_y]
+        LDA   #0
+        STA   free_gamepads, Y
+      end
+    end
+  end
+
+  ;; Returns the gamepad in slot A or assigns a gamepad to it
+  ;;
+  ;; @param A slot
+  ;; @return X gamepad
+  def register_gamepad_icb_long
+    routine do
+      assert_thread_safe
+      input A
+
+      execute do
+        ASL   A
+        TAY
+        LDX   gamepad_map, Y
+        BNZ   _return_gamepad
+
+      _allocate_gamepad:
+        PHY
+        _allocate_free_gamepad
+        PLY
+        TXA
+        STA   gamepad_map, Y
+
+      _return_gamepad:
+      end
+    end
+    RTL
+  end
+
+end

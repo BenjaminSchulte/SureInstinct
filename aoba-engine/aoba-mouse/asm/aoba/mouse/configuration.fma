@@ -1,0 +1,14 @@
+module Aoba::Mouse
+
+  MOUSE_PRIORITY ||= PLAYER_CONTROL_PRIORITY
+
+  MAX_NUM_REGIONS ||= 32
+
+  class RegionEvent < Aoba::Thread::Event::Base
+    declare :event_id, as: :uint8
+    declare :region, as: :uint16
+    declare :flags, as: :uint8
+    declare :userdata, as: :uint8
+  end
+
+end

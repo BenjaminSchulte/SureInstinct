@@ -1,0 +1,8 @@
+require "parameter"
+require "tilemap_parameter"
+require "palette_parameter"
+require "reserved_parameter"
+require "user_parameter"
+require "npc_list_parameter"
+require "custom_parameter"
+require "level_loader"

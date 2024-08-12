@@ -1,0 +1,60 @@
+module Aoba::Tileset
+  class TilesetBgFormatBuilder
+    macro initialize(format)
+      @format = format
+    end
+
+    macro tiles(tiles)
+      @format.tiles = tiles
+    end
+
+    macro snes_bg(bg)
+      @format.snes_bg = bg
+    end
+    
+    macro use(other)
+      other.include_to_tileset_bg_format @format
+    end
+  end
+
+  class TilesetBgFormatInstance < Aoba::EngineObjectInstance
+    macro initialize(tileset, bg)
+      super bg
+      @tileset = tileset
+      @bg = bg
+    end
+
+    macro tiles
+      return @tileset.tiles_by_id[@bg.tiles]
+    end
+
+    macro tile_format
+      return @tiles.tile_format
+    end
+  end
+
+  class TilesetBgFormat < Aoba::EngineObject
+    ;; Constructor
+    macro initialize(id)
+      super
+      @id = id
+      @tiles = nil
+      @snes_bg = 1
+    end
+
+    ;; Adds this layer to a tileset
+    macro include_to_tileset_format(format)
+      ref = TilesetBgFormatInstance.new(format, self)
+      format.bgs <<= ref
+      format.bgs_by_id[@id] = ref
+    end
+
+    ;; Creates a new tileset format  
+    macro self.create(id, &block)
+      format = TilesetBgFormat.new(id)
+      builder = TilesetBgFormatBuilder.new(format)
+      block.call with_context builder
+      return format
+    end
+  end
+end

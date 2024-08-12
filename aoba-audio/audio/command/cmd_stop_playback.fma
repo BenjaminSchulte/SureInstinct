@@ -1,0 +1,21 @@
+module Command::StopPlayback
+
+  ;; Sets the master volume
+  def process
+    MOV   dp(SPC.PORT0), dp(IPC.last_ipc_value)
+
+    MOV   dp(SPC.DSP_ADDR), #DSP.KOFF
+    MOV   dp(SPC.DSP_DATA), #$FF
+
+    MOV   A, #0
+    MOV   dp(Song.song_active_channels), A
+    MOV   dp(SFX.sfx_active_channels), A
+    MOV   dp(Song.song_enabled_echo_voices), A
+    MOV   dp(SFX.sfx_enabled_echo_voices), A
+    MOV   dp(Song.song_enabled_noise_voices), A
+    MOV   dp(SFX.sfx_enabled_noise_voices), A
+    MOV   dp(Song.song_enabled_pitchmod_voices), A
+    MOV   dp(SFX.sfx_enabled_pitchmod_voices), A
+  end
+
+end

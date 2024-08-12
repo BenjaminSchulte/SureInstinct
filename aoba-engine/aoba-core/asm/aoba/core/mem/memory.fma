@@ -1,0 +1,40 @@
+module Aoba::Memory
+
+  locate_at bank: SYSTEM_ROM_BANK
+
+  ;; The active thread ID
+  declare :active_thread_id, as: :uint8, in: ::Memory::VariableRAM
+
+  ;; Memory allocation list
+  declare :block_usage_table, as: :uint8, length: 256, in: ::Memory::FixedRAM
+
+  ;; Initializes the memory
+  ;; @ignore-thread-safety
+  def initialize
+    ;; Sets the current thread ID to 1
+    CPU.set A: 8
+    PEA   #(FIXED_RAM_BANK << 8) | 1
+    PLA
+    PLB
+    STA   active_thread_id.long
+
+    ;; Resets the block usage table
+    CPU.set A: 16
+    LDX   #254
+  _loop:
+    STZ   block_usage_table, X
+    DEX
+    DEX
+    BPL   _loop
+
+    ;; Reserves the system RAM
+    LDA   #$0101
+    (FIXED_CONTENT_BLOCKS / 2).times do |index|
+      STA   block_usage_table + index * 2
+    end
+    if (FIXED_CONTENT_BLOCKS % 2) == 1
+      STA   block_usage_table + FIXED_CONTENT_BLOCKS - 2
+    end
+  end
+
+end

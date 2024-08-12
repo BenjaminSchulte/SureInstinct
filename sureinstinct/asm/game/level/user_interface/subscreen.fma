@@ -1,0 +1,271 @@
+module Game::Level::UserInterface
+
+  ;; @param A routine
+  def subscreen_setup_hdma_long
+    PHP
+    SEI
+    STA   AssetConfig::Ingame.ingame_hdma_config.custom_hdma_routine
+    LDA   AssetConfig::Ingame.ingame_hdma_config.flags
+    ORA   #Game::Hdma::Ingame::Flag.NEEDS_UPDATE_DMA_CALL
+    STA   AssetConfig::Ingame.ingame_hdma_config.flags
+    PLP
+    RTL
+  end
+
+  ;; @param A routine
+  def subscreen_reset_hdma_long
+    PHP
+    SEI
+    LDA   #$FFFF
+    STA   AssetConfig::Ingame.ingame_hdma_config.custom_hdma_routine
+    LDA   AssetConfig::Ingame.ingame_hdma_config.flags
+    ORA   #Game::Hdma::Ingame::Flag.NEEDS_UPDATE_DMA_CALL | Game::Hdma::Ingame::Flag.NEEDS_SETUP_DMA_CALL
+    STA   AssetConfig::Ingame.ingame_hdma_config.flags
+    PLP
+    RTL
+  end
+
+  ;; Disables the user interface
+  def subscreen_disable_ui_long
+    PHP
+    SEI
+    LDA   Aoba::Screen.register.TM
+    AND   #$FFFF ^ 4
+    STA   Aoba::Screen.register.TM
+    LDA   Aoba::Screen.register.TS
+    AND   #$FFFF ^ 4
+    STA   Aoba::Screen.register.TS
+    LDA   Aoba::Screen.update_registers_8
+    ORA   #Aoba::Screen::Flag.TM | Aoba::Screen::Flag.TS
+    STA   Aoba::Screen.update_registers_8
+    PLP
+    RTL
+  end
+
+  ;; Enables the custom UI
+  def subscreen_enable_ui_long
+    PHP
+    SEI
+    LDA   Aoba::Screen.register.TM
+    ORA   #4
+    STA   Aoba::Screen.register.TM
+    ;LDA   Aoba::Screen.register.TS
+    ;ORA   #4
+    ;STA   Aoba::Screen.register.TS
+    LDA   Aoba::Screen.update_registers_8
+    ORA   #Aoba::Screen::Flag.TM | Aoba::Screen::Flag.TS
+    STA   Aoba::Screen.update_registers_8
+    PLP
+    RTL
+  end
+
+  ;; Configures the usage of the custom UI
+  def subscreen_configure_menu_ui_long
+    PHP
+    SEI
+    CPU.set A: 8
+    LDA   #AssetConfig::Ingame.ui_menu_tilemap.address >> 9
+    STA   Aoba::Screen.register.BG3SC
+    LDA   Aoba::Screen.update_registers_8
+    ORA   #Aoba::Screen::Flag.BG3SC
+    STA   Aoba::Screen.update_registers_8
+    PLP
+    RTL
+  end
+
+  def subscreen_restore_level_palette_long
+    LDA   AssetConfig::Ingame.tilemap_storage.tiles[:current].long
+    CMP   #AssetConfig::Ingame.tilemap_storage.tiles[:top]
+    BEQ   _is_top
+    LDX   bottom_palette_address
+    BRA   _after_palette_select
+
+  _is_top:
+    LDX   top_palette_address
+  _after_palette_select:
+    LDA   #4
+    LDY   #$00FC
+    JML   Aoba::Palette::Api.fade_to_palette_group_long
+  end
+
+  ;; Restores the game
+  def subscreen_restore_game_long
+    LDA   #Assets::Palette::UserInterface
+    LDX   #0
+    JSL   Aoba::Palette::Api.load_palette_group_long
+
+    PHP
+    SEI
+    JSL   subscreen_reset_hdma_long
+    JSL   subscreen_enable_ui_long
+
+    CPU.set A: 8
+    LDA   #AssetConfig::Ingame.ui_tilemap.address >> 9
+    STA   Aoba::Screen.register.BG3SC
+    LDA   Aoba::Screen.update_registers_8
+    ORA   #Aoba::Screen::Flag.BG3SC
+    STA   Aoba::Screen.update_registers_8
+
+    PLP
+    RTL
+  end
+
+  ;; Pauses the game
+  def subscreen_pause_game_long
+    PHP
+    SEI
+    LDA   global_ingame_flags
+    ORA   #Game::Level::GlobalIngameFlag::TIME_PAUSED | Game::Level::GlobalIngameFlag::GAME_PAUSED
+    STA   global_ingame_flags
+    PLP
+    RTL
+  end
+
+  ;; Pauses the game
+  def subscreen_resume_game_long
+    PHP
+    SEI
+    LDA   global_ingame_flags
+    AND   #$FFFF ^ Game::Level::GlobalIngameFlag::TIME_PAUSED ^ Game::Level::GlobalIngameFlag::GAME_PAUSED
+    STA   global_ingame_flags
+    LDA   Aoba::Thread::Timer.current_frame_low
+    STA   last_frame_number
+    PLP
+    RTL
+  end
+
+  ;; Loads menu tiles
+  ;; @param A image address
+  def subscreen_load_tiles_long
+    PHA
+
+    ;; Loads the user image tiles
+    LDA   #Aoba::Thread::Event::USEREVENT_ID
+    JSL   Aoba::Thread::Event.allocate_icb_long
+    X.is_a! Aoba::Composer::Event::LoadImageTiles::Event
+    LDA   #Aoba::Composer::Event::LoadImageTiles::ID
+    STA   X[:event_id]
+    LDA   1, S
+    STA   X[:image_address]
+    LDA   #0 | (((AssetConfig::Ingame.ui_menu_tilemap.address >> 9) & $FF) << 8)
+    STA   X[:variant_index]
+    LDA   Aoba::Composer.thread_id
+    JSL   Aoba::Thread.send_event_icb_long
+
+    ;; Loads the user interface image
+    LDA   #Aoba::Thread::Event::USEREVENT_ID
+    JSL   Aoba::Thread::Event.allocate_icb_long
+    X.is_a! Aoba::Composer::Event::LoadImage::Event
+    LDA   #Aoba::Composer::Event::LoadImage::ID
+    STA   X[:event_id]
+    PLA
+    STA   X[:image_address]
+    LDA   #AssetConfig::Ingame.ui_menu_tiles.address >> 1
+    STA   X[:vram_address]
+    LDA   Aoba::Composer.thread_id
+    JML   Aoba::Thread.send_event_icb_long
+  end
+
+  def subscreen_resume_sprites_long
+    SEI
+
+    LDX   grid_sprite
+    X.is_a! Aoba::Sprite::Instance
+    LDA   X[:renderable_configuration_flags]
+    AND   #$FFFF ^ Aoba::Sprite::RenderableConfigurationFlag.HIDDEN
+    STA   X[:renderable_configuration_flags]
+
+    LDX   item_sprite
+    X.is_a! Aoba::Sprite::Instance
+    LDA   X[:renderable_configuration_flags]
+    AND   #$FFFF ^ Aoba::Sprite::RenderableConfigurationFlag.HIDDEN
+    STA   X[:renderable_configuration_flags]
+
+    LDX   Game::Ball::Movement.player
+    X.is_a! Aoba::Sprite::Instance
+    BZE   _no_player
+    LDA   X[:basic_flags]
+    AND   #$FFFF ^ Aoba::Sprite::BasicFlag::SKIP_MOVE_ROUTINE ^ Aoba::Sprite::BasicFlag::SKIP_UPDATE_ROUTINE
+    STA   X[:basic_flags]
+  _no_player:
+
+    LDX   Aoba::Sprite.bomb_list.first
+    BZE   _no_bomb
+  _loop_bomb:
+    X.is_a! Aoba::Sprite::Instance
+    LDA   X[:basic_flags]
+    AND   #$FFFF ^ Aoba::Sprite::BasicFlag::SKIP_MOVE_ROUTINE ^ Aoba::Sprite::BasicFlag::SKIP_UPDATE_ROUTINE
+    STA   X[:basic_flags]
+    LDY   X[:next_bomb]
+    TYX
+    BZE   _loop_bomb
+  _no_bomb:
+
+    LDX   Aoba::Sprite.map_sprite_list.first
+    BZE   _no_map_sprite
+  _loop_map_sprite:
+    X.is_a! Aoba::Sprite::Instance
+    LDA   X[:basic_flags]
+    AND   #$FFFF ^ Aoba::Sprite::BasicFlag::SKIP_MOVE_ROUTINE ^ Aoba::Sprite::BasicFlag::SKIP_UPDATE_ROUTINE
+    STA   X[:basic_flags]
+    LDY   X[:next_map_sprite]
+    TYX
+    BZE   _loop_map_sprite
+  _no_map_sprite:
+
+    CLI
+    RTL
+  end
+
+  def subscreen_pause_sprites_long
+    SEI
+
+    LDX   grid_sprite
+    X.is_a! Aoba::Sprite::Instance
+    LDA   X[:renderable_configuration_flags]
+    ORA   #Aoba::Sprite::RenderableConfigurationFlag.HIDDEN
+    STA   X[:renderable_configuration_flags]
+
+    LDX   item_sprite
+    X.is_a! Aoba::Sprite::Instance
+    LDA   X[:renderable_configuration_flags]
+    ORA   #Aoba::Sprite::RenderableConfigurationFlag.HIDDEN
+    STA   X[:renderable_configuration_flags]
+
+    LDX   Game::Ball::Movement.player
+    X.is_a! Aoba::Sprite::Instance
+    BZE   _no_player
+    LDA   X[:basic_flags]
+    ORA   #Aoba::Sprite::BasicFlag::SKIP_MOVE_ROUTINE | Aoba::Sprite::BasicFlag::SKIP_UPDATE_ROUTINE
+    STA   X[:basic_flags]
+  _no_player:
+
+    LDX   Aoba::Sprite.bomb_list.first
+    BZE   _no_bomb
+  _loop_bomb:
+    X.is_a! Aoba::Sprite::Instance
+    LDA   X[:basic_flags]
+    ORA   #Aoba::Sprite::BasicFlag::SKIP_MOVE_ROUTINE | Aoba::Sprite::BasicFlag::SKIP_UPDATE_ROUTINE
+    STA   X[:basic_flags]
+    LDY   X[:next_bomb]
+    TYX
+    BZE   _loop_bomb
+  _no_bomb:
+
+    LDX   Aoba::Sprite.map_sprite_list.first
+    BZE   _no_map_sprite
+  _loop_map_sprite:
+    X.is_a! Aoba::Sprite::Instance
+    LDA   X[:basic_flags]
+    ORA   #Aoba::Sprite::BasicFlag::SKIP_MOVE_ROUTINE | Aoba::Sprite::BasicFlag::SKIP_UPDATE_ROUTINE
+    STA   X[:basic_flags]
+    LDY   X[:next_map_sprite]
+    TYX
+    BZE   _loop_map_sprite
+  _no_map_sprite:
+
+    CLI
+
+    RTL
+  end
+end

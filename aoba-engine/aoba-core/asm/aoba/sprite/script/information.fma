@@ -1,0 +1,171 @@
+module Aoba::Sprite
+
+  ;; Fast distance calculation
+  Aoba::Script.callback "Character_DistanceToXYFast", bank: SPRITE_ROM_BANK do
+    LDX   dp(Aoba::Script.register_c0)
+    X.is_a! Instance
+    LDA   X[:x]
+    SEC
+    SBC   dp(Aoba::Script.register_a)
+    BPL   _ok_x
+    EOR   #$FFFF
+    INC   A
+  _ok_x:
+    STA   dp(Aoba::Script.register_a)
+    LDA   X[:y]
+    SEC
+    SBC   dp(Aoba::Script.register_a + 2)
+    BPL   _ok_y
+    EOR   #$FFFF
+    INC   A
+  _ok_y:
+    CLC
+    ADC   dp(Aoba::Script.register_a)
+    STA   dp(Aoba::Script.register_a)
+    STZ   dp(Aoba::Script.register_a) + 2
+  end
+
+  ;; Returns the closest player to this current NPC
+  Aoba::Script.callback "Character_FindClosestPlayerFast", bank: SPRITE_ROM_BANK do
+    LDA   #$FFFF
+    STA   dp(Aoba::Script.register_a)
+    STA   dp(Aoba::Script.register_a + 2)
+    STZ   dp(Aoba::Script.register_x)
+
+    SEI
+    LDY   num_player_sprites
+    BZE   _skip
+
+  _loop:
+    DEY
+    DEY
+    STY   dp(Aoba::Script.calc0)
+
+    LDX   player_sprite_index_table, Y
+    CPX   dp(Aoba::Script.register_c0)
+    BEQ   _skip_set
+
+    LDY   dp(Aoba::Script.register_c0)
+    X.is_a! Instance
+    Y.is_a! Instance
+    LDA   X[:x]
+    SEC
+    SBC   Y[:x]
+    BPL   _x_is_positive
+    EOR   #$FFFF
+    INC   A
+  _x_is_positive:
+    STA   dp(Aoba::Script.calc0 + 2)
+    LDA   X[:y]
+    SEC
+    SBC   Y[:y]
+    BPL   _y_is_positive
+    EOR   #$FFFF
+    INC   A
+  _y_is_positive:
+    CLC
+    ADC   dp(Aoba::Script.calc0 + 2)
+    CMP   dp(Aoba::Script.register_a)
+    BGE   _skip_set
+    STA   dp(Aoba::Script.register_a)
+    STZ   dp(Aoba::Script.register_a + 2)
+    CPU.set A: 8
+    LDA   X[:id]
+    STA   dp(Aoba::Script.register_x)
+    CPU.set A: 16
+  _skip_set:
+    LDY   dp(Aoba::Script.calc0)
+    BNZ   _loop
+
+  _skip:
+    CLI
+  end
+
+  ;; Returns the angle to another character
+  Aoba::Script.callback "Character_GetAngleToCharacterX", bank: SPRITE_ROM_BANK do
+    LDA   dp(Aoba::Script.register_x)
+    Action::ManageSprite.find_sprite_by_sprite_id
+    LDY   dp(Aoba::Script.register_c0)
+    X.is_a! Instance
+    Y.is_a! Instance
+    LDA   X[:x]
+    SEC
+    SBC   Y[:x]
+    PHA
+    LDA   X[:y]
+    SEC
+    SBC   Y[:y]
+    TAY
+    PLX
+    JSL   Math.xy_to_direction_long
+    AND   dp(Aoba::Script.x00FF)
+    STA   dp(Aoba::Script.register_a)
+    STZ   dp(Aoba::Script.register_a + 2)
+  end
+
+  ;; Returns the direction from its angle
+  Aoba::Script.callback "Character_GetDirectionFromAngle", bank: SPRITE_ROM_BANK do
+    CPU.set A: 8
+    LDA   dp(Aoba::Script.register_a)
+    CLC
+    ADC   #$1F
+    CPU.set A: 16
+    ASL   A
+    ASL   A
+    XBA
+    AND   #3
+    STA   dp(Aoba::Script.register_a)
+    STZ   dp(Aoba::Script.register_a + 2)
+  end
+
+  ;; Returns the direction to another character
+  Aoba::Script.callback "Character_GetDirectionToCharacterX", bank: SPRITE_ROM_BANK do
+    LDA   #$0300
+    STA   dp(Aoba::Script.register_a) + 2
+
+    LDA   dp(Aoba::Script.register_x)
+    Action::ManageSprite.find_sprite_by_sprite_id
+    X.is_a! Instance
+
+    LDY   dp(Aoba::Script.register_c0)
+    Y.is_a! Instance
+
+    LDA   X[:x]
+    SEC
+    SBC   Y[:x]
+    BPL   _is_right
+
+  _is_left:
+    EOR   #$FFFF
+    INC   A
+    INC   dp(Aoba::Script.register_a + 2)
+    INC   dp(Aoba::Script.register_a + 2)
+
+  _is_right:
+    STA   dp(Aoba::Script.calc0) ; distance X
+    
+    LDA   X[:y]
+    SEC
+    SBC   Y[:y]
+    BPL   _is_down
+
+  _is_up:
+    EOR   #$FFFF
+    INC   A
+    DEC   dp(Aoba::Script.register_a + 3)
+    DEC   dp(Aoba::Script.register_a + 3)
+
+  _is_down:
+    CMP   dp(Aoba::Script.calc0)
+    BLT   _use_x
+
+  _use_y:
+    LDA   dp(Aoba::Script.register_a + 3)
+    STA   dp(Aoba::Script.register_a)
+    RTL
+
+  _use_x:
+    LDA   dp(Aoba::Script.register_a + 2)
+    STA   dp(Aoba::Script.register_a)
+  end
+end

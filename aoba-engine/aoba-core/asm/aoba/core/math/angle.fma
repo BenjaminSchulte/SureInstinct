@@ -1,0 +1,254 @@
+module Aoba::Math
+
+  ;; Calculates a sin
+  ;;
+  ;; @param A the angle
+  def sin
+    Debug.assert_register_size A: 16    
+
+    AND   #$FF
+    ASL   A
+    TAX
+    LDA   sin_table.long, X
+  end
+
+  def sin_long
+    sin
+    RTL
+  end
+
+  ;; Calculates an atan
+  ;;
+  ;; @param A the result of X/Y
+  def atan
+    routine bank: tan_table.to_sym.bank do
+      is_thread_safe
+      input A
+      output A
+
+      declare :left, as: :uint16
+      declare :right, as: :uint16
+      
+      execute do |left, right|
+        LDX   #tan_table.to_sym
+        STX   dp(left)
+        LDX   #tan_table.to_sym + $41 * 2
+        STX   dp(right)
+        TAY
+        TXA
+        CLC
+        ADC   dp(left)
+        BRA   _test_value
+
+      _lookup_left:
+        STX   dp(right)
+        TXA
+        CMP   dp(left)
+        BEQ   _found_item
+        CLC
+        ADC   dp(left)
+      _test_value:
+        ROR
+        AND   #$FFFE
+        TAX
+        TYA
+        CMP   0, X
+        BEQ   _found_item
+        BLT   _lookup_left
+      _lookup_right:
+        INX
+        INX
+        STX   dp(left)
+        TXA
+        CMP   dp(right)
+        BEQ   _found_item
+        CLC
+        ADC   dp(right)
+        BRA   _test_value
+
+      _found_item:
+        TXA
+        SEC
+        SBC   #tan_table.to_sym
+        LSR   A
+      end
+    end
+  end
+
+  ;; Shifts uint16 registers to match uint8 registers
+  ;;
+  ;; @param X the X value 16bit
+  ;; @param Y the Y value 16bit
+  ;; @return X the X value 8bit
+  ;; @return Y the Y value 8bit
+  def uint16_XY_to_uint8_XY
+    routine from_A: 16, from_XY: 16 do
+      is_thread_safe
+
+      declare :x, as: :uint16
+      declare :y, as: :uint16
+
+      execute do |x, y|
+        STX   dp(x)
+        STY   dp(y)
+        LDA   #$FF00
+        BRA   _enter
+
+      _division_by_two:
+        LSR   dp(x)
+        LSR   dp(y)
+      _enter:
+        BIT   dp(x)
+        BNZ   _division_by_two
+        BIT   dp(y)
+        BNZ   _division_by_two
+
+        LDX   dp(x)
+        LDY   dp(y)
+      end
+    end
+  end
+
+  ;; SA1 calculation for X/Y
+  macro __calculate_x_y_sa1
+    STA   SA1.MA.long
+    CPU.set A: 8
+    TXA
+    STA   SA1.MB.long
+    LDA   #1
+    STA   SA1.MCNT.long
+    DEC   A
+    STA   SA1.MB.long + 1
+    CPU.set A: 16
+    PLA ; just killing some time
+    NOP
+    PHA
+    LDA   SA1.MR.long
+  end
+
+  ;; SNES calculation for X/Y
+  macro __calculate_x_y_snes
+    STA   CPU.WRDIVL.long
+    CPU.set A: 8
+    TXA
+    STA   CPU.WRDIVB.long
+    CPU.set A: 16
+    PLA ; just killing some time
+    NOP
+    PHA
+    LDA   CPU.RDDIV.long
+  end
+
+  ;; Calculates a 2D vector to a directional angle
+  ;; 
+  ;; @param X the X direction
+  ;; @param Y the Y direction
+  ;; @return A the angle
+  def xy_to_direction_long
+    routine do
+      is_thread_safe
+      output A
+
+      declare :negative_flag, as: :uint16
+      declare :toggle_flag, as: :uint16
+      declare :calc, as: :uint16
+
+      execute do |negative_flag, toggle_flag, calc|
+        STZ   dp(negative_flag)
+        STZ   dp(toggle_flag)
+
+        ;; Ensures that the value in the X register is positive
+        TXA
+        BPL   _skip_abs_X
+
+        EOR   #$FFFF
+        INC   A
+        INC   dp(negative_flag)
+        TAX
+
+        ;; Ensures that the value in the Y register is positive
+      _skip_abs_X:
+        TYA
+        BPL   _skip_abs_Y
+
+        EOR   #$FFFF
+        INC   A
+        INC   dp(negative_flag)
+        INC   dp(negative_flag)
+        TAY
+
+      _skip_abs_Y:
+        ;; A is still Y, compare it to X to test if its equal
+        STX   dp(calc)
+        CMP   dp(calc)
+        BEQ   _calculate_equal_input
+        BLT   _X_is_larger_than_Y
+
+        ;; Ensures that the X register is always the larger one to prevent division by zero
+        INC   dp(toggle_flag)
+        TXY
+        TAX
+
+        ;; Simplifies X and Y to use 8bit 
+      _X_is_larger_than_Y:
+        ;; TODO: This is not necessary on SA1
+        uint16_XY_to_uint8_XY
+        TYA
+        BZE   _Y_axis_is_zero
+
+        ;; Complex calculation is required
+      _complex_calculation:
+        ;; Ensures that no other thread interrupts this calculation
+        PHP
+        SEI
+        XBA
+        if SNES::ENABLE_SA1
+          __calculate_x_y_sa1
+        else
+          __calculate_x_y_snes
+        end
+        PLP
+        ; A = Y/X range 00..FFFF
+        atan
+        CPU.set A: 8
+        LSR   dp(toggle_flag)
+        BCC   _no_toggle
+        EOR   #$3F
+        INC   A
+        BRA   _no_toggle
+        ; A = angle 8 bit
+        
+
+;;//////////////
+      _Y_axis_is_zero:
+        CPU.set A: 8
+        LDA   #0
+        BRA   _restore_value_from_flags
+
+        ;; X and Y axis matches
+      _calculate_equal_input:
+        CPU.set A: 8
+        LDA   #$20
+      _restore_value_from_flags:
+        LSR   dp(toggle_flag)
+        BCC   _no_toggle
+        CLC
+        ADC   #$40
+      _no_toggle:
+        LSR   dp(negative_flag)
+        BCC   _no_x_flip
+        EOR   #$7F
+        INC   A
+      _no_x_flip:
+        LSR   dp(negative_flag)
+        BCS   _return
+        EOR   #$FF
+        INC   A
+
+      _return:
+      end
+    end
+    RTL
+  end
+
+end

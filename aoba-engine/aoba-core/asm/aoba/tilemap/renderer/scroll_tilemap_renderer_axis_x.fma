@@ -1,0 +1,111 @@
+module Aoba::Tilemap::Renderer
+  class ScrollTilemapRendererAxisX < ScrollTilemapRendererAxis
+    macro initialize(parent)
+      super parent
+
+      @_position_x = parent._scroll_buffer_pos_x_x
+      @_position_y = parent._scroll_buffer_pos_x_y
+
+      @update_height = parent.screen_tile_height
+      @axis_buffer_size = parent.screen_bgtile_height
+
+      @scroll_buffer = parent._scroll_buffer_x
+      @scroll_buffer_size = parent.scroll_buffer_size_x
+      
+      @_generated_axis_tile = parent.renderer._top_tile
+      @_scroll_axis_tile = parent.renderer._left_tile
+
+      @_num_bgtiles_other = parent.tile_format.num_bgtiles_y
+      
+      @_num_tiles_to_generate = 15 ; TODO: Magic number!
+    end
+
+    routine :scroll do
+      __scroll
+    end
+
+    routine :_prepare_build_layer do
+      __prepare_build_layer
+    end
+
+    routine :_plot_tile do
+      __plot_tile
+    end
+
+    routine :_build_layer_cache do
+      __build_layer_cache
+    end
+
+    ;; Increments the read address in A
+    macro _increment_read_address_from_stack
+      @parent.storage.increment_bgtile_data_read_row_stack_to_Y
+    end
+
+    ;; Preconfigures the queue copy
+    macro _preconfigure_queue_copy(layer=nil)
+      STZ   dp(@parent.renderer._allocated_ram)
+      CPU.set A: 8
+      LDA   dp(@parent.renderer._left_tile)
+      LSR   A
+      ROR   dp(@parent.renderer._allocated_ram)
+      LSR   dp(@parent.renderer._allocated_ram)
+      LSR   A
+      ROL   dp(@parent.renderer._allocated_ram + 1)
+      CPU.set A: 16
+    end
+    
+    macro __tmp_queue_copy(layer)
+      ;; Allocate VRAM scroll targets
+      LDA   #Aoba::VBlank::Target.VRAM_SCROLL_X
+      JSL   Aoba::VBlank::Job.allocate_icb_long
+
+      X.is_a! Aoba::VBlank::Job::JobInstance
+
+      LDA   dp(@parent.renderer._allocated_ram)
+      CLC
+      ADC   #@scroll_buffer
+      ; A = buffer
+      STA   X[:source_address]
+
+      ;; Data size currently is const
+      LDA   #64
+      STA   X[:data_size]
+
+      ;; VRAM base address
+      LDA   dp(@parent.renderer._left_tile)
+      AND   #$1F
+      STA   dp(@parent.renderer._calc32a)
+      LDA   dp(@parent.renderer._left_tile)
+      BIT   #$20
+      BZE   _skip_second_map
+      LDA   #32 * 32
+      ORA   dp(@parent.renderer._calc32a)
+      STA   dp(@parent.renderer._calc32a)
+    _skip_second_map:
+      Debug.access_8bit_through_16bit
+      LDA   @parent.renderer.vram_address.long
+      AND   #$FF
+      XBA
+      ORA   dp(@parent.renderer._calc32a)
+      STA   X[:target_address]
+
+      CPU.set A: 8
+      LDA   #FIXED_RAM_BANK
+      STA   X[:source_address] + 2
+      CPU.set A: 16
+      JSL   Aoba::VBlank::Job.try_queue_icb_long
+    end
+
+    ;; Plots the tile to the ram
+    macro _plot_tile_to_ram(x, y, bg)
+      ;; @TODO: Remove magic numbers in _plot_tile_to_ram"
+      STA   x * 64 + y * 2 + bg * (@scroll_buffer_size / @parent.renderer.num_bgs), Y
+    end
+
+    macro initialize_variables_for_scroll(layer)
+      STA   dp(@parent.renderer._left_tile)
+      LDY   @parent.renderer.rendered_area_top_tile[layer]
+      STY   dp(@parent.renderer._top_tile)
+    end
+  end
+end

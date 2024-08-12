@@ -1,0 +1,220 @@
+module Aoba::Sprite
+
+  ;; Sets up idling
+  Aoba::Script.callback "Sprite_CrowdIdle", bank: SPRITE_ROM_BANK do
+    LDY   dp(Aoba::Script.register_c0)
+    Y.is_a! Instance
+    LDA   Y[:basic_flags]
+    BIT   #BasicFlag.DESTROYED
+    BZE   _ok
+    RTL
+
+    ;; ----
+
+  _ok:
+    LDX   Y[:crowd_event_timer]
+    BNZ   _unqueue_timer
+
+    ;; Allocates a new timer
+  _timer_allocation:
+    LDA   Memory.active_thread_id.long
+    JSL   Aoba::Thread::Timer.allocate_icb_long
+    TXA
+    LDY   dp(Aoba::Script.register_c0)
+
+    Y.is_a! Instance
+    X.is_a! Aoba::Thread::Timer::TimerInstance
+    STA   Y[:crowd_event_timer]
+    TYA
+    STA   X[:userdata]
+    BRA   _configure_timer
+
+    ;; Unqueues the current timer
+  _unqueue_timer:
+    PHX
+    JSL   Aoba::Thread::Timer.unqueue_long
+    PLX
+
+    ;; Configures the timer
+  _configure_timer:
+    LDA   #0
+    LDY   dp(Aoba::Script.register_a)
+    JML   Aoba::Thread::Timer.queue_icb_long
+  end
+
+  ;; Configuration per event whether the userdata is the sprite ID
+  datablock _event_has_sprite_userdata_map
+    db   0 ; 0
+    db   0 ; 1 - readyevent
+    db   1 ; 2 - target reached
+    db   1 ; 3 - collision
+    db   1 ; 4 - trigger start
+    db   1 ; 5 - trigger end
+    db   1 ; 6 - crowd timer triggered
+  end
+
+  ;; Waits for an event
+  Aoba::Script.callback "Sprite_CrowdWaitForEvent", bank: SPRITE_ROM_BANK do
+    LDA   #$FE
+    STA   dp(Aoba::Script.register_a)
+    Aoba::Script.invoke_callback "Thread_WaitForEvent"
+
+    ;; Tests if this is an unknown timer
+    LDA   dp(Aoba::Script.register_a)
+    CMP   #$80FF
+    BEQ   _kill_thread_request
+
+    INC   A
+    BNZ   _no_crowd_idle_timer
+
+    ;; As this is an unknown timer, check if this is a valid crowd timer
+    LDX   dp(Aoba::Script.register_x)
+    X.is_a! Aoba::Sprite::Instance
+    LDA   X[:id]
+    Aoba::Sprite::Action::ManageSprite.find_sprite_by_sprite_id
+    CPX   dp(Aoba::Script.register_x)
+    BNE   _no_crowd_idle_timer
+
+    ;; Compares the timer to ensure this is really the correct sprite
+    X.is_a! Aoba::Sprite::Instance
+    LDA   X[:crowd_event_timer]
+    CMP   dp(Aoba::Script.register_y)
+    BNE   _no_crowd_idle_timer
+
+    ;; Timer is valid, setup new event
+    STX   dp(Aoba::Script.register_c0)
+    LDA   #Aoba::Script::EventId::CROWD_TIMER_TRIGGERED
+    STA   dp(Aoba::Script.register_a)
+  _rtl:
+    RTL
+
+    ;; --
+
+    ;; Removes the item from the list
+  _kill_thread_request:
+    LDA   dp(Aoba::Script.register_x) + 1
+    LDX   dp(Aoba::Script.register_c0)
+    JSL   Aoba::Sprite::Api.remove_record_from_crowd_record_icb_long
+    BCS   _rtl
+
+    ;; Notifies the sender thread that the thread has been finished
+    CPU.set A: 8
+    JSL   Aoba::Script.notify_killevent_sender_if_killed_long
+    CPU.set A: 16
+
+    ;; Override event to crowd npc removed
+    LDA   #Aoba::Script::EventId::CROWD_NPC_REMOVED
+    STA   dp(Aoba::Script.register_a)
+    RTL
+
+    ;; ---
+
+  _no_crowd_idle_timer:
+    DEC   A
+    BMI   _skip_event_test
+
+    AND   dp(Aoba::Script.x00FF)
+    TAX
+    LDA   _event_has_sprite_userdata_map.long, X
+    AND   dp(Aoba::Script.x00FF)
+    BZE   _skip_event_test
+
+    LDA   dp(Aoba::Script.register_x)
+  _find_npc_in_list:
+    Aoba::Sprite::Action::ManageSprite.find_sprite_by_sprite_id
+    STX   dp(Aoba::Script.register_c0)
+
+  _skip_event_test:
+  end
+
+  ;; Loads a sprite
+  ;;
+  ;; @param REGA character address
+  Aoba::Script.callback "Sprite_CrowdEachStart", bank: SPRITE_ROM_BANK do
+    SEI
+    LDY   dp(Aoba::Script.register_c0)
+    Y.is_a! Sprite::Crowd::List
+
+    ;; Skips if the list is empty
+    LDA   Y[:num_members]
+    AND   dp(Aoba::Script.x00FF)
+    BZE   _goto_end
+
+  _start_loop:
+    ;; Initializes the stack
+    LDX   dp(Aoba::Script.stack_pointer)
+    DEC   A
+    STA   0, X
+    TYA
+    INC   A
+    STA   1, X
+    LDA   dp(Aoba::Script.register_a) ; list end pointer
+    STA   3, X
+    LDA   dp(Aoba::Script.script_pointer) ; repeat pointer
+    STA   5, X
+    TXA
+    CLC
+    ADC   #7
+    STA   dp(Aoba::Script.stack_pointer)
+
+    ;; Reads the first record from the list
+    LDA   Sprite::Crowd::List.size, Y
+    Action::ManageSprite.find_sprite_by_sprite_id
+    STX   dp(Aoba::Script.register_c0)
+    CLI
+    RTL
+
+    ;; --
+
+  _goto_end:
+    LDA   dp(Aoba::Script.register_a)
+    STA   dp(Aoba::Script.script_pointer)
+    CLI
+  end
+
+  ;; Loads a sprite
+  ;;
+  ;; @param REGA character address
+  Aoba::Script.callback "Sprite_CrowdEachLoop", bank: SPRITE_ROM_BANK do
+    SEI
+
+    LDA   dp(Aoba::Script.stack_pointer)
+    SEC
+    SBC   #7
+    TAX
+    CPU.set A: 8
+    LDA   0, X
+    BZE   _goto_end
+
+    ;; Has more records
+  _has_records:
+    DEC   A
+    STA   0, X
+
+    CPU.set A: 16
+    LDA   1, X
+    TAY
+    INC   1, X
+
+    LDA   5, X
+    STA   dp(Aoba::Script.script_pointer)
+
+    ;; Reads the first record from the list
+    LDA   Sprite::Crowd::List.size, Y
+    Action::ManageSprite.find_sprite_by_sprite_id
+    STX   dp(Aoba::Script.register_c0)
+    CLI
+
+    RTL
+
+    ;; ---
+
+  _goto_end:
+    CPU.set A: 16
+    STX   dp(Aoba::Script.stack_pointer)
+    LDA   3, X
+    STA   dp(Aoba::Script.script_pointer)
+    CLI
+  end
+
+end

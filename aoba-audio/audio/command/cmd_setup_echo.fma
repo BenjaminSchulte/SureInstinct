@@ -1,0 +1,178 @@
+module Command::SetupEcho
+
+  scope :SetupEchoRAM, in: ::Memory.SharedPage0
+
+  declare :current_edl, as: :uint8, in: SetupEchoRAM
+
+  datablock coef_table
+    db $20
+    db $0c
+    db $10
+    db $0c
+    db $20
+    db $0c
+    db $0c
+    db $0c
+  end
+
+  ;; Updates the echo volume
+  def update_echo_volume
+    MOV   dp(SPC.DSP_ADDR), #DSP.EFB
+    MOV   dp(SPC.DSP_DATA), dp(DSP.echo_feedback)
+
+    MOV   dp(SPC.DSP_ADDR), #DSP.EVOL_L
+    MOV   A, dp(DSP.echo_volume)
+    MOV   dp(SPC.DSP_DATA), A
+    MOV   dp(SPC.DSP_ADDR), #DSP.EVOL_R
+    MOV   dp(SPC.DSP_DATA), A
+  end
+
+  ;; Fading out the current echo
+  def wait_for_echo_to_finish
+    DBNZ   dp(DSP.old_echo_delay), _still_waiting
+    BBS5   dp(DSP.flags), _echo_is_disabled
+
+  _echo_is_enabled:
+    update_echo_volume
+
+    ; Reset timer
+    CLR4  dp(Channel.flags)
+    MOV   A, #main._song_timer_triggered - main._op_counter1_bra - 3
+    MOV   addr(main._op_counter1_bra+2), A
+    MOV   dp(SPC.TIMER1), dp(Song.song_speed)
+
+  _still_waiting:
+    RET
+
+  _echo_is_disabled:
+    ; Wait for new buffer to be filled
+    MOV   dp(DSP.old_echo_delay), dp(DSP.echo_delay)
+    INC   dp(DSP.old_echo_delay)
+    CLR5  dp(DSP.flags)
+    MOV   dp(SPC.DSP_ADDR), #DSP.FLG
+    MOV   dp(SPC.DSP_DATA), dp(DSP.flags)
+  end
+
+  ;; Sets up the echo
+  def setup_echo
+    ; Calculate absolute echo volume
+    MOV   Y, dp(DSP.master_volume)
+    MOV   A, dp(DSP.echo_configured_volume)
+    PUSH  PSW
+    BPL   _is_positive
+    EOR   A, #$FF
+    INC   A
+  _is_positive:
+    MUL   YA
+    MOV   X, #40
+    DIV   YA, X
+    POP   PSW
+    BPL   _was_positive
+    EOR   A, #$FF
+    INC   A
+  _was_positive:
+    MOV   dp(DSP.echo_volume), A
+
+    ; Check whether the echo should be enabled or not
+    MOV   X, #SPC.DSP_DATA
+    MOV   A, dp(DSP.echo_delay)
+    BEQ   _no_delay
+
+    ; Check if echo was disabled or delay has changed
+    BBS5  dp(DSP.flags), _echo_is_disabled
+    MOV   dp(SPC.DSP_ADDR), #DSP.EDL
+    CBNE  dp(SPC.DSP_DATA), _echo_delay_has_changed
+    BBS4  dp(Channel.flags), _echo_is_fading_out
+
+    ; Enable echo
+    CLR5  dp(DSP.flags)
+    MOV   dp(SPC.DSP_ADDR), #DSP.FLG
+    MOV   dp(SPC.DSP_DATA), dp(DSP.flags)
+    update_echo_volume
+
+  _echo_is_fading_out:
+    RET
+
+  _echo_delay_has_changed:
+    SET5  dp(DSP.flags)
+  _echo_is_disabled:
+    MOV   dp(SPC.DSP_ADDR), #DSP.FLG
+    MOV   dp(SPC.DSP_DATA), dp(DSP.flags)
+
+    ; Disable everything
+    MOV   A, #0
+    MOV   dp(SPC.DSP_ADDR), #DSP.EVOL_L
+    MOV   indirect(X), A
+    MOV   dp(SPC.DSP_ADDR), #DSP.EVOL_R
+    MOV   indirect(X), A
+    MOV   dp(SPC.DSP_ADDR), #DSP.EFB
+    MOV   indirect(X), A
+
+    ; Configure delay and ESA (ESA = 0 - (EDL << 3))
+    MOV   dp(SPC.DSP_ADDR), #DSP.EDL
+    MOV   dp(DSP.old_echo_delay), dp(SPC.DSP_DATA)
+    INC   dp(DSP.old_echo_delay)
+
+    MOV   A, dp(DSP.echo_delay)
+    MOV   indirect(X), A
+    XCN   A
+    LSR   A
+    MOV   dp(current_edl), A
+    MOV   A, #0
+    SETC
+    SBC   A, dp(current_edl)
+    MOV   dp(SPC.DSP_ADDR), #DSP.ESA
+    MOV   dp(DSP.echo_buffer_offset), A
+    MOV   indirect(X), A
+
+    ; Configure APU to wait for echo to finish
+    SET4  dp(Channel.flags)
+    MOV   A, #main._echo_timer_triggered - main._op_counter1_bra - 3
+    MOV   addr(main._op_counter1_bra+2), A
+    MOV   dp(SPC.TIMER1), #$82
+    RET
+
+    ;; --
+
+  _no_delay:
+    SET5  dp(DSP.flags)
+    MOV   dp(SPC.DSP_ADDR), #DSP.FLG
+    MOV   dp(SPC.DSP_DATA), dp(DSP.flags)
+
+    MOV   dp(SPC.DSP_ADDR), #DSP.EDL
+    MOV   indirect(X), A
+    MOV   dp(SPC.DSP_ADDR), #DSP.ESA
+    MOV   dp(SPC.DSP_DATA), #$FF
+
+    MOV   dp(DSP.echo_volume), A
+    MOV   dp(DSP.echo_feedback), A
+    update_echo_volume
+    CLR4  dp(Channel.flags)
+  end
+
+  ;; Configure the echo
+  def process
+    ; Read parameters from port
+    MOV   A, dp(SPC.PORT1)
+    AND   A, #$F
+    MOV   dp(DSP.echo_delay), A
+    MOV   dp(DSP.echo_feedback), dp(SPC.PORT2)
+    MOV   dp(DSP.echo_configured_volume), dp(SPC.PORT3)
+    MOV   dp(SPC.PORT0), dp(IPC.last_ipc_value)
+
+    setup_echo
+
+    ; Copy the COEF table
+    MOV   X, #7
+  _loop:
+    MOV   A, X
+    XCN   A
+    OR    A, #$F
+    MOV   dp(SPC.DSP_ADDR), A
+    MOV   A, addr(coef_table, X)
+    MOV   dp(SPC.DSP_DATA), A
+    DEC   X
+    BPL   _loop
+  end
+
+end

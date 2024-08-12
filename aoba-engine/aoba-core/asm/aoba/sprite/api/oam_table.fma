@@ -1,0 +1,24 @@
+module Aoba::Sprite::Api
+
+  ;; @param X DirectOamRecord[]
+  ;; @param Y num records
+  def clear_direct_oam_table_long
+    CPY   #0
+    BEQ   _rts
+
+  _loop:
+    X.is_a! DirectOamRecord
+    LDA   #$FFFF
+    STA   X[:flags]
+    TXA
+    CLC
+    ADC   #DirectOamRecord.size
+    TAX
+    DEY
+    BNZ   _loop
+
+  _rts:
+    RTL
+  end
+
+end

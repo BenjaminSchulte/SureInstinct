@@ -1,0 +1,16 @@
+module Aoba
+
+  ;; The ROM bank
+  SCENE_ROM_BANK ||= $C2
+
+end
+
+require "configuration"
+require "memory"
+require "event"
+require "api"
+require "thread"
+require "vram_layout"
+require "custom_vram_object"
+require "mode"
+require "script"

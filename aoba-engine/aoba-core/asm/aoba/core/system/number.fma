@@ -1,0 +1,242 @@
+class Number
+  macro bitmask
+    case self
+    when 2
+      $1
+    when 4
+      $3
+    when 8
+      $7
+    when 16
+      $F
+    when 32
+      $1F
+    when 64
+      $3F
+    when 128
+      $7F
+    when 256
+      $FF
+    when 512
+      $1FF
+    when 1024
+      $3FF
+    else
+      raise "Can not return bitmask for #{self}"
+    end
+  end
+
+  macro add_to_A
+    case self
+    when 1
+      INC A
+    when 2
+      INC A
+      INC A
+    when 3
+      INC A
+      INC A
+      INC A
+    else
+      CLC
+      ADC   #self
+    end
+  end
+
+  macro add_to_X
+    case self
+    when 1
+      INX
+    when 2
+      INX
+      INX
+    when 3
+      INX
+      INX
+      INX
+    when 4
+      INX
+      INX
+      INX
+      INX
+    else
+      TXA
+      CLC
+      ADC   #self
+      TAX
+    end
+  end
+
+  macro add_to_Y
+    case self
+    when 1
+      INY
+    when 2
+      INY
+      INY
+    when 3
+      INY
+      INY
+      INY
+    when 4
+      INY
+      INY
+      INY
+      INY
+    else
+      TYA
+      CLC
+      ADC   #self
+      TAY
+    end
+  end
+
+  macro subtract_from_A
+    case self
+    when 1
+      DEC A
+    when 2
+      DEC A
+      DEC A
+    when 3
+      DEC A
+      DEC A
+      DEC A
+    else
+      SEC
+      SBC   #self
+    end
+  end
+
+  macro times_lsr_A
+    self.times do
+      LSR   A
+    end
+  end
+
+  macro times_asl_A
+    self.times do
+      ASL   A
+    end
+  end
+
+  macro shift_A
+    if self < 0
+      (0-self).times_asl_A
+    else
+      self.times_lsr_A
+    end
+  end
+
+  macro divided_register_A
+    case self
+    when 1
+    when 2
+      LSR   A
+    when 4
+      LSR   A
+      LSR   A
+    when 8
+      LSR   A
+      LSR   A
+      LSR   A
+    when 16
+      LSR   A
+      LSR   A
+      LSR   A
+      LSR   A
+    when 32
+      LSR   A
+      LSR   A
+      LSR   A
+      LSR   A
+      LSR   A
+    when 128
+      ;; TODO: divide 128
+      LSR   A
+      LSR   A
+      LSR   A
+      LSR   A
+      LSR   A
+      LSR   A
+      LSR   A
+    else
+      raise "Can not divide by #{self}"
+    end
+  end
+
+  macro fast_divided_register_A
+    case self
+    when 1
+    when 2
+      LSR   A
+    when 4
+      LSR   A
+      LSR   A
+    when 8
+      LSR   A
+      LSR   A
+      LSR   A
+    when 16
+      LSR   A
+      LSR   A
+      LSR   A
+      LSR   A
+    when 32
+      ASL   A
+      ASL   A
+      ASL   A
+      XBA
+    when 64
+      ASL   A
+      ASL   A
+      XBA
+    else
+      raise "Can not divide by #{self}"
+    end
+  end
+
+  macro multiplicated_register_A
+    case self
+    when 1
+    when 2
+      ASL   A
+    when 4
+      ASL   A
+      ASL   A
+    when 8
+      ASL   A
+      ASL   A
+      ASL   A
+    when 16
+      ASL   A
+      ASL   A
+      ASL   A
+      ASL   A
+    when 32
+      ASL   A
+      ASL   A
+      ASL   A
+      ASL   A
+      ASL   A
+    when 64
+      XBA
+      LSR   A
+      LSR   A
+    when 128
+      XBA
+      LSR   A
+    when 256
+      XBA
+    when 512
+      XBA
+      ASL   A
+    else
+      raise "Can not multiplicate by #{self}"
+    end
+  end
+
+  macro as_bank(address=0)
+    return (self << 16) + address
+  end
+end

@@ -1,0 +1,46 @@
+module Aoba::Palette
+
+  ;; Sets a color directly
+  ;;
+  ;; @param REGA dialog image
+  Aoba::Script.callback "Palette_LoadTilemapPalette", bank: PALETTE_ROM_BANK do
+    ;; Send the ready event request to the level thread
+    LDA   #Aoba::Thread::Event.USEREVENT_ID
+    JSL   Aoba::Thread::Event.allocate_icb_long
+    X.is_a! Aoba::Palette::Event::LoadTilemapPalette::Event
+    LDA   #Aoba::Palette::Event::LoadTilemapPalette::ID
+    STA   X[:event_id]
+    LDA   dp(Aoba::Script.register_a)
+    STA   X[:palette_address]
+    LDA   Aoba::Palette.thread_id
+    JML   Aoba::Thread.send_event_icb_long
+  end
+
+  ;; Sets a color directly
+  ;;
+  ;; @param REGA dialog image
+  Aoba::Script.callback "Palette_LoadRawPalette", bank: PALETTE_ROM_BANK do
+    ;; Send the ready event request to the level thread
+    LDA   #Aoba::Thread::Event.USEREVENT_ID
+    JSL   Aoba::Thread::Event.allocate_icb_long
+    X.is_a! Aoba::Palette::Event::LoadRawPalette::Event
+    LDA   #Aoba::Palette::Event::LoadRawPalette::ID
+    STA   X[:event_id]
+    LDA   dp(Aoba::Script.register_a)
+    STA   X[:palette_address]
+    LDA   dp(Aoba::Script.register_x)
+    STA   X[:num_colors]
+    LDA   Aoba::Palette.thread_id
+    JML   Aoba::Thread.send_event_icb_long
+  end
+
+  ;; Sets a color directly
+  ;;
+  ;; @param REGA dialog image
+  Aoba::Script.callback "Palette_LoadPaletteGroup", bank: PALETTE_ROM_BANK do
+    LDA   dp(Aoba::Script.register_a)
+    LDX   dp(Aoba::Script.register_x)
+    JML   Aoba::Palette::Api.load_palette_group_long
+  end
+
+end

@@ -1,0 +1,281 @@
+module Aoba::VBlank
+
+  vram_copy = Callback.new do
+    param :flags, as: :uint16
+    param :origin, as: :uint16
+    param :origin_bank, as: :uint8
+    param :target, as: :uint16
+    param :size, as: :uint16
+
+    execute do |base|
+      PLA
+      STA   dp(DMA[0].control - base)
+      PLA
+      STA   PPU.VMAIN
+      BIT   #VramFlag::HIGH_TARGET
+      BZE   _low
+    _high:
+      LDA   #PPU.VMDATA + 1 & $FF
+      BRA   _after_high
+    _low:
+      LDA   #PPU.VMDATA & $FF
+    _after_high:
+      STA   dp(DMA[0].destination - base)
+      PLX
+      STX   dp(DMA[0].source_address - base)
+      PLA
+      STA   dp(DMA[0].source_bank - base)
+      PLX
+      STX   PPU.VMADD
+      PLX
+      STX   dp(DMA[0].size - base)
+      LDA   #1
+      STA   CPU.MDMAEN
+    end
+  end
+
+  vram_tile_copy = Callback.new do
+    param :flags, as: :uint16
+    param :origin, as: :uint16
+    param :origin_bank, as: :uint8
+    param :target, as: :uint16
+    param :size, as: :uint16
+    param :target2, as: :uint16
+
+    execute do |base|
+      PLA
+      STA   dp(DMA[0].control - base)
+      PLA
+      STA   PPU.VMAIN
+      LDA   #PPU.VMDATA & $FF
+      STA   dp(DMA[0].destination - base)
+      PLX
+      STX   dp(DMA[0].source_address - base)
+      PLA
+      STA   dp(DMA[0].source_bank - base)
+      PLX
+      STX   PPU.VMADD
+      PLY
+      STY   dp(DMA[0].size - base)
+      LDA   #1
+      STA   CPU.MDMAEN
+      PLX
+      STX   PPU.VMADD
+      STY   dp(DMA[0].size - base)
+      LDA   #1
+      STA   CPU.MDMAEN
+    end
+  end
+
+  vram_multi_copy = Callback.new do
+    param :copy_mode, as: :uint8
+    param :origin, as: :uint16
+    param :origin_bank, as: :uint8
+    param :target, as: :uint16
+    param :size, as: :uint16
+    param :origin_2, as: :uint16
+    param :target_2, as: :uint16
+
+    execute do |base|
+      PLA
+      STA   PPU.VMAIN
+      LDX   #1 | ((PPU.VMDATA & $FF) << 8)
+      STX   dp(DMA[0].control - base)
+      PLX
+      STX   dp(DMA[0].source_address - base)
+      PLA
+      STA   dp(DMA[0].source_bank - base)
+      PLX
+      STX   PPU.VMADD
+      PLY
+      STY   dp(DMA[0].size - base)
+      LDA   #1
+      STA   CPU.MDMAEN
+      PLX
+      STX   dp(DMA[0].source_address - base)
+      PLX
+      STX   PPU.VMADD
+      STY   dp(DMA[0].size - base)
+      LDA   #1
+      STA   CPU.MDMAEN
+    end
+  end
+
+  vram_4_in_1_copy = Callback.new do
+    param :origin, as: :uint16
+    param :origin_bank, as: :uint8
+    param :target, as: :uint16
+    param :size, as: :uint16
+    param :target_2, as: :uint16
+    param :target_3, as: :uint16
+    param :target_4, as: :uint16
+
+    execute do |base|
+      LDA   #$80
+      STA   PPU.VMAIN
+      LDX   #1 | ((PPU.VMDATA & $FF) << 8)
+      STX   dp(DMA[0].control - base)
+      PLX
+      STX   dp(DMA[0].source_address - base)
+      PLA
+      STA   dp(DMA[0].source_bank - base)
+      PLX
+      STX   PPU.VMADD
+      PLY
+      STY   dp(DMA[0].size - base)
+      LDA   #1
+      STA   CPU.MDMAEN
+      PLX
+      STX   PPU.VMADD
+      STY   dp(DMA[0].size - base)
+      STA   CPU.MDMAEN
+      PLX
+      STX   PPU.VMADD
+      STY   dp(DMA[0].size - base)
+      STA   CPU.MDMAEN
+      PLX
+      STX   PPU.VMADD
+      STY   dp(DMA[0].size - base)
+      STA   CPU.MDMAEN
+    end
+  end
+
+  vram_tiles2 = Callback.new do
+    param :target1, as: :uint16
+    param :data1, as: :uint16
+    param :target2, as: :uint16
+    param :data2, as: :uint16
+
+    execute do |base|
+      LDA   #$80
+      STA   PPU.VMAIN
+      PLX
+      STX   PPU.VMADD
+      PLX
+      STX   PPU.VMDATA
+      PLX
+      STX   PPU.VMADD
+      PLX
+      STX   PPU.VMDATA
+    end
+  end
+
+  oam_copy = Callback.new do
+    param :origin, as: :uint16
+    param :origin_bank, as: :uint8
+    param :target, as: :uint16
+    param :size, as: :uint16
+
+    execute do |base|
+      LDX   #0 | ((PPU.OAMDATA & $FF) << 8)
+      STX   dp(DMA[0].control - base)
+      PLX
+      STX   dp(DMA[0].source_address - base)
+      PLA
+      STA   dp(DMA[0].source_bank - base)
+      PLX
+      STX   PPU.OAMADD
+      PLX
+      STX   dp(DMA[0].size - base)
+      LDA   #1
+      STA   CPU.MDMAEN
+    end
+  end
+
+  cgram_copy_queue_job = Callback.new do
+    param :origin, as: :uint16
+    param :target, as: :uint8
+    param :origin_bank, as: :uint8
+    param :size, as: :uint16
+
+    execute do |base|
+      LDX   #2 | ((PPU.CGDATA & $FF) << 8)
+      STX   dp(DMA[0].control - base)
+      PLX
+      STX   dp(DMA[0].source_address - base)
+      PLA
+      STA   PPU.CGADD
+      PLA
+      STA   dp(DMA[0].source_bank - base)
+      PLX
+      STX   dp(DMA[0].size - base)
+      LDA   #1
+      STA   CPU.MDMAEN
+    end
+  end
+
+
+  ;; Adds the VRAM usage
+  macro add_vram_usage_icb
+    CLC
+    ADC   #VRAM_VBLANK_DURATION
+    ADC   usage_counter
+    ; Debug.log "VBLANK usage {A} (VRAM)"
+    STA   usage_counter
+  end
+
+  ;; Adds the CGRAM usage
+  macro add_cgram_usage_icb
+    CLC
+    ADC   #CGRAM_VBLANK_DURATION
+    ADC   usage_counter
+    ; Debug.log "VBLANK usage {A} (CGRAM)"
+    STA   usage_counter
+  end
+
+  ;; Adds the OAM usage
+  macro add_oam_usage_icb
+    CLC
+    ADC   #OAM_VBLANK_DURATION
+    ADC   usage_counter
+    ; Debug.log "VBLANK usage {A} (OAM)"
+    STA   usage_counter
+  end
+
+  ;; @param Al first color
+  ;; @param Ah source bank
+  ;; @param X  source address
+  ;; @param Y  num color in bytes
+  def queue_cgram_update_icb
+    routine do
+      is_thread_safe
+      input A
+
+      declare :source_address, as: :uint16
+      declare :num_colors, as: :uint16
+      declare :register_a, as: :uint16
+
+      execute do |register_a, num_colors, source_address|
+        STA   dp(register_a)
+        STY   dp(num_colors)
+        STX   dp(source_address)
+
+        CPU.set A: 8
+        LDA   #Aoba::VBlank::Target::CGRAM
+        Job.allocate_icb
+        X.is_a! Job::JobInstance
+
+        LDA   dp(register_a)
+        STA   X[:target_address]
+        LDA   dp(register_a) + 1
+        STA   X[:source_address] + 2
+        CPU.set A: 16
+
+        LDA   dp(source_address)
+        STA   X[:source_address]
+        LDA   dp(num_colors)
+        STA   X[:data_size]
+
+        Job.try_queue_icb
+      end
+    end
+  end
+
+  def queue_cgram_update_long
+    CPU.with_bank! VARIABLE_RAM_BANK do
+      queue_cgram_update_icb
+    end
+    RTL
+  end
+
+end

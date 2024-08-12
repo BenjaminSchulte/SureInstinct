@@ -1,0 +1,26 @@
+environment:
+  - id: DEBUG
+    value: "{{DEBUG}}"
+    default: 0
+
+library:
+  - lib/audio/index.fma
+
+init:
+  - main.fma
+
+global:
+  - script: boot
+    symbol_name: __com_aobastudio_aoba_core_initialize
+  - script: mainmenu_close
+    symbol_name: __com_aobastudio_sureinstinct_mainmenu_close
+  - script: stageselect_startlevel
+    symbol_name: __com_aobastudio_sureinstinct_stageselect_startlevel
+  - script: ingame_restart
+    symbol_name: __com_aobastudio_sureinstinct_ingame_restart
+  - script: ingame_to_stageselect
+    symbol_name: __com_aobastudio_sureinstinct_ingame_to_stageselect
+  - script: stageselect_feedback
+    symbol_name: __com_aobastudio_sureinstinct_stageselect_feedback
+  - script: stageselect_challenge
+    symbol_name: __com_aobastudio_sureinstinct_stageselect_challenge

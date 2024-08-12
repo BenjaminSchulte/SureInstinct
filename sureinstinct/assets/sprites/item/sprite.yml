@@ -1,0 +1,33 @@
+type: ItemSprite
+
+frames:
+  grid: {images: [{image: 0}]}
+  bridge: {images: [{image: 1}]}
+  parachute: {images: [{image: 2}]}
+  pause: {images: [{image: 3}]}
+  bomb: {images: [{image: 4}]}
+
+frame_groups:
+  item:
+    - frame: parachute
+    - frame: bridge
+    - frame: pause
+    - frame: bomb
+    - frame: grid
+
+animations:
+  grid_down:
+    - frame: grid
+      delay: 15
+  parachute_down:
+    - frame: parachute
+      delay: 15
+  bridge_down:
+    - frame: bridge
+      delay: 15
+  pause_down:
+    - frame: pause
+      delay: 15
+  bomb_down:
+    - frame: bomb
+      delay: 15

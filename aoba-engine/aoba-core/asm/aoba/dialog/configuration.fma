@@ -1,0 +1,44 @@
+module Aoba::Dialog
+
+  ;; ROM bank for the tilemap
+  DIALOG_TILEMAP_ROM_BANK = $C4
+
+  ;; Number of colors for the dialog palette
+  DIALOG_PALETTE_SIZE = 12
+
+  ;; First color of the dialog palette
+  DIALOG_PALETTE_COLOR_INDEX = 20
+
+  ;; Default font palette
+  FONT_PALETTE ||= 4
+
+  ;; Maximum number of tiles per ROW
+  MAX_NUM_TILES_PER_ROW ||= 30
+
+  ;; Default number of tiles per row
+  DEFAULT_NUM_TILES_PER_ROW ||= 30
+
+  ;; Number of pointer tiles
+  NUM_POINTER_TILES ||= 4
+
+  ;; Maximum number of rows
+  MAX_NUM_ROWS ||= 3
+
+  ;; Buffer size
+  TEXT_RENDERING_BUFFER_SIZE = MAX_NUM_TILES_PER_ROW * 2 * 2 * 16
+
+  ;; Minimum amount of RAM to allocate for text rendering
+  TEXT_RENDERING_RAM_SIZE = TEXT_RENDERING_BUFFER_SIZE + Font::MAX_TEXT_LENGTH * 2
+
+  ;; Text decompression offset
+  TEXT_DECOMPRESSION_RAM_OFFSET = TEXT_RENDERING_BUFFER_SIZE
+
+  class DialogImageRomHeader < Image::ImageRomHeader
+    ;; The large tilemap
+    declare :large_tilemap, as: :uint24
+
+    ;; The small tilemap
+    declare :small_tilemap, as: :uint24
+  end
+
+end

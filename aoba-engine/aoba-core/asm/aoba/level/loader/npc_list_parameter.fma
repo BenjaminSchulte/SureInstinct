@@ -1,0 +1,428 @@
+module Aoba::Level::Loader
+
+  class NpcListRomHeader
+    ;; NPC data
+    declare :num_npcs, as: :uint8
+
+    ;; NPC character address
+    declare :npc_character_address, as: :uint16
+
+    ;; NPC flags
+    declare :npc_flags, as: :uint8
+
+    ;; -- Script addresses might be here --
+
+    ;; NPC instance flags
+    declare :npc_instance_flags, as: :uint8
+
+    ;; NPC instance X
+    declare :npc_instance_x, as: :uint8
+
+    ;; NPC instance Y
+    declare :npc_instance_y, as: :uint8
+
+    ;; === NPC data loops from here ===
+  end
+ 
+  class NpcListParameter < Parameter
+    include StaticRoutineClass
+
+    register A: 16, XY: 16
+
+    macro initialize
+      super
+
+      @TempRAM = MemoryScope.new("NpcListParameter", in: nil, for: ::SNES::MemoryMap::RAM)
+      @_counter = MemoryVariable.new("_counter", as: :uint16, in: @TempRAM)
+
+      @_flags = MemoryVariable.new("_flags", as: :uint8, in: @TempRAM)
+      @_num_npcs = MemoryVariable.new("_num_npcs", as: :uint16, in: @TempRAM)
+      @_num_npc_instances = MemoryVariable.new("_num_npc_instances", as: :uint16, in: @TempRAM)
+      @_character_address = MemoryVariable.new("_character_address", as: :uint16, in: @TempRAM)
+      @_current_npc_script_pointer = MemoryVariable.new("_current_npc_script_pointer", as: :uint16, in: @TempRAM)
+      @_current_npc_pointer = MemoryVariable.new("_current_npc_pointer", as: :uint16, in: @TempRAM)
+      @_instance_flags = MemoryVariable.new("_instance_flags", as: :uint8, in: @TempRAM)
+      @_instance_position = MemoryVariable.new("_instance_position", as: :uint16, in: @TempRAM)
+      @_sprite_instance = @_instance_position
+      @_crowd_script_id = MemoryVariable.new("_crowd_script_id", as: :uint8, in: @TempRAM)
+      @_crowd_list_pointer = MemoryVariable.new("_crowd_list_pointer", as: :uint16, in: @TempRAM)
+      @_calc0 = MemoryVariable.new("_calc0", as: :uint32, in: @TempRAM)
+    end
+
+    macro preconfigure
+      @loader.SharedTempRAM.include @TempRAM
+    end
+
+    macro finalize
+      @__static_locate_at_args = @loader.class.__static_locate_at_args || @loader.__static_locate_at_args || {}
+      @__static_locate_at_kwargs = @loader.class.__static_locate_at_kwargs || @loader.__static_locate_at_kwargs || {}
+      setup_static_routines
+    end
+
+    macro size_in_bytes
+      return 0
+    end
+
+    ;; Allocates the sprite spawn RAM
+    macro _allocate_sprite_create_ram
+      LDA   Aoba::Sprite.thread_id
+      LDX   #Aoba::Sprite::Event::CreateCharacter::EventConfig.size
+      Thread.safe do
+        JSL   Memory.allocate_miniblock_long
+      end
+      X.is_a! Aoba::Sprite::Event::CreateCharacter::EventConfig
+    end
+
+    ;; Creates the NPC sprite
+    macro _create_npc_sprite
+      CPU.set A: 16
+      LDA   dp(@_character_address)
+      STA   X[:creature_address]
+      STZ   X[:animation]
+      LDA   dp(@_instance_position)
+      AND   #$FF
+      8.multiplicated_register_A
+      STA   X[:x]
+      LDA   dp(@_instance_position + 1)
+      AND   #$FF
+      8.multiplicated_register_A
+      STA   X[:y]
+
+      CPU.set A: 8
+      LDA   #Aoba::Sprite::Event::CreateCharacter::Flag.VISIBLE | Aoba::Sprite::RenderableFlag::LAYER_BG
+      STA   X[:flags]
+      STZ   X[:movement_flags]
+      LDA   dp(@_instance_flags)
+      AND   #3
+      STA   X[:direction]
+      LDA   dp(@_instance_flags)
+      BPL   _no_front_layer
+      LDA   X[:flags]
+      ORA   #Aoba::Sprite::RenderableFlag::LAYER_FG
+      STA   X[:flags]
+    _no_front_layer:
+      STX   dp(@_calc0)
+
+      ;; Allocates the actual event
+      LDA   #Aoba::Thread::Event::USEREVENT_ID
+      JSL   Thread::Event.allocate_icb_long
+      X.is_a! Aoba::Sprite::Event::CreateCharacter::Event
+
+      ;; Configures the event
+      LDA   #Aoba::Sprite::Event::CreateCharacter::ID
+      STA   X[:event_id]
+      CPU.set A: 16
+      LDA   dp(@_calc0)
+      STA   X[:config_address]
+
+      ;; Sends the event
+      CPU.set A: 8
+      LDA   Aoba::Sprite.thread_id
+      JSL   Thread.send_event_icb_long
+
+      ;; Waits for the sprite create response
+      LDA   #Aoba::Sprite::Event::CreateCharacter::ID
+      XBA
+      LDA   Aoba::Sprite.thread_id
+      JSL   Thread.wait_for_ready_icb_long
+      CPU.set A: 16
+
+      ;; X= sprite pointer
+      STX   dp(@_sprite_instance)
+    end
+
+    ;; Stores the sprite to the NPC level list
+    macro _store_sprite_to_level_npc_list
+      CPU.set A: 8
+      TDC
+      XBA
+      LDA   level_npc_count
+      TAY
+      X.is_a! Aoba::Sprite.Instance
+      LDA   X[:id]
+      STA   level_npc_pointer_list, Y
+      INC   level_npc_count
+      CPU.set A: 16
+    end
+
+    ;; Creates the NPC
+    ;; @ignore-thread-safety
+    routine :_create_npc do
+      ;; Loads the instance data to the RAM
+      @loader.read_header_at @offset + NpcListRomHeader.offset_of(:npc_instance_x)
+      STA   dp(@_instance_position)
+      CPU.set A: 8
+      @loader.read_header_at @offset + NpcListRomHeader.offset_of(:npc_instance_flags)
+      STA   dp(@_instance_flags)
+
+      ;; Allocates the NPC RAM to X
+      _allocate_sprite_create_ram
+
+      ;; Configures the NPC RAM
+      _create_npc_sprite
+      _store_sprite_to_level_npc_list
+      RTS
+    end
+
+    ;; Executes the script
+    macro _execute_script(wait)
+      @loader.read_header_at @offset + NpcListRomHeader.offset_of(:npc_instance_flags) + 2
+      TAY
+      CPU.set A: 16
+      @loader.read_header_at @offset + NpcListRomHeader.offset_of(:npc_instance_flags)
+      PHX
+      TAX
+      LDA   dp(@_sprite_instance)
+      if wait
+        JSL   Aoba::Script.execute_script_with_context_and_wait_icb_long
+      else
+        JSL   Aoba::Script.execute_script_with_context_icb_long
+      end
+      CPU.set A: 8
+      PLX
+      INX
+      INX
+      INX
+    end
+
+    ;; Creates the movement script
+    routine :_create_movement_script do
+      A.pretend_size 8
+      ;; Tests whether this is a crowd 
+      LDA   dp(@_flags)
+      BIT   #NpcRomFlag.IS_CROWD
+      BNZ   _is_crowd
+      _execute_script wait: false
+      RTS
+
+      ;; ---
+
+      ;; This NPC has a shared script for all members
+    _is_crowd:
+      PHX
+      LDA   dp(@_crowd_script_id)
+      BNZ   _has_crowd_script_id
+
+      ;; Creates the crowd script in "idle" state
+    _create_crowd_script:
+      @loader.read_header_at @offset + NpcListRomHeader.offset_of(:npc_instance_flags) + 2
+      TAY
+      CPU.set A: 16
+      @loader.read_header_at @offset + NpcListRomHeader.offset_of(:npc_instance_flags)
+      TAX
+      LDA   #Aoba::Script::CreateFlag::RECEIVE_CONTEXT
+      JSL   Aoba::Script.execute_script_icb_long
+      CPU.set A: 8
+      TXA
+      STA   dp(@_crowd_script_id)
+      CPU.set A: 16
+
+      ;; We didn't have a script so we also won't have a crowd allocation
+      TAY
+      LDA   dp(@_num_npc_instances)
+      INC   A
+      JSL   Aoba::Sprite::Api.allocate_crowd_record_icb_long
+      STX   dp(@_crowd_list_pointer)
+      CPU.set A: 8
+
+      ;; Reuses the script
+    _has_crowd_script_id:
+
+      ;; Adds the NPC to the crowd list
+      LDX   dp(@_crowd_list_pointer)
+      X.is_a! Aoba::Sprite::Crowd::List
+      TDC
+      XBA
+      LDA   X[:num_members]
+      INC   X[:num_members]
+      CPU.set A: 16
+      CLC
+      ADC   dp(@_crowd_list_pointer)
+      TAX
+      CPU.set A: 8
+      LDY   dp(@_sprite_instance)
+      Y.is_a! Sprite::Instance
+      LDA   Y[:id]
+      STA   Aoba::Sprite::Crowd::List.size, X
+      CPU.set A: 16
+
+      ;; Loads the NPC amount left
+      LDA   dp(@_num_npc_instances)
+      BNZ   _is_not_last_npc
+
+      ;; Is last NPC, send the context to the script
+    _is_last_npc:
+      LDA   #Aoba::Thread::Event::USEREVENT_ID
+      JSL   Aoba::Thread::Event.allocate_icb_long
+      X.is_a! Aoba::Script::ContextConfig
+      LDA   dp(@_crowd_list_pointer)
+      STA   X[:context]
+      LDA   dp(@_crowd_script_id)
+      JSL   Aoba::Thread.send_event_icb_long
+
+    _is_not_last_npc:
+      CPU.set A: 8
+      PLX
+      INX
+      INX
+      INX
+      LDA   dp(@_crowd_script_id)
+      RTS
+    end
+
+    ;; Executes the initialize script
+    ;; @ignore-thread-safety
+    routine :_execute_npc_scripts do
+      CPU.set A: 8
+      LDX   dp(@_current_npc_script_pointer)
+      LDA   dp(@_flags)
+      STA   dp(@_calc0 + 3)
+      BPL   _no_action_script
+    
+    _action_script:
+      LDY   dp(@_sprite_instance)
+      Y.is_a! Aoba::Sprite::Instance
+      @loader.read_header_at @offset + NpcListRomHeader.offset_of(:npc_instance_flags) + 2
+      STA   Y[:trigger_action_script] + 2
+      CPU.set A: 16
+      @loader.read_header_at @offset + NpcListRomHeader.offset_of(:npc_instance_flags)
+      STA   Y[:trigger_action_script]
+      CPU.set A: 8
+      INX
+      INX
+      INX
+
+    _no_action_script:
+      ASL   dp(@_calc0 + 3)
+      BPL   _no_initialize_script
+    
+    _initialize_script:
+      _execute_script wait: true
+
+    _no_initialize_script:
+      ASL   dp(@_calc0 + 3)
+      BPL   _no_movement_script
+
+    _movement_script:
+      _create_movement_script
+      LDY   dp(@_sprite_instance)
+      Y.is_a! Aoba::Sprite::Instance
+      STA   Y[:automation_script_id]
+
+    _no_movement_script:
+      CPU.set A: 16
+      RTS
+    end
+    
+    ;; Creates all instances
+    routine :_create_all_instances do
+    _loop:
+      _create_npc
+      _execute_npc_scripts
+
+      ;; Resumes to the next instance
+      LDX   dp(@_current_npc_pointer)
+      INX
+      INX
+      INX
+      STX   dp(@_current_npc_pointer)
+      DEC   dp(@_num_npc_instances)
+      BPL   _loop
+      RTS
+    end
+
+    ;; Loads the level palette
+    macro load
+      ;; Number of NPCs
+      @loader.read_header_at @offset + NpcListRomHeader.offset_of(:num_npcs)
+      AND   #$FF
+      BZE   _skip_load
+      STA   dp(@_num_npcs)
+
+    _loop_load_npc:
+      STX   dp(@_current_npc_script_pointer)
+
+      ;; Loads the character address
+      @loader.read_header_at @offset + NpcListRomHeader.offset_of(:npc_character_address)
+      STA   dp(@_character_address)
+
+      CPU.set A: 8
+      @loader.read_header_at @offset + NpcListRomHeader.offset_of(:npc_flags)
+      STA   dp(@_flags)
+      STZ   dp(@_crowd_script_id)
+      CPU.set A: 16
+      AND   #MAX_NUM_NPC_INSTANCES.bitmask
+      STA   dp(@_num_npc_instances)
+
+      ;; Loads the scripts
+      CPU.set A: 8
+      LDA   dp(@_flags)
+      AND   #$E0
+      CPU.set A: 16
+      BZE   _no_scripts
+
+    _increment_script_address:
+      ;; Calculates the offset after scripts
+      XBA
+      ASL   A
+      BCC   _no_initialize_script
+      INX
+      INX
+      INX
+    _no_initialize_script:
+      ASL   A
+      BCC   _no_movement_script
+      INX
+      INX
+      INX
+    _no_movement_script:
+      ASL   A
+      BCC   _no_action_script
+      INX
+      INX
+      INX
+    _no_action_script: 
+    _no_scripts:
+      STX   dp(@_current_npc_pointer)
+
+      ;; Creates all instances
+      _create_all_instances
+
+      ;; Resumes to the next NPC to create
+      LDA   dp(@_current_npc_pointer)
+      CLC
+      ADC   #NpcListRomHeader.offset_of(:npc_instance_flags) - NpcListRomHeader.offset_of(:num_npcs) - 1
+      TAX
+      DEC   dp(@_num_npcs)
+      BNZ   _loop_load_npc
+
+    _skip_load:
+      LDX   dp(@loader._current_level)
+    end
+
+    macro unload
+      CPU.set A: 8
+      TDC
+      XBA
+      LDA   level_npc_count
+      BZE   _skip_unload_npc
+
+      TAY
+
+    _unload_loop:
+      DEY
+      STY   dp(@_counter)
+      LDA   level_npc_pointer_list, Y
+      JSL   Aoba::Sprite::Api.destroy_sprite_icb_long
+
+      LDY   dp(@_counter)
+      BNZ   _unload_loop
+
+      STZ   level_npc_count
+
+    _skip_unload_npc:
+      CPU.set A: 16
+    end
+  end
+
+end

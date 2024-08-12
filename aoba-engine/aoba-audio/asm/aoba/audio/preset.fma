@@ -1,0 +1,16 @@
+module Aoba::Audio::Preset
+
+  ;; Default audio 
+  declare :menu_select, as: :uint16, in: ::Memory.VariableRAM
+
+  ;; Resets every RAM to zero
+  macro reset
+    STZ   menu_select
+  end
+
+  ;; Reset
+  Aoba::Event.on :system_initialize_A16_VARRAM do
+    reset
+  end
+
+end

@@ -1,0 +1,168 @@
+module Aoba::Sprite
+
+  module RenderableFlag
+    ;; Flips the sprite in X axis
+    RENDERABLE_FLIP_X = $40
+
+    ;; Flips the sprite in Y axis
+    RENDERABLE_FLIP_Y = $80
+
+    ;; Background layer
+    LAYER_BG = $20
+
+    ;; Foreground layer
+    LAYER_FG = $30
+
+    ;; The palette mask
+    PALETTE_MASK = $0E
+
+    ;; Whether the renderable flag palette should be unique
+    DEDICATED_PALETTE_SLOT = $01
+  end
+
+  module RenderableConfigurationFlag
+    ;;! Whether this object sticks to the screen
+    NO_CAMERA_RELATIVE = $80
+
+    ;; Internal: Currently visible on screen
+    IS_VISIBLE_ON_SCREEN = $40
+
+    ;; Background layer
+    PRIORITY_LAYER_BG = $20
+
+    ;; Foreground layer
+    PRIORITY_LAYER_FG = $30
+
+    ;; Force loop animation
+    FORCE_LOOP_ANIMATION = $08
+
+    ;; Whether the record must be rerendered
+    FORCE_REUPLOAD_TO_VRAM = $04
+
+    ;; No sprite NPC
+    NO_SPRITE = $02
+    
+    ;; Whether the NPC is visible
+    HIDDEN = $01
+  end
+
+  module AnimationFlag
+    ;; Set if there is no animation but a direct frame
+    DIRECT_FRAME_MODE = $80
+  end
+
+  class Renderable
+    ;; Renderable flags
+    declare :renderable_flags, as: :uint8
+    ; -no space here-
+    ;; Renderable flags
+    declare :renderable_configuration_flags, as: :uint8
+
+    ;; Additional animation flags
+    declare :animation_flags, as: :uint8
+
+    ;; The palette group ID
+    declare :palette_group_id, as: :uint16
+
+    ;; The current palette ID
+    declare :palette_id, as: :uint16
+
+    ;; The current palette index
+    declare :current_palette_index, as: :uint8
+
+    ;; The current palette index
+    declare :new_palette_index, as: :uint8
+
+    ;; Reflection distance (0 for no reflection)
+    declare :reflection_distance, as: :uint8
+
+    ;; The palette slot * 2
+    declare :palette_slot_x2, as: :uint8
+
+    ;; The current animation ID
+    declare :animation_id, as: :uint8
+    ;; - no space -
+    ;; The current animation ID
+    declare :queued_animation_id, as: :uint8
+
+    ;; The current animation ID (depending on direction)
+    ;; used as framegroup ID in DIRECT_FRAME_MODE
+    declare :calculated_animation_id, as: :uint16
+    
+    ;; The current frame script (same bank as sprite_header)
+    ;; used as frame ID in DIRECT_FRAME_MODE
+    declare :animation_script_pointer, as: :uint16
+
+    ;; The frame reference pointer
+    declare :previous_animation_frame_reference_pointer, as: :uint16
+
+    ;; The frame reference pointer
+    ;; used as frame pointer in DIRECT_FRAME_MODE
+    declare :animation_frame_reference_pointer, as: :uint16
+
+    ;; The current frame duration
+    declare :animation_duration, as: :uint8
+
+    ;; The START animation script pointer
+    declare :animation_start_script_pointer, as: :uint16
+
+    ;; The START frame reference pointer
+    declare :animation_start_frame_reference_pointer, as: :uint16
+
+    ;; Additional Y value
+    declare :rendering_offset_y, as: :uint16
+
+    ;; Render priority
+    declare :render_priority, as: :uint8
+
+    ;; Viewbox configuration
+    declare :viewbox_left, as: :uint8
+
+    ;; Viewbox configuration
+    declare :viewbox_top, as: :uint8
+
+    ;; Viewbox configuration
+    declare :viewbox_width, as: :uint16
+
+    ;; Viewbox configuration
+    declare :viewbox_height, as: :uint16
+
+    ;; Direct OAM record pointer
+    declare :direct_oam_record_table, as: :uint16
+
+    ;; Number of direct OAM records
+    declare :direct_oam_record_table_size, as: :uint8
+
+    ;; Configures the class when being included
+    macro self.configure(Instance)
+      Instance.event.on :reset8 do
+        STZ   X[:renderable_flags]
+        STZ   X[:renderable_configuration_flags]
+        STZ   X[:animation_duration]
+        STZ   X[:queued_animation_id]
+        STZ   X[:reflection_distance]
+        STZ   X[:animation_flags]
+      end
+      
+      Instance.event.on :reset16 do
+        STZ   X[:direct_oam_record_table]
+        STZ   X[:rendering_offset_y]
+        LDA   #$80
+        STA   X[:render_priority]
+        LDA   #$FFFF
+        STA   X[:previous_animation_frame_reference_pointer]
+        STA   X[:calculated_animation_id]
+        STA   X[:animation_script_pointer]
+      end
+
+      Instance.event.on :update_before_oam do
+        Aoba::Sprite::Action::Rendering.update
+      end
+
+      Instance.event.on :update, order: Aoba::Event::Order::LATE do
+        Aoba::Sprite::Action::Rendering.update_visibility
+      end
+    end
+  end
+
+end

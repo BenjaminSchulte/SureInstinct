@@ -1,0 +1,64 @@
+module Aoba::Font::Render::Stage::ClearBuffer
+
+  ;; RAM
+  scope :TempRAM, in: StageRAM
+
+  ;; Calculates the line length of this row
+  def execute
+    Thread.assert_thread thread_id
+
+    LDY   dp(state)
+    Y.is_a! State
+
+    ;; Copy attribute to RAM
+    LDA   Y[:line_x_offset]
+    STA   Y[:current_x_position]
+
+    ;; Sets X to buffer
+    LDA   Y[:target_buffer]
+    TAX
+
+    ;; Sets Y to tile number
+    LDA   Y[:color_and_flags]
+    BIT   #Flag::SINGLE_ROW
+    BZE   _two_rows
+  _single_row:
+    LDA   Y[:max_num_tiles_per_row]
+    AND   dp(x00FF)
+    BRA   _after_row_multiplier
+  _two_rows:
+    LDA   Y[:max_num_tiles_per_row]
+    AND   dp(x00FF)
+    ASL   A
+  _after_row_multiplier:
+    TAY
+    CLC
+  _loop:
+    STZ   $0, X
+    STZ   $2, X
+    STZ   $4, X
+    STZ   $6, X
+    STZ   $8, X
+    STZ   $A, X
+    STZ   $C, X
+    STZ   $E, X
+    STZ   $10, X
+    STZ   $12, X
+    STZ   $14, X
+    STZ   $16, X
+    STZ   $18, X
+    STZ   $1A, X
+    STZ   $1C, X
+    STZ   $1E, X
+
+    TXA
+    ADC   #$20
+    TAX
+
+    DEY
+    BNZ   _loop
+
+    RTS
+  end
+
+end

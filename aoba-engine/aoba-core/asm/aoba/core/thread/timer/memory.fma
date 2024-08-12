@@ -1,0 +1,94 @@
+module Aoba::Thread::Timer
+
+  class TimerInstance
+    ;; Points to the next timer
+    declare :next_timer, as: TimerInstance.pointer(:uint16)
+
+    ;; The frame when the timer will be triggered
+    declare :frame, as: :uint16
+
+    ;; The interval for repeating timers
+    declare :interval, as: :uint16
+
+    ;; Timer flags
+    declare :flags, as: :uint8
+
+    ;; The thread ID to be triggered
+    declare :thread_id, as: :uint8
+
+    ;; The user data
+    declare :userdata, as: :uint16
+  end
+
+  class TimerEvent < Event::Base
+    ;; The executed timer
+    declare :timer, as: TimerInstance.pointer(:uint16)
+
+    ;; The additional userdata
+    declare :userdata, as: :uint16
+  end
+
+  ;; Configures the interval in which frames have to be skipped
+  declare :frameskip_counter_reset, as: :uint8, in: ::Memory::VariableRAM
+
+  ;; The current frameskip counter
+  declare :frameskip_counter, as: :uint8, in: ::Memory::VariableRAM
+
+  ;; The current frame
+  declare :current_frame_low, as: :uint16, in: ::Memory::VariableRAM
+
+  ;; The current frame
+  declare :current_frame_high, as: :uint16, in: ::Memory::VariableRAM
+
+  ;; The RAM used for all timers
+  declare :instance_ram_pointer, as: TimerInstance.pointer(:uint16), in: ::Memory::VariableRAM
+
+  ;; The first free timer
+  declare :free_timers, as: TimerInstance.pointer(:uint16), in: ::Memory.VariableRAM
+
+  ;; The first active timer
+  declare :active_timers, as: TimerInstance.pointer(:uint16), in: ::Memory.VariableRAM
+
+  ;; Initializes the RAM
+  ;;
+  ;; @ignore-thread-safety
+  def initialize
+    ;; Allocates the RAM
+    LDX   #NUM_TIMERS * TimerInstance.size
+    JSL   Memory::allocate_long
+    STX   instance_ram_pointer
+    X.is_a! TimerInstance
+
+    ;; Clears some basic variables
+    STZ   active_timers
+    STZ   current_frame_low
+    STZ   current_frame_high
+
+    ;; Sets up the linked list
+    TXA
+    STX   free_timers
+    LDY   #NUM_TIMERS - 1
+  _loop:
+    TAX
+    CLC
+    ADC   #TimerInstance.size
+    STA   X[:next_timer]
+    DEY
+    BNZ   _loop
+    STZ   X[:next_timer]
+
+    ;; Sets up the frameskip
+    CPU.set A: 8
+
+    if ::SNES::Arch::FRAMES_PER_SECOND > 50
+      LDA   #6
+      STA   frameskip_counter
+      STA   frameskip_counter_reset
+    else 
+      STZ   frameskip_counter
+      STZ   frameskip_counter_reset
+    end
+    CPU.set A: 16
+  end
+
+end

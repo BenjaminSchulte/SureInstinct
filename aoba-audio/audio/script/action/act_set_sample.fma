@@ -1,0 +1,33 @@
+module Script::Action::SetSample
+
+  def process
+    MOV   X, A
+    MOV   A, indirect(Script.address, X)
+    INCW  dp(Script.address)
+    MOV   addr(Channel.samples, Y), A
+
+  _update_sample_pointers:
+    ; SNES sample -> local sample
+    MOV   X, A
+    MOV   A, addr(Sample.snes_sample_id_map, X)
+
+    ; Copy attributes from sample to channel
+    MOV   X, A
+    MOV   A, addr(Sample.volumes, X)
+    MOV   addr(Channel.sample_volumes, Y), A
+
+    MOV   A, addr(Sample.sample_pitch_low_byte, X)
+    MOV   addr(Channel.sample_pitch_low_bytes, Y), A
+    MOV   A, addr(Sample.sample_pitch_high_byte, X)
+    MOV   addr(Channel.sample_pitch_high_bytes, Y), A
+
+    MOV   A, addr(Sample.sample_adsr_low_byte, X)
+    MOV   addr(Channel.sample_adsr_low_bytes, Y), A
+    MOV   A, addr(Sample.sample_adsr_high_byte, X)
+    MOV   addr(Channel.sample_adsr_high_bytes, Y), A
+
+    ; Mark channel to be modified
+    OR    dp(Channel.changed_sample_voices), dp(Channel.voice_bit_pointer)
+  end
+
+end

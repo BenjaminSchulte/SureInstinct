@@ -1,0 +1,7 @@
+#!/bin/bash
+
+mkdir -p aoba-libsft/build
+
+cmake --build ./aoba-libsft/build --config Debug --target aobasft -- -j 7
+
+

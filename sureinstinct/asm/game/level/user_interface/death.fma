@@ -1,0 +1,531 @@
+module Game::Level::UserInterface::Death
+
+  _hdma_header_size = Aoba::Composer::Hdma::HDMA_CHANNEL_HEADER_SIZE
+
+  scope :RAM, in: SubScreenRAM
+
+  declare :is_pause, as: :uint8, in: RAM
+
+  declare :effect_is_active, as: :uint16, in: RAM
+
+  declare :current_menu_item, as: :uint16, in: RAM
+
+  declare :gamepad_listener, as: :uint16, in: RAM
+
+  declare :calculation_buffer, as: :uint8, in: RAM, length: 24
+
+
+  ;; The thread RAM
+  scope :ThreadRAM, in: ::Memory::ThreadRAM
+  declare :_calc0, as: :uint32, in: ThreadRAM
+
+  ;; Sets up the HDMA
+  @locate_at bank: Aoba::SYSTEM_ROM_BANK
+  def update_hdma
+    ; You died
+    LDA   #35 + 40
+    STA   3 * _hdma_header_size, X
+    LDA   #calculation_buffer
+    STA   3 * _hdma_header_size + 1, X
+
+    ; Do you want to continue?
+    LDA   #34
+    STA   3 * _hdma_header_size + 3, X
+    LDA   #calculation_buffer + 2
+    STA   3 * _hdma_header_size + 4, X
+
+    ; Distance
+    LDA   #9
+    STA   3 * _hdma_header_size + 6, X
+    LDA   #calculation_buffer + 4
+    STA   3 * _hdma_header_size + 7, X
+
+    LDA   num_lives
+    ORA   is_pause
+    AND   #$FF
+    BZE   _no_lives_left
+    DEC   A
+    BZE   _is_one_life
+  
+  _is_two_lifes:
+    LDA   #13 + 8
+    STA   3 * _hdma_header_size + 9, X
+    LDA   #3
+    STA   3 * _hdma_header_size + 12, X
+    LDA   #calculation_buffer + 6
+    STA   3 * _hdma_header_size + 10, X
+    LDA   #calculation_buffer + 10
+    STA   3 * _hdma_header_size + 13, X
+    BRA   _after_resume
+
+  _is_one_life:
+    LDA   #13
+    STA   3 * _hdma_header_size + 9, X
+    LDA   #3 + 8
+    STA   3 * _hdma_header_size + 12, X
+    LDA   #calculation_buffer + 6
+    STA   3 * _hdma_header_size + 10, X
+    LDA   #calculation_buffer + 8
+    STA   3 * _hdma_header_size + 13, X
+
+  _after_resume:
+    TXA
+    CLC
+    ADC   #12
+    TAX
+    BRA   _after_no_lives_left
+
+    ;; --
+
+  _no_lives_left:
+    LDA   #13 + 8 + 3
+    STA   3 * _hdma_header_size + 9, X
+    LDA   #calculation_buffer + 22
+    STA   3 * _hdma_header_size + 10, X
+    TXA
+    CLC
+    ADC   #9
+    TAX
+
+  _after_no_lives_left:
+
+    CPU.set A: 8
+    LDA   #6
+    STA   3 * _hdma_header_size + 3, X
+    LDA   #16
+    STA   3 * _hdma_header_size + 6, X
+    LDA   #8
+    STA   3 * _hdma_header_size + 9, X
+    LDA   #24
+    STA   3 * _hdma_header_size + 12, X
+    LDA   #1
+    STA   3 * _hdma_header_size + 15, X
+    STZ   3 * _hdma_header_size + 18, X
+    CPU.set A: 16
+
+    LDA   #calculation_buffer + 12
+    STA   3 * _hdma_header_size + 4, X
+    LDA   #calculation_buffer + 14
+    STA   3 * _hdma_header_size + 7, X
+    LDA   #calculation_buffer + 16
+    STA   3 * _hdma_header_size + 10, X
+    LDA   #calculation_buffer + 18
+    STA   3 * _hdma_header_size + 13, X
+    LDA   #calculation_buffer + 20
+    STA   3 * _hdma_header_size + 16, X
+  end
+
+  macro _select_resume
+    LDA   #75 - (35 + 40 + 34 + 9 + 1)
+    STA   calculation_buffer + 6
+    LDA   #96 - (35 + 40 + 34 + 9 + 14)
+    STA   calculation_buffer + 8
+    LDA   #104 - (35 + 40 + 34 + 9 + 14 + 8)
+    STA   calculation_buffer + 10
+  end
+
+  macro _deselect_resume
+    LDA   #107 - (35 + 40 + 34 + 9 + 1)
+    STA   calculation_buffer + 6
+    LDA   #128 - (35 + 40 + 34 + 9 + 14)
+    STA   calculation_buffer + 8
+    LDA   #136 - (35 + 40 + 34 + 9 + 14 + 8)
+    STA   calculation_buffer + 10
+  end
+
+  macro _select_restart
+    LDA   #139 - (143 + 6)
+    STA   calculation_buffer + 14
+  end
+
+  macro _deselect_restart
+    LDA   #163 - (143 + 6)
+    STA   calculation_buffer + 14
+  end
+
+  macro _select_quit
+    LDA   #203 - (143 + 6 + 16 + 8)
+    STA   calculation_buffer + 18
+  end
+
+  macro _deselect_quit
+    LDA   #179 - (143 + 6 + 16 + 8)
+    STA   calculation_buffer + 18
+  end
+
+  @locate_at bank: Aoba::EFFECT_ROM_BANK
+  def select_resume
+    STZ   current_menu_item
+
+    _select_resume
+    _deselect_restart
+    _deselect_quit
+  end
+
+  @locate_at bank: Aoba::EFFECT_ROM_BANK
+  def select_restart
+    LDA   #1
+    STA   current_menu_item
+    
+    _deselect_resume
+    _select_restart
+    _deselect_quit
+  end
+
+  @locate_at bank: Aoba::EFFECT_ROM_BANK
+  def select_quit
+    LDA   #2
+    STA   current_menu_item
+
+    _deselect_resume
+    _deselect_restart
+    _select_quit
+  end
+
+  @locate_at bank: Aoba::EFFECT_ROM_BANK
+  def on_keydown
+    BIT   #Aoba::Control::Key.bitmap(:up)
+    BNZ   _move_up
+    BIT   #Aoba::Control::Key.bitmap(:down)
+    BNZ   _move_down
+    BIT   #Aoba::Control::Key.bitmap(:a, :b, :start)
+    BNZ   _accept
+    BIT   #Aoba::Control::Key.bitmap(:x, :y)
+    BNZ   _menu_item2
+    RTS
+    
+    ;; --
+
+  _move_up:
+    LDA   Aoba::Audio::Preset.menu_select
+    JSL   Aoba::Audio::Api.play_sfx_icb_long
+    DEC   current_menu_item
+    DEC   current_menu_item
+    BRA   _move_down_no_sfx
+
+  _move_down:
+    LDA   Aoba::Audio::Preset.menu_select
+    JSL   Aoba::Audio::Api.play_sfx_icb_long
+  _move_down_no_sfx:
+    INC   current_menu_item
+    LDA   current_menu_item
+    BMI   _menu_item2
+    BZE   _menu_item0
+    DEC   A
+    BZE   _menu_item1
+    DEC   A
+    BZE   _menu_item2
+    LDA   num_lives
+    ORA   is_pause
+    AND   #$FF
+    BZE   _menu_item1
+
+  _menu_item0:
+    LDA   num_lives
+    ORA   is_pause
+    AND   #$FF
+    BZE   _menu_item2
+    JMP   select_resume
+
+  _menu_item1:
+    JMP   select_restart
+
+  _menu_item2:
+    JMP   select_quit
+
+    ;; --
+  _accept:
+    MenuThread.kill_from_self
+  end
+
+  @locate_at bank: Aoba::EFFECT_ROM_BANK
+  def on_resume
+    LDA   is_pause
+    AND   #$FF
+    BNZ   _skip_dec_lives
+    DEC   num_lives
+  _skip_dec_lives:
+
+    JSL   subscreen_restore_level_palette_long
+    JSL   subscreen_restore_game_long
+    JSL   subscreen_resume_game_long
+
+    LDA   is_pause
+    AND   #$FF
+    BZE   _open_parachute
+
+    SEI
+    LDA   global_ingame_flags
+    AND   #$FFFF ^ GlobalIngameFlag.CONTROLS_DISABLED ^ GlobalIngameFlag.TIME_PAUSED
+    STA   global_ingame_flags
+    CLI
+    RTS
+
+  _open_parachute:
+    LDA   #Aoba::Thread::Event::USEREVENT_ID
+    JSL   Aoba::Thread::Event.allocate_icb_long
+    LDA   #Game::Ball::Abyss::OpenParachute
+    STA   Aoba::Thread::Event::Base.size, X
+    LDA   Aoba::Sprite.thread_id
+    JSL   Aoba::Thread.send_event_icb_long
+  end
+
+  @locate_at bank: Aoba::EFFECT_ROM_BANK
+  def stop_ball
+    LDX   Ball::Movement.player
+    X.is_a! Aoba::Sprite::Instance
+    STZ   X[:speed_x]
+    STZ   X[:speed_x_decimal]
+    STZ   X[:speed_y]
+    STZ   X[:speed_y_decimal]
+  end
+
+  MenuThread = Aoba::Thread::Builder.create "DeathControls" do
+    locate_at bank: Aoba::EFFECT_ROM_BANK
+    priority LEVEL_CONTROL_PRIORITY
+
+    use_temporary _calc0
+    use_dp_ram ThreadRAM
+
+    load do
+      Aoba::MouseThread.allocate_and_queue
+      LDA   MenuThread.thread_id
+      LDX   gamepad
+      LDY   #Aoba::Control::Key.bitmap(:y, :x, :a, :b, :up, :down, :start)
+      JSL   Aoba::Control.attach_new_listener_icb_long
+      STY   gamepad_listener
+      Aoba::Thread.wait_for_thread Aoba::MouseThread.thread_id
+      LDX   #128 | 128 << 8
+      LDY   #118 | (187 << 8)
+      JSL   Aoba::Mouse::Api.set_boundary
+
+      Aoba::Mouse::Api.add_region 44, 118, 168, 27, MenuThread.thread_id, #MouseEventId, true, true, false, #0
+      Aoba::Mouse::Api.add_region 44, 145, 168, 23, MenuThread.thread_id, #MouseEventId, true, true, false, #1
+      Aoba::Mouse::Api.add_region 44, 168, 168, 30, MenuThread.thread_id, #MouseEventId, true, true, false, #2
+
+      LDX   #Assets::Sprite::Cursor2::ID
+      LDY   #Assets::Sprite::Cursor::PaletteID
+      JSL   Aoba::Mouse::Api.enable_mouse
+    end
+
+    unload do
+      Aoba::MouseThread.send_kill_request
+      Aoba::Thread.wait_for_unload Aoba::MouseThread.thread_id
+
+      LDX   gamepad
+      LDY   gamepad_listener
+      JSL   Aoba::Control.detach_and_free_listener_icb_long
+    end
+
+    after_unload do
+      STZ   effect_is_active
+      LDA   current_menu_item
+      BZE   _resume
+      DEC   A
+      BZE   _restart
+
+    _quit:
+      stop_ball
+      LDX   #__com_aobastudio_sureinstinct_ingame_to_stageselect.bank
+      LDA   #__com_aobastudio_sureinstinct_ingame_to_stageselect
+      JSL   Aoba::Scene::Api.execute_script_long
+      BRA   _rts
+
+    _resume:
+      JSL   subscreen_resume_sprites_long
+      on_resume
+      BRA   _rts
+
+    _restart:
+      stop_ball
+      LDX   #__com_aobastudio_sureinstinct_ingame_restart.bank
+      LDA   #__com_aobastudio_sureinstinct_ingame_restart
+      JSL   Aoba::Scene::Api.execute_script_long
+
+    _rts:
+      LDA   #Aoba::Thread::Event::USEREVENT_ID
+      JSL   Aoba::Thread::Event.allocate_icb_long
+      X.is_a! Aoba::Tileset::Event::ResumeAnimation::Event
+      LDA   #Aoba::Tileset::Event::ResumeAnimation::ID
+      STA   X[:event_id]
+      LDA   Aoba::Tileset.thread_id
+      JSL   Aoba::Thread.send_event_icb_long
+    end
+
+    on :keydown do
+      LDA   Y[:keys]
+      on_keydown
+    end
+  end
+
+  MouseEventId = MenuThread.event_list.create "OnMouseEvent" do
+    Y.is_a! Aoba::Mouse::RegionEvent
+
+    LDA   Y[:userdata]
+    PHY
+    AND   #$FF
+    BZE   _select_resume
+    DEC   A
+    BZE   _select_restart
+
+  _select_quit:
+    JSR   select_quit
+    BRA   _test_click
+
+  _select_resume:
+    LDA   num_lives
+    ORA   is_pause
+    AND   #$FF
+    BZE   _rts
+    JSR   select_resume
+    BRA   _test_click
+
+  _select_restart:
+    JSR   select_restart
+
+  _test_click:
+    PLY
+    LDA   Y[:flags]
+    BIT   #Aoba::Mouse::RegionFlag::MOUSEDOWN
+    BZE   _rts
+
+    MenuThread.kill_from_self
+
+  _rts:
+    RTS
+  end
+
+
+  ;; The effect
+  effect = Aoba::Effect.create "Death" do
+    start do
+      STZ   TutorialText.tutorial_text_timer
+      JSL   subscreen_pause_sprites_long
+
+      LDA   #Aoba::Thread::Event::USEREVENT_ID
+      JSL   Aoba::Thread::Event.allocate_icb_long
+      X.is_a! Aoba::Tileset::Event::PauseAnimation::Event
+      LDA   #Aoba::Tileset::Event::PauseAnimation::ID
+      STA   X[:event_id]
+      LDA   Aoba::Tileset.thread_id
+      JSL   Aoba::Thread.send_event_icb_long
+
+      _fade_to_dark_palette
+      
+      LDA   #2
+      STA   current_menu_item
+      LDA   num_lives
+      ORA   is_pause
+      AND   #$FF
+      BZE   _no_lives_left
+      select_resume
+      BRA   _after_lives_test
+    _no_lives_left:
+      select_restart
+    _after_lives_test:
+
+      LDA   #239 - 10
+      STA   effect_is_active
+      STA   calculation_buffer
+      LDA   #40 - (35 + 40)
+      STA   calculation_buffer + 2
+      LDA   #239 - (35 + 40 + 34)
+      STA   calculation_buffer + 4
+      LDA   #239 - (143) ;(35 + 40 + 34 + 9 + 14 + 8 + 3)
+      STA   calculation_buffer + 12
+      LDA   #239 - (143 + 6 + 16)
+      STA   calculation_buffer + 16
+      LDA   #220 - (143 + 6 + 16 + 8 + 24)
+      STA   calculation_buffer + 20
+      LDA   #220 - (35 + 40 + 34 + 9 + 1)
+      STA   calculation_buffer + 22
+
+      JSL   subscreen_disable_ui_long
+      JSL   subscreen_pause_game_long
+      
+      LDA   is_pause
+      AND   #$FF
+      BZE   _load_death_image
+      LDA   #Assets::Image::Pause
+      BRA   _after_select_image
+    _load_death_image:
+      LDA   #Assets::Image::Death
+    _after_select_image:
+      JSL   subscreen_load_tiles_long
+      JSL   Aoba::Composer::Api.request_ready_event_long
+      LDA   #Assets::Palette::UserInterfaceDeath
+      LDX   #0
+      JSL   Aoba::Palette::Api.load_palette_group_long
+      JSL   Aoba::Composer::Api.wait_for_ready_event_long
+
+      LDA   #update_hdma.to_sym - 2
+      JSL   subscreen_setup_hdma_long
+      JSL   subscreen_configure_menu_ui_long
+      JSL   subscreen_enable_ui_long
+
+      queue_update 1
+
+      MenuThread.allocate_and_queue
+    end
+
+    update do
+      LDA   effect_is_active
+      BNZ   _no_finish
+      trigger_finish
+      BRA   _rts
+    _no_finish:
+      queue_update 1
+    _rts:
+    end
+
+    finish do
+      Debug.log "FINISH EFFECT"
+    end
+  end
+
+  ;; Fades the palette to dark
+  macro _fade_to_dark_palette
+    LDA   #4
+    LDX   pause_palette_address
+    LDY   #$00FC
+    JSL   Aoba::Palette::Api.fade_to_palette_group_long
+  end
+
+
+  ;; Triggers the death
+  def trigger_long
+    Debug.allow_invalid_ram_access 2
+    LDA   is_pause
+    AND   #$FF00
+
+  start:
+    STA   is_pause
+    effect.start
+    RTL
+  end
+
+  def trigger_pause_long
+    SEI
+    LDA   AssetConfig::Ingame.ingame_hdma_config.flags
+    BIT   #Game::Hdma::Ingame::Flag::CHANGE_PERSPECTIVE
+    BNZ   _rts
+    LDA   global_ingame_flags
+    BIT   #GlobalIngameFlag.CONTROLS_DISABLED | GlobalIngameFlag.TIME_PAUSED
+    BNZ   _rts
+    ORA   #GlobalIngameFlag.CONTROLS_DISABLED | GlobalIngameFlag.TIME_PAUSED
+    Debug.access_8bit_through_16bit
+    STA   global_ingame_flags
+    CLI
+
+    Debug.allow_invalid_ram_access 2
+    LDA   is_pause
+    AND   #$FF00
+    INC   A
+    JMP   trigger_long.start
+
+  _rts:
+    CLI
+    RTL
+  end
+
+end

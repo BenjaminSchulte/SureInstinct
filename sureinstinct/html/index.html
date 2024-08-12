@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta http-equiv="content-type" content="text/html; charset=utf-8">
+
+  <title>Sure Instinct</title>
+  <link type="text/css" rel="stylesheet" href="style.css">
+</head>
+<body class="animated">
+  <canvas class="emscripten" id="canvas" oncontextmenu="event.preventDefault()"></canvas>
+
+  <div id="body">
+    <div id="loading">
+      <div id="loadingbar">
+        <div id="loadinginner"></div>
+      </div>
+      <strong>Please wait...</strong>
+    </div>
+
+    <div id="loaded">
+      <header>
+        <img src="logo.png" alt="Sure Instinct" />
+      </header>
+
+      <span class="content-box">
+        <h3>Download Sure Instinct</h3>
+        <small>You can play Sure Instinct on nearly any SNES emulator for any platform!</small>
+
+        <span class="button-box">
+          <a href="./SureInstinct NTSC (v1.0.3).sfc.zip" class="button-box-btn">
+            NTSC Version
+          </a>
+          <a href="./SureInstinct PAL (v1.0.3).sfc.zip" class="button-box-btn">
+            PAL Version
+          </a>
+        </span>
+      </span>
+
+      <hr/>
+
+      <span class="content-box">
+        <h3>Play in browser</h3>
+        <small><strong>Please note:</strong> I recommend to NOT play the game in browser version as you might have performance problems.</small>
+
+        <span class="button-box">
+          <button class="button-box-btn" onclick="Module.startGame(false)" id="play_gamepad">Play in browser (not recommended)</button>
+        </span>
+      </span>
+    </div>
+
+    <div id="error">
+    </div>
+  </div>
+
+  <div id="footnote">
+    <small id="keyboardonly" class="keyboardonly">Move: Arrow keys, Toggle item: S, Use item: X</small>
+    <button class="btn btn-dark btn-sm" onclick="Module.enterFullscreen()">Play in fullscreen (F11)</button>
+  </div>
+</body>
+<script type="text/javascript" src="frontend.js"></script>
+<script type="text/javascript" src="loader.js"></script>
+</html>

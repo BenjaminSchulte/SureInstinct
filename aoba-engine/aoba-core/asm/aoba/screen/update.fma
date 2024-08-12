@@ -1,0 +1,112 @@
+module Aoba::Screen
+
+  ;; Pointers to 8bit registers
+  datablock _register_8_pointers
+    dw   $0005          ; 0001
+    dw   $0007          ; 0002
+    dw   $0009          ; 0004
+    dw   $000B          ; 0008
+    dw   $0023          ; 0010
+    dw   $0025          ; 0020
+    dw   $0027          ; 0040
+    dw   $0029          ; 0080
+    dw   $002B          ; 0100
+    dw   $002D          ; 0200
+    dw   $002F          ; 0400
+    dw   $0031          ; 0800
+    dw   $0001          ; 1000
+  end
+
+  ;; Pointers to 16bit registers
+  datablock _register_16_pointers
+    dw   $000D          ; 01
+    dw   $000E          ; 02
+    dw   $000F          ; 04
+    dw   $0010          ; 08
+    dw   $0011          ; 10
+    dw   $0012          ; 20
+    dw   $0013          ; 40
+    dw   $0014          ; 80
+  end
+
+  ;; Updates all registers 8 bit size
+  macro _update_registers_8
+    LDA   update_registers_8
+    BZE   _no_update
+
+    LDY   #0
+  _loop:
+    LSR   update_registers_8
+    BCC   _bit_not_set
+
+    TYX
+    LDA   _register_8_pointers.long, X
+    
+    TAX
+    LDA   register.BGMODE, Y
+    STA   ppu_register.BGMODE, Y
+    STA   dp(0), X
+    INY
+    INY
+    BRA   _loop
+
+  _bit_not_set:
+    BZE   _no_update
+    INY
+    INY
+    BRA   _loop
+
+  _no_update:
+  end
+
+  ;; Updates all registers 16 bit size
+  macro _update_registers_16
+    LDA   update_registers_16
+    BZE   _end_of_loop
+
+    LDY   #0
+  _loop:
+    LSR   update_registers_16
+    BCC   _bit_not_set
+
+    TYX
+    LDA   _register_16_pointers.long, X
+    TAX
+
+    LDA   register.BG1HOFS, Y
+    STA   ppu_register.BG1HOFS, Y
+
+    CPU.set A: 8
+    STA   dp(0), X
+    XBA
+    STA   dp(0), X
+    CPU.set A: 16
+    
+    INY
+    INY
+    BRA   _loop
+
+  _bit_not_set:
+    BZE   _end_of_loop
+    INY
+    INY
+    BRA   _loop
+
+  _end_of_loop:
+  end
+
+  ;; Updates the PPU registers
+  ;; @ignore-thread-safety
+  def update
+    _update_registers_8
+    _update_registers_16
+
+    ;; Restores the INIDISP register
+    CPU.set A: 8
+    LDA   Screen.register.INIDISP
+    STA   Screen.ppu_register.INIDISP
+    STA   dp(PPU.INIDISP)
+    CPU.set A: 16
+  end
+
+end

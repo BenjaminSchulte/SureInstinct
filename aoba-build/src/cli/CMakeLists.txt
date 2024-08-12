@@ -1,0 +1,8 @@
+FILE(GLOB_RECURSE CLI_SRC src *.cpp)
+
+SET(CMAKE_CXX_STANDARD 11)
+
+FIND_PACKAGE(Qt5 COMPONENTS Core Gui REQUIRED)
+
+ADD_EXECUTABLE(cli ${CLI_SRC})
+TARGET_LINK_LIBRARIES(cli libaoba libaobascript librpg libmaker Qt5::Core Qt5::Gui)

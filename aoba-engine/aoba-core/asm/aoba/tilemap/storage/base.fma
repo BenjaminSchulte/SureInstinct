@@ -1,0 +1,93 @@
+module Aoba::Tilemap::Storage
+
+  class BaseBuilder
+    macro initialize(storage)
+      @storage = storage
+    end
+    
+    macro use(other)
+      other.include_to_tilemap_storage @storage
+    end
+  end
+
+  class Base < Aoba::EngineObject
+    ;; Initialize
+    macro initialize
+      super
+      @RAM = MemoryScope.new("__tilemap_storage", in: nil, for: ::SNES::MemoryMap::RAM)
+
+      @width = MemoryVariable.new("map_width", as: :uint16, in: @RAM)
+      @height = @width + 1
+      @width_in_pixel = MemoryVariable.new("map_width_in_pixel", as: :uint16, in: @RAM)
+      @height_in_pixel = MemoryVariable.new("map_height_in_pixel", as: :uint16, in: @RAM)
+
+      @tilemap = nil
+    end
+
+    macro parent_objects
+      return [self.tilemap]
+    end
+
+    macro tilemap_layer(id)
+      return @tilemap.layers_by_id[id]
+    end
+
+    ;; Sets this as a storage
+    macro include_to_tilemap_renderer(renderer)
+      renderer.storage = self
+    end
+    
+    macro include_to_sprite_collision(collision)
+      collision.tilemap_storage = self
+    end
+
+    macro include_as_scene_object(scene, **kwargs)
+      SceneObject.new(self).include_to_scene_mode scene, **kwargs
+    end
+
+    macro configure_for_scene(scene)
+      scene.FixedRAM.include @RAM
+    end
+
+    macro format_size_in_bytes
+      raise "format_size_in_bytes not implemented"
+    end
+
+    macro y_to_storage_pointer
+      raise "y_to_storage_pointer not implemented"
+    end
+
+    macro x_to_storage_pointer
+      raise "x_to_storage_pointer not implemented"
+    end
+
+    macro read_from_storage_pointer_A(layer)
+      raise "read_from_storage_pointer not implemented"
+    end
+
+    ;; Increments the read address
+    macro increment_read_address_X_from_stack_to_register_Y
+      raise "Missing increment_read_address_X_from_stack_to_register_Y"
+    end
+
+    ;; Increments the read address
+    macro increment_read_address_Y_from_stack_to_register_Y(renderer)
+      raise "Missing increment_read_address_Y_from_stack_to_register_Y"
+    end
+
+    ;; Returns a layer address
+    macro layer_address(layer)
+      raise "No implementation for layer_address"
+    end
+
+    ;; Stores a pointer to the data in 
+    macro data_read_offset(left_tile, top_tile, width, height)
+      raise "No implementation for data_read_offset"
+    end
+
+    ;; Initialize
+    macro finalize
+    end
+  end
+
+end

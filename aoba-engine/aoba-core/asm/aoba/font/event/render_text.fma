@@ -1,0 +1,18 @@
+module Aoba::Font::Event::RenderText
+
+  ;; The event
+  class Event < Base 
+    ;; The config address
+    declare :renderer_state, as: :uint16
+  end
+
+  ;; Creates the sprite
+  ;; @ignore-thread-safety
+  ID = List.create "RenderText" do
+    Y.is_a! Event
+
+    LDA   Y[:renderer_state]
+    JMP   Render.render_icb
+  end
+
+end

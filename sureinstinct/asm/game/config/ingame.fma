@@ -1,0 +1,302 @@
+module AssetConfig::Ingame
+
+  datablock ball_collision_mask
+    dw   $01F0
+    dw   $07FC
+    dw   $0FFE
+    dw   $0FFE
+    dw   $1FFF
+    dw   $1FFF
+    dw   $1FFF
+    dw   $1FFF
+    dw   $1FFF
+    dw   $0FFE
+    dw   $0FFE
+    dw   $07FC
+    dw   $01F0
+  end
+
+  declare :tile_properties, as: :uint16, length: 256, in: Game::IngameSceneFixedRAM
+
+  declare :tile_collision, as: :uint8, length: 2048, in: Game::IngameSceneFixedRAM
+
+  declare :replacement_tile_list, as: :uint16, in: Game::IngameSceneVariableRAM
+
+  declare :ingame_hdma_config, as: Game::Hdma::Ingame::Configuration, in: Game::IngameSceneVariableRAM
+
+  tile_format = Aoba::Tileset::TileFormat.create do
+    bpp 4
+    tile_size 16, 16
+    bgtile_size 8, 8
+  end
+
+  tileset_format = Aoba::Tileset::TilesetFormat.create do
+    tiles :main do
+      use tile_format
+      num_bgtiles 512
+    end
+
+    bg :bg do
+      tiles :main
+      snes_bg 1
+    end
+
+    bg :fg do
+      tiles :main
+      snes_bg 2
+    end
+
+    layer :main do
+      bgs :bg, :fg
+    end
+  end
+
+  tileset_storage = Aoba::Tileset::RamTileReferenceStorage.create do
+    use tileset_format
+    use tile_format
+
+    num_bgs 2
+
+    add_layer :main, num_tiles: 256
+  end
+
+  tileset_loader_parameter = Aoba::Tileset::Loader::CustomParameter.new 0 do
+    Game::Level.AnimationCommand.initialize_animation_commands
+  end
+
+  tileset_loader = Aoba::Tileset::Loader::TilesetLoader.create do
+    configure_generator Aoba::TILESET_ROM_BANK, Aoba::Tileset::ActionRAM
+    data_bank Aoba::Tileset::HEADER_ROM_BANK
+
+    add Aoba::Tileset::Loader::TileLayerIndexParameter.new(tileset_storage, :main)
+    add Aoba::Tileset::Loader::ImageParameter.new
+    add Aoba::Tileset::Loader::CompressedDataParameter.new(target: tile_properties)
+    add Aoba::Tileset::Loader::CompressedDataParameter.new(target: tile_collision)
+    add Aoba::Tileset::Loader::ValueParameter.new(replacement_tile_list, :uint16)
+    add tileset_loader_parameter
+    add Aoba::Tileset::Loader::TileAnimationParameter.new
+  end
+
+  tilemap_format = Aoba::Tilemap::TilemapFormat.create do
+    use tileset_format
+    max_size 128, 96
+    
+    layer :top do
+      tileset_layer :main
+    end
+
+    layer :bottom do
+      tileset_layer :main
+    end
+  end
+
+  tilemap_storage_format = :uint8
+
+  tilemap_storage = Aoba::Tilemap::Storage::RamFullTilemapStorage.create do
+    use tilemap_format
+    enable_script_support "Level"
+    format tilemap_storage_format
+
+    add_dynamic_layer :current
+
+    add_layer :top
+    add_layer :bottom
+  end
+
+  tilemap_layer_compression = Aoba::Tilemap::Compression::TilemapTilesCompression.create do
+    max_width 128
+    storage_byte_size 1
+  end
+
+  tilemap_loader = Aoba::Tilemap::Loader::TilemapLoader.create do
+    add Aoba::Tilemap::Loader::TilesetParameter.new(tileset_loader)
+    add Aoba::Tilemap::Loader::TilemapSizeParameter.new(tilemap_storage)
+    add Aoba::Tilemap::Loader::ScreenModeParameter.new
+    add Aoba::Tilemap::Loader::TilemapLayerParameter.new(:top, tilemap_storage, tilemap_layer_compression)
+    add Aoba::Tilemap::Loader::TilemapLayerParameter.new(:bottom, tilemap_storage, tilemap_layer_compression)
+  end
+
+  tilemap_renderer = Aoba::Tilemap::Renderer::PartialTilemapRenderer.create do
+    configure_generator Aoba::LEVEL_ROM_BANK, Aoba::Level::ActionRAM
+    use_temporary Aoba::Level.calc0
+
+    vram_address Aoba::Composer.vram_bg2_tilemap
+
+    screen_size 32, 16
+
+    use tilemap_storage
+    use tileset_storage
+    use static_camera
+    
+    render_layer :current, to_bgs: [2, 1]
+  end
+
+  tilemap_tile_renderer = Aoba::Tilemap::Renderer::SingleTilemapTileRenderer.create do
+    configure_generator bank: Aoba::LEVEL_ROM_BANK, Aoba::Level.ActionRAM
+    generate_events_for Aoba::Level::Event::List
+
+    use tilemap_renderer
+  end
+
+  tilemap_scroll_renderer = Aoba::Tilemap::Renderer::ScrollTilemapRenderer.create do
+    configure_generator bank: Aoba::LEVEL_ROM_BANK, Aoba::Level.ActionRAM
+
+    use tilemap_renderer
+  end
+
+  start_position_parameter = Aoba::Level::Loader::CustomParameter.new 4 do
+    LDY   Game::Ball::Movement.player
+    Y.is_a! Aoba::Sprite::Instance
+    @loader.read_header_at @offset
+    STA   Y[:x]
+    @loader.read_header_at @offset + 2
+    STA   Y[:y]
+    LDA   #0
+    STA   Y[:x_decimal]
+    STA   Y[:y_decimal]
+    DEC   A
+    STA   Y[:collision_x_bitmask]
+    STA   Y[:collision_y_bitmask]
+  end
+
+  level_loader = Aoba::Level::Loader::LevelLoader.create do
+    configure_generator bank: Aoba::LEVEL_ROM_BANK, Aoba::Level.ActionRAM
+    data_bank Aoba::Level::LEVEL_DATA_BANK
+
+    enable_script_support "Level"
+    thread_priority 10
+
+    add Aoba::Level::Loader::TilemapParameter.new(tilemap_loader, tilemap_storage, static_camera)
+    add Aoba::Level::Loader::PaletteParameter.new
+    add Aoba::Level::Loader::UserParameter.new(:uint16, Game::Level.top_palette_address)
+    add Aoba::Level::Loader::UserParameter.new(:uint16, Game::Level.bottom_palette_address)
+    add Aoba::Level::Loader::UserParameter.new(:uint16, Game::Level.pause_palette_address)
+    add Aoba::Level::Loader::ReservedParameter.new(:uint24)
+    add start_position_parameter
+    add Aoba::Level::Loader::ReservedParameter.new(:uint24)
+    add Aoba::Level::Loader::UserParameter.new(:uint16, Game::Level.current_stage_number)
+    add Game::Level::SpriteGenerator::Parameter.new
+
+    use tilemap_renderer
+
+    on :loaded do
+      Game::Level.reset_attributes
+    end
+  end
+
+  tilemap_toggle_event_id = Aoba::Level::Event::SetDynamicLayer.create_for tilemap_renderer
+
+  ui_tiles                 = Aoba::Scene::CustomVramObject.new(num_tiles: 64, bpp: 2)
+  ui_menu_tiles            = Aoba::Scene::CustomVramObject.new(num_tiles: 400, after: ui_tiles, bpp: 2)
+  ui_num_keys_red_tiles    = Aoba::Scene::CustomVramObject.new(num_tiles: 2, after: ui_tiles, bpp: 2)
+  ui_num_keys_green_tiles  = Aoba::Scene::CustomVramObject.new(num_tiles: 2, after: ui_tiles, bpp: 2)
+  ui_num_keys_yellow_tiles = Aoba::Scene::CustomVramObject.new(num_tiles: 2, after: ui_tiles, bpp: 2)
+  ui_num_keys_blue_tiles   = Aoba::Scene::CustomVramObject.new(num_tiles: 2, after: ui_tiles, bpp: 2)
+  ui_num_parachute_tiles   = Aoba::Scene::CustomVramObject.new(num_tiles: 2, after: ui_tiles, bpp: 2)
+  ui_num_bridge_tiles      = Aoba::Scene::CustomVramObject.new(num_tiles: 2, after: ui_tiles, bpp: 2)
+  ui_num_bomb_tiles        = Aoba::Scene::CustomVramObject.new(num_tiles: 2, after: ui_tiles, bpp: 2)
+  ui_num_coins_tiles       = Aoba::Scene::CustomVramObject.new(num_tiles: 4, after: ui_tiles, bpp: 2)
+  ui_score_tiles           = Aoba::Scene::CustomVramObject.new(num_tiles: 5, after: ui_tiles, bpp: 2)
+  ui_time_tiles            = Aoba::Scene::CustomVramObject.new(num_tiles: 5, after: ui_tiles, bpp: 2)
+  ui_tilemap               = Aoba::Scene::CustomVramObject.new(tilemap_width: 32, tilemap_height: 64)
+  ui_menu_tilemap          = Aoba::Scene::CustomVramObject.new(tilemap_width: 32, tilemap_height: 32)
+  
+  sprite_vram = Aoba::Sprite::VramObject.new(num_tiles: 512)
+  sprite_vram.force_address $C000
+
+  vram_layout = Aoba::Scene::VramLayout.create do
+    add tileset: tileset_format
+    add tilemap: tilemap_renderer
+    add sprites: sprite_vram
+
+    add ui_tiles: ui_tiles
+    add ui_tilemap: ui_tilemap
+    add ui_menu_tilemap: ui_menu_tilemap
+  end
+
+  ball_collision_handler = Game::Ball::Collision::Handler.new
+
+  sprite_collision = Aoba::Sprite::Collision::Pixel::Collision.create do
+    use tilemap_storage
+    use ball_collision_handler
+    use_hit_events Game::Ball::TileEvent.hit_events
+
+    add_layer :current, tile_data: tile_properties, tile_data_format: :uint8
+
+    sprite_offset -7, -7
+    sprite_size 13, 13
+    sprite_collision_mask ball_collision_mask
+    collision_data tile_collision
+  end
+
+  tile_event_config = Aoba::Sprite::TileEvent::Configuration.create do
+    use_enter_events Game::Ball::TileEvent.enter_events
+    use_leave_events Game::Ball::TileEvent.leave_events
+
+    prevent_diagonal_crossing tile_format
+    read_tile_data_from_collision sprite_collision
+
+    identify_move_events test_mask: $C0, test_matches: $C0, mask: $3F, shift: -1, add: 1
+    identify_enter_events test_mask: $C0, test_matches: $40, mask: $3F, shift: -1, add: 1
+    identify_leave_events test_mask: $E0, test_matches: $80, mask: $1F, shift: -1, add: 1
+
+    on :prepare8 do
+      LDA   X[:ball_flags]
+      AND   #$FF ^ Game::BallFlag::IS_ON_ICE
+      STA   X[:ball_flags]
+    end
+
+    on :before_test_recursive_call do
+      LDA   X[:x]
+      STA   X[:last_tile_x]
+      LDA   X[:y]
+      STA   X[:last_tile_y]
+    end
+
+    on :diagonal_tile_movement do
+      LDA   dp(Aoba::Sprite::Action::Move.pos_y)
+      STA   X[:last_tile_y]
+    end
+  end
+
+  tile_event_config.SharedTempRAM.include Game::Ball::TileEvent::Change::TempRAM
+
+  sprite_thread = Aoba::Sprite::SpriteThread.create do
+    use static_camera
+    use level_loader
+    use tilemap_scroll_renderer
+    use Game::Ball::MoveEvent.events
+    use tile_event_config
+    use sprite_collision
+
+    on :oam_test_renderable do |_skip|
+      LDA   X[:sprite_layer]
+      BZE   _resume
+      CMP   AssetConfig::Ingame.tilemap_storage.tiles[:current].long
+      BNE   _skip
+    _resume:
+    end
+  end
+
+  scene = Aoba::Scene::SceneMode.create "IngameScene" do
+    use vram_layout
+    enable_script_support "Ingame"
+
+    add level_loader
+    add tileset_storage
+    add tilemap_storage
+    add static_camera
+    add tilemap_renderer, as: :tilemap, vram: :tilemap
+    add tileset_format, as: :tileset, vram: :tileset
+    add sprite_thread, as: :sprites, vram: :sprites
+
+    bg_mode :BG_4_4_2, priority: true
+    main_screens 1, 2, 3, :obj
+    sub_screens :obj
+    screen 3, tilemap: ui_tilemap.address, tileset: ui_tiles.address
+  end
+
+  scene.VariableRAM.include Game::IngameSceneVariableRAM
+  scene.FixedRAM.include Game::IngameSceneFixedRAM
+
+end

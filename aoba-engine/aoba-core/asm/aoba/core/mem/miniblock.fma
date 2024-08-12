@@ -1,0 +1,404 @@
+module Aoba::Memory
+
+  ;; MiniBlock RAM structure
+  ;;
+  ;; Each section is aligned to $100 bytes
+  ;; First 4 bytes are:
+  ;;   uint16 nextBlockSection
+  ;;   uint16 recentBlockPointer
+
+  ;; Block header 4 bytes
+  ;;   uint16 blockSize ($8000 is set if free)
+  ;;   uint16 nextBlock
+
+  ;; @param A Target thread ID
+  ;; @param X Number of bytes to allocate
+  ;;
+  ;; @return X pointer in VARIABLE_RAM_BANK
+  ;; @return Y allocated size
+  def allocate_miniblock
+    routine bank: VARIABLE_RAM_BANK do
+      assert_thread_safe
+      input A
+
+      declare :size, as: :uint16
+      declare :size_with_header, as: :uint16
+      declare :thread_pointer, as: :uint16
+      declare :current_section, as: :uint16
+      declare :first_section, as: :uint16
+
+      execute do |size, size_with_header, thread_pointer, current_section, first_section|
+
+        ;; Calculates the required amount of RAM
+        STA   dp(thread_pointer)
+        TXA
+        CLC
+        ADC   #7
+        AND   #$FFF8
+        STA   dp(size)
+        ORA   #4
+        STA   dp(size_with_header)
+        ;TAX
+        STZ   dp(current_section)
+
+        ;; Fetches the current thread
+        LDA   dp(thread_pointer)
+        Thread.get_thread_pointer_from_thread_id
+        TXY
+        LDX   dp(size_with_header)
+        Y.is_a! Thread::Instance
+        STY   dp(thread_pointer)
+
+        ;; Tests whether there is already a block with a matching size
+        LDA   Y[:miniblock_section]
+        STA   dp(first_section)
+        BZE   _first_miniblock_or_requires_additional_block
+
+        ;; This is NOT the first allocation for miniblocks
+      _contains_miniblock:
+        TAX
+
+      _lookup_next_miniblock_section_loop:
+        STX   dp(current_section)
+
+        ;; Checks whether there is a deleted section with enough space
+      _lookup_free_ram_in_section_skip:
+        LDA   2, X
+        BZE   _lookup_remaining_ram_in_section
+        TAX
+        LDA   0, X
+        BPL   _lookup_free_ram_in_section_skip
+
+      _lookup_free_ram_test_size:
+        AND   #$7FFF
+        CMP   dp(size)
+        BLT   _lookup_free_ram_in_section_skip
+
+      _reallocate_old_ram_block:
+        ;; TODO: Current algorithm takes the full block, it would be better to use only the necessary size
+        STA   0, X
+        BRA   _return
+
+        ;; Checks whether the remaining RAM could be enough 
+      _lookup_remaining_ram_in_section:
+        TXA
+        SEC
+        SBC   dp(size_with_header)
+        SBC   dp(current_section)
+        SBC   #4
+        BPL   _allocate_additional_ram_in_current_section
+
+        ;; Resumes with the next section
+      _lookup_next_section_in_ram:
+        LDY   dp(current_section)
+        LDX   0, Y
+        BNZ   _lookup_next_miniblock_section_loop
+
+        ;; No block could be found, allocate a new one
+        LDX   dp(size_with_header)
+
+      _first_miniblock_or_requires_additional_block:
+        ;; X = size_with_header
+        ;; Additional 4 bytes are required for the section header
+        INC   X
+        INC   X
+        INC   X
+        INC   X
+
+        ;; Ensure that the block is allocated with the associated thread ID
+        LDY   dp(thread_pointer)
+        CPU.set A: 8
+        LDA   Memory.active_thread_id
+        PHA
+        LDA   Y[:id]
+        STA   Memory.active_thread_id
+        allocate_from_behind
+        PLA
+        STA   Memory.active_thread_id
+        CPU.set A: 16
+
+        ;; Writes the section header
+        LDA   dp(first_section)
+        STA   0, X
+        TYA
+        SEC
+        SBC   dp(size_with_header)
+        STA   2, X
+
+        ;; Writes the section block to the thread
+        LDY   dp(thread_pointer)
+        Y.is_a! Thread::Instance
+        TXA
+        STA   Y[:miniblock_section]
+
+        ;; Calculates the address of the current allocated section
+        CLC
+        ADC   2, X
+        STA   2, X
+        TAX
+        BRA   _return_with_sizeset
+
+        ;; Allocates RAM in the current block
+      _allocate_additional_ram_in_current_section:
+        TXA
+        SEC
+        SBC   dp(size_with_header)
+        STA   2, X
+        TAX
+
+      _return_with_sizeset:
+        STZ   2, X
+        LDA   dp(size)
+        STA   0, X
+
+      _return:
+        INC   X
+        INC   X
+        INC   X
+        INC   X
+        LDY   dp(size)
+
+        Debug.profile_miniblock_allocate
+      end
+    end
+  end
+
+  ;; Allocates a miniblock (long)
+  def allocate_miniblock_long
+    allocate_miniblock
+    RTL
+  end
+
+  ;; Frees the current miniblock section
+  ;;
+  ;; @param X thread
+  ;; @param Y section
+  def _free_miniblock_section
+    routine A: nil, XY: nil do
+      assert_thread_safe
+
+      declare :section_pointer, as: :uint16
+
+      execute do |section_pointer|
+        STY   dp(section_pointer)
+        PHX
+
+        ;; Calculates the block size to free the block
+        LDX   2, Y
+        LDA   0, X
+        AND   #$7FFF
+        CLC
+        ADC   #$FF
+        ;SEC
+        ;SBC   dp(section_pointer)
+        AND   #$FF00
+
+        ;; Free the block actually
+        TYX
+        TAY
+        free
+        PLX
+
+        X.is_a! Thread::Instance
+        LDA   X[:miniblock_section]
+        CMP   dp(section_pointer)
+        BEQ   _is_first_section
+        
+      _loop_find_inner_section:
+        TAY
+        LDA   0, Y
+        BZE   _rts
+        CMP   dp(section_pointer)
+        BNE   _loop_find_inner_section
+
+      _found_section_pointer:
+        TAX
+        LDA   0, X
+        STA   0, Y
+        BRA   _rts
+
+      _is_first_section:
+        TAY
+        Debug.allow_invalid_ram_access 2
+        LDA   0, Y
+        X.is_a! Thread::Instance
+        STA   X[:miniblock_section]
+
+      _rts:
+      end
+    end
+  end
+
+  ;; Looks for the miniblock main thread
+  ;;
+  ;; @param X ThreadInstance
+  ;; @param Y MiniBlcok address
+  def find_miniblock_mainblock
+    routine A: nil, XY: nil do
+      assert_thread_safe
+
+      declare :block_pointer, as: :uint16
+      declare :closest_pointer, as: :uint16
+
+      execute do |block_pointer, closest_pointer|
+        X.is_a! Thread::Instance
+
+        STY   dp(block_pointer)
+        STZ   dp(closest_pointer)
+        LDA   X[:miniblock_section]
+        BZE   _fail
+
+      _loop:
+        CMP   dp(block_pointer)
+        BGE   _next
+
+        CMP   dp(closest_pointer)
+        BLT   _next
+        STA   dp(closest_pointer)
+
+      _next:
+        TAX
+        LDA   0, X
+        BNZ   _loop
+        
+      _fail:
+        LDX   dp(closest_pointer)
+      end
+    end
+  end
+
+  ;; Frees the mini block
+  ;;
+  ;; @param X address to free
+  def free_miniblock
+    routine bank: VARIABLE_RAM_BANK do
+      assert_thread_safe
+
+      declare :thread_pointer, as: :uint16
+      declare :block_pointer, as: :uint16
+      declare :section_pointer, as: :uint16
+      declare :blocks_2times_right, as: :uint16
+
+      execute do |thread_pointer, block_pointer, section_pointer, blocks_2times_right|
+        Debug.profile_miniblock_free
+        ;; Copy address to Y
+
+        TXY
+        DEY
+        DEY
+        DEY
+        DEY
+        STY   dp(block_pointer)
+
+        ;; Figures out the thread of this allocation
+        TYA
+        XBA
+        AND   #$FF
+        TAX
+        Debug.access_8bit_through_16bit
+        LDA   block_usage_table.long, X
+        STA   dp(section_pointer)
+
+        Thread.get_thread_pointer_from_thread_id
+        STX   dp(thread_pointer)
+
+        X.is_a! Thread::Instance
+        LDA   X[:id]
+        EOR   dp(section_pointer)
+        AND   #$FF
+        BZE   _is_valid_thread
+        Debug.fatal "Tried to free miniblock for invalid thread ID"
+        NOP
+        Debug.BRK
+        JMP   _return
+
+        ;; --
+
+      _is_valid_thread:
+        ;; Finds the main block containing this allocation
+        find_miniblock_mainblock
+        STX   dp(section_pointer)
+
+        ;; X = section header for current block
+        LDY   #0
+      _loop_find_block:
+        STY   dp(blocks_2times_right)
+        TXY
+        LDX   2, Y
+        BZE   _return
+        CPX   dp(block_pointer)
+        BNE   _loop_find_block
+
+        ;; Y = next block header
+        ;; 0,Y = size
+        ;; 2,Y = previous block header
+      _found_block:
+        ;; Check if we can merge the previous block
+        CPY   dp(section_pointer)
+        BEQ   _no_merge_right
+
+        ;; Tests if the right block is free
+        LDA   0, Y
+        BPL   _no_merge_right
+
+      _merge_right:
+        CLC
+        ADC   0, X
+        ADC   #4
+        STA   0, X
+        LDY   dp(blocks_2times_right)
+        TXA
+        STA   2, Y
+
+      _no_merge_right:
+        ;; Check if the previous block has already been freed
+        LDA   2, X
+        BZE   _no_merge_left
+        TAX
+        LDA   0, X
+        BPL   _no_merge_left
+
+      _merge_left:
+        TXA
+        STA   2, Y
+        LDY   dp(block_pointer)
+        LDA   0, X
+        CLC
+        ADC   0, Y
+        ADC   #4
+        STA   0, X
+        STX   dp(block_pointer)
+        BRA   _test_section_free
+
+      _no_merge_left:
+        LDX   dp(block_pointer)
+        ;; Marks the current block as being free
+        LDA   0, X
+        ORA   #$8000
+        STA   0, X
+
+      _test_section_free:
+        LDY   dp(section_pointer)
+        LDX   2, Y
+        LDA   0, X
+        BPL   _return
+        LDA   2, X
+        BNZ   _return
+
+        LDX   dp(thread_pointer)
+        _free_miniblock_section
+
+      _return:
+      end
+    end
+  end
+
+  ;; Frees the mini block
+  ;;
+  ;; @param X address to free
+  def free_miniblock_long
+    free_miniblock
+    RTL
+  end
+
+end

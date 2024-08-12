@@ -1,0 +1,26 @@
+module Aoba::Script
+
+  __callbacks = {}
+
+  ;; Creates a new script callback
+  macro callback(id, bank=SUPPORTED_BANK_RANGE, &block)
+    Compiler.with_global_context nil do
+      func = Function.new "__aobascript_#{id}" do
+        A.pretend_size 16
+        X.pretend_size 16
+
+        block.call
+
+        RTL
+      end
+      func.override_located_at bank: bank, at: $1..$FFFF
+      __callbacks[id] = func.to_sym
+      func.to_sym
+    end
+  end
+
+  macro invoke_callback(id)
+    JSL   __callbacks[id]
+  end
+
+end

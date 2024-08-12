@@ -1,0 +1,20 @@
+module Aoba::Level::Event::UnloadLevel
+
+  ;; Temporary RAM
+  scope :TempRAM, in: ActionRAM
+
+  ;; The event
+  class Event < Base
+  end
+
+  ;; Updates scrolling
+
+  ;; Creates a load event for a tileset_loader
+  macro create_for(level_loader)
+    List.create "UnloadLevel" do
+      Y.is_a! Event
+      level_loader.unload
+    end
+  end
+
+end

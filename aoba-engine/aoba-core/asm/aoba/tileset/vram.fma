@@ -1,0 +1,18 @@
+module Aoba::Tileset
+  class VramObject < Aoba::VramObject
+    macro initialize(format)
+      super
+
+      @format = format
+      @align = $2000
+    end
+
+    macro size_in_bytes
+      _size = 0
+      @format.tiles.each do |t|
+        _size += t.tiles.size_in_bytes
+      end
+      return _size
+    end
+  end
+end

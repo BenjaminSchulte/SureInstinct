@@ -1,0 +1,183 @@
+module PPU
+  ;; Controls the backgrounds
+  module Background
+
+    ;; Sets the background position
+    macro set_offset(bg, x=nil, y=nil, target=:default)
+      unless x.nil?
+        _set_offset BGOFFSET[bg - 1].horizontal, x, target
+      end
+
+      unless y.nil?
+        _set_offset BGOFFSET[bg - 1].vertical, y, target
+      end
+    end
+
+    ;; Sets the background position
+    macro _set_offset(address, value, target=:default)
+      if (value & $FF) == 0
+        if target == :dp
+          STZ   dp(address)
+        else
+          STZ   address
+        end
+      else
+        LDA   #value & $FF
+        if target == :dp
+          STA   dp(address)
+        else
+          STA   address
+        end
+      end
+
+      if (value >> 8) == 0
+        if target == :dp
+          STZ   dp(address)
+        else
+          STZ   address
+        end
+      else
+        LDA   #value >> 8
+        if target == :dp
+          STA   dp(address)
+        else
+          STA   address
+        end
+      end
+    end
+    ;; Sets the tilemap address for one or many backgrounds
+    ;;
+    ;; The address must be aligned to $800
+    ;;
+    ;; @param bg1=nil address - the address for BG1
+    ;; @param bg2=nil address - the address for BG2
+    ;; @param bg3=nil address - the address for BG3
+    ;; @param bg4=nil address - the address for BG4
+    ;; @param mirror_x=false boolean - whether to mirror the backgrounds
+    ;; @param mirror_y=false boolean - whether to mirror the backgrounds
+    macro set_tilemap_address(bg1=nil, bg2=nil, bg3=nil, bg4=nil, mirror_x=false, mirror_y=false, target=:default)
+      set_specific_tilemap_address 1, bg1, mirror_x, mirror_y, target
+      set_specific_tilemap_address 2, bg2, mirror_x, mirror_y, target
+      set_specific_tilemap_address 3, bg3, mirror_x, mirror_y, target
+      set_specific_tilemap_address 4, bg4, mirror_x, mirror_y, target
+    end
+
+    ;; Sets the tilemap address for a single background
+    ;;
+    ;; @param index number - the index of the background, starting from 1
+    ;; @param address address - the address of the tilemap
+    ;; @param mirror_x boolean - whether the mirror the background
+    ;; @param mirror_y boolean - whether the mirror the background
+    macro set_specific_tilemap_address(index, address, mirror_x=false, mirror_y=false, target=:default)
+      return if address.nil?
+
+      _value = (address >> 9) & $FC
+      _value |= 1 if mirror_x
+      _value |= 2 if mirror_y
+      LDA   #_value
+      if target == :dp
+        ;STA   dp(PPU.BGSC[index - 1])
+        STA   dp(PPU.BGSC[index - 1].to_sym)
+      else
+        STA   PPU.BGSC[index - 1]
+      end
+    end
+
+    ;; Sets the character address for one or many backgrounds
+    ;;
+    ;; Please note, that BG1+BG2 and BG3+BG4 are always configured at the
+    ;; same time. If you only want to modify BG1, but not BG2, you will
+    ;; have to write a wrapper routine for that by yourself.
+    ;;
+    ;; All addresses have to be aligned to $1000
+    ;;
+    ;; @param bg1=nil address - the address for BG1
+    ;; @param bg2=nil address - the address for BG2
+    ;; @param bg3=nil address - the address for BG3
+    ;; @param bg4=nil address - the address for BG4
+    macro set_character_address(bg1=nil, bg2=nil, bg3=nil, bg4=nil, target=:default)
+      unless bg1.nil? && bg2.nil?
+        _set_character_address PPU.BG12NBA, bg1, bg2, target
+      end
+      unless bg3.nil? && bg4.nil?
+        _set_character_address PPU.BG34NBA, bg3, bg4, target
+      end
+    end
+
+    macro _set_character_address(index, low, high, target=:default)
+      value = 0
+      value |= ((low >> 13) & $0F) unless low.nil?
+      value |= ((high >> 9) & $F0) unless high.nil?
+      LDA   #value
+      if target == :dp
+        STA   dp(index)
+      else
+        STA   index
+      end
+    end
+
+    macro bg_mode_value(mode, priority=false, large_bg1=false, large_bg2=false, large_bg3=false, large_bg4=false)  
+      mode_value = 0
+      case mode
+      when :BG_2_2_2_2
+        mode_value = 0
+      when :BG_4_4_2
+        mode_value = 1
+      when :BG_4_4
+        mode_value = 2
+      when :BG_8_4
+        mode_value = 3
+      when :BG_8_2
+        mode_value = 4
+      when :BG_4_2
+        mode_value = 5
+      when :BG_4
+        mode_value = 6
+      when :BG_8
+        mode_value = 7
+      else
+        raise "Invalid mode for set_bg_mode: #{mode}"
+      end
+
+      mode_value |= $08 if priority
+      mode_value |= $10 if large_bg1
+      mode_value |= $20 if large_bg2
+      mode_value |= $40 if large_bg3
+      mode_value |= $80 if large_bg4
+      return mode_value
+    end
+
+    ;; Sets the current background mode
+    ;;
+    ;; The `mode` parameter might be one of the following:
+    ;;
+    ;; |===
+    ;; | Mode | Index | BG1 | BG2 | BG3 | BG4
+    ;;
+    ;; | `BG_2_2_2_2` | 0 | 4 | 4 | 4 | 4
+    ;; | `BG_4_4_2` | 1 | 16 | 16 | 4 | -
+    ;; | `BG_4_4` | 2 | 16 | 16 | - | -
+    ;; | `BG_8_4` | 3 | 256 | 16 | - | -
+    ;; | `BG_8_2` | 4 | 256 | 4 | - | -
+    ;; | `BG_4_2` | 5 | 16 | 4 | - | -
+    ;; | `BG_4` | 6 | 16 | - | - | -
+    ;; | `BG_8` | 7 | 256 | - | - | -
+    ;; |===
+    ;;
+    ;; @param mode string - the mode to be selected
+    ;; @param priority=false boolean - priority flag
+    ;; @param large_bg1=false boolean - whether BG1 should be 64x64
+    ;; @param large_bg2=false boolean - whether BG2 should be 64x64
+    ;; @param large_bg4=false boolean - whether BG4 should be 64x64
+    ;; @param large_bg3=false boolean - whether BG3 should be 64x64
+    macro set_bg_mode(mode, priority=false, large_bg1=false, large_bg2=false, large_bg3=false, large_bg4=false, target=:default)
+      LDA   #bg_mode_value(mode, priority, large_bg1, large_bg2, large_bg3, large_bg4)
+
+      if target == :dp
+        STA   dp(PPU.BGMODE)
+      else
+        STA   PPU.BGMODE
+      end
+    end
+  end
+end

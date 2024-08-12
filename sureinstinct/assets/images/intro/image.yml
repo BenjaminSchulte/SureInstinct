@@ -1,0 +1,10 @@
+name: Intro
+
+color_depth: 16
+tile_size: {width: 8, height: 8}
+
+variants:
+  default:
+    image: image.png
+    priority: ../logo/priority.png
+    palette: ../logo/palette.png

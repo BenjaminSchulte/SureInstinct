@@ -1,0 +1,83 @@
+module Aoba::Tilemap
+
+  class TilemapFormatBuilder
+    macro initialize(format)
+      @format = format
+    end
+
+    ;; Sets the size
+    macro max_size(width, height)
+      @format.max_width = width
+      @format.max_height = height
+    end
+
+    ;; Creates a new layer
+    macro layer(id, &block)
+      use TilemapLayerFormat.create(id, &block)
+    end
+
+    ;; Includes another module
+    macro use(other)
+      other.include_to_tilemap_format @format
+    end
+  end
+
+
+  class TilemapFormat < Aoba::EngineObject
+    ;; Constructor
+    macro initialize
+      super
+
+      @tileset = nil
+      @max_width = 64
+      @max_height = 64
+      @layers = []
+      @layers_by_id = {}
+    end
+
+    macro parent_objects
+      return [self.tileset] + @layers
+    end
+
+    ;; Returns whether all layers share the same tile format
+    macro has_unique_tile_format?
+      last_tile_format = nil
+      is_unique = true
+      @layers.each do |ref|
+        tileset_layer = ref.tileset_layer
+        
+        unless tileset_layer.has_unique_tile_format?
+          is_unique = false 
+        else
+          cur_tile_format = ref.tileset_layer.any_tile_format
+
+          if last_tile_format.nil?
+            last_tile_format = cur_tile_format
+          elsif cur_tile_format != last_tile_format
+            is_unique = false
+          end
+        end
+      end
+      return is_unique
+    end
+
+    ;; Returns any tile format
+    macro any_tile_format
+      @layers.first.tileset_layer.any_tile_format
+    end
+
+    ;; Adds this to a storage
+    macro include_to_tilemap_storage(storage)
+      storage.tilemap = self
+    end
+
+    ;; Creates a new tilemap format  
+    macro self.create(&block)
+      format = TilemapFormat.new
+      builder = TilemapFormatBuilder.new(format)
+      block.call with_context builder
+      return format
+    end
+  end
+
+end

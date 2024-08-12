@@ -1,0 +1,51 @@
+module Game::Level::UserInterface
+
+  FRAMES_PER_HUNDRED_MS = 5
+
+
+  ;; Adds an attribute
+  macro __add_attribute(ram, as, align, copy_target, copy_start, copy_length)
+    dw ram.to_sym
+    db as.size_in_bytes - 1
+
+    case align
+      when :number_left
+        db 0
+      when :number_right
+        db 2
+      when :time
+        db 4
+      when :bar_red
+        db 6
+      when :bar_blue
+        db 8
+      when :score
+        db 10
+      when :selected_item
+        db 12
+    end
+
+    dw   copy_target >> 1
+    db   copy_start * 16
+    db   copy_length * 16
+  end
+
+  ;; Update list for attributes
+  datablock attribute_update_list
+    __add_attribute num_keys_red,     :uint8,  :number_left,   AssetConfig::Ingame.ui_num_keys_red_tiles.address, 0, 2
+    __add_attribute num_keys_green,   :uint8,  :number_left,   AssetConfig::Ingame.ui_num_keys_green_tiles.address, 0, 2
+    __add_attribute num_keys_blue,    :uint8,  :number_left,   AssetConfig::Ingame.ui_num_keys_blue_tiles.address, 0, 2
+    __add_attribute num_keys_yellow,  :uint8,  :number_left,   AssetConfig::Ingame.ui_num_keys_yellow_tiles.address, 0, 2
+    __add_attribute num_coins,        :uint16, :number_right,  AssetConfig::Ingame.ui_num_coins_tiles.address, 4, 4
+    __add_attribute score,            :uint16, :score,         AssetConfig::Ingame.ui_score_tiles.address, 3, 5
+    __add_attribute hp,               :uint16, :bar_red,       AssetConfig::Ingame.ui_tilemap.address+2*2+1*64, 0, 6
+    __add_attribute selected_item,    :uint16, :selected_item, 0, 0, 0
+    __add_attribute num_parachute,    :uint8,  :number_left,   AssetConfig::Ingame.ui_num_parachute_tiles.address, 0, 2
+    __add_attribute num_bridge,       :uint8,  :number_left,   AssetConfig::Ingame.ui_num_bridge_tiles.address, 0, 2
+    __add_attribute num_bomb,         :uint8,  :number_left,   AssetConfig::Ingame.ui_num_bomb_tiles.address, 0, 2
+    __add_attribute ball_power,       :uint16, :bar_blue,      AssetConfig::Ingame.ui_tilemap.address+2*2+3*64, 0, 6
+    __add_attribute Aoba::Thread::Timer.current_frame_low, :uint16, :time, AssetConfig::Ingame.ui_time_tiles.address, 3, 5
+  end
+
+
+end

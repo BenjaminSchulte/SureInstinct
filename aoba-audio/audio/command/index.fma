@@ -1,0 +1,34 @@
+require "cmd_reset"
+require "cmd_send_sample"
+require "cmd_upload_sfx_database"
+require "cmd_set_master_volume"
+require "cmd_set_echo_volume"
+require "cmd_stop_playback"
+require "cmd_play_sfx"
+require "cmd_set_sfx_volume"
+require "cmd_upload_song"
+require "cmd_play_song"
+require "cmd_setup_echo"
+require "cmd_start_stream"
+require "cmd_unload_sample"
+
+module Command
+  ;; Command table
+  datablock command_table
+    dw   Command::Reset.process               ; 01
+    dw   Command::SendSample.process          ; 02
+    dw   Command::UploadSfxDatabase.process   ; 03
+    dw   Command::SetMasterVolume.process     ; 04
+    dw   Command::StopPlayback.process        ; 05
+    dw   Command::PlaySfx.process             ; 06
+    dw   Command::SetSfxVolume.process        ; 07
+    dw   Command::UploadSong.process          ; 08
+    dw   Command::PlaySong.process            ; 09
+    dw   Command::SetupEcho.process           ; 0A
+    dw   Command::StartStream.process         ; 0B
+    dw   Command::StartStream.stop_stream     ; 0C
+    dw   Command::UnloadSample.process        ; 0D
+    dw   Command::UnloadSample.defrag         ; 0E
+    dw   Command::SetEchoVolume.process       ; 0F
+  end
+end

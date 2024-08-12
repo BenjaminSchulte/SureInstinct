@@ -1,0 +1,150 @@
+module Aoba
+
+  ;; ==========================================================================
+  ;;   DEFAULT GAME CONFIGURATION
+  ;;   These parameter are configured by the build engine
+  ;; ==========================================================================
+
+  ;; The game code
+  GAME_CODE ||= "GAME"
+
+  ;; The game title
+  GAME_TITLE ||= "AOBA demo"
+
+  ;; The destination
+  DESTINATION ||= "japan"
+
+  ;; Disable SA1 by default
+  ENABLE_SA1 ||= false
+
+  ;; ==========================================================================
+  ;;   DEBUG CONFIGURATION
+  ;; ==========================================================================
+
+  ;; Whether the profiling should be enabled
+  ENABLE_PROFILING ||= true
+  ;ENABLE_PROFILING ||= false
+
+
+  ;; ==========================================================================
+  ;;   MEMORY CONFIGURATION
+  ;; ==========================================================================
+
+  ;; The system ROM bank
+  SYSTEM_ROM_BANK ||= $C0
+
+  ;; Test ROM bank
+  TEST_ROM_BANK ||= $C0
+
+  ;; The variable RAM bank
+  VARIABLE_RAM_BANK ||= $7F
+
+  ;; The fixed RAM bank
+  FIXED_RAM_BANK ||= $7E
+
+  ;; The SNES fixed RAM bank
+  SNES_FIXED_RAM_BANK ||= $7E
+
+  ;; RAM bank for threads
+  THREAD_RAM_BANK = $00
+
+  if ENABLE_SA1
+    VARIABLE_RAM_BANK = $41
+    FIXED_RAM_BANK = $40
+  end
+
+  ;; Header RAM size (in variable RAM bank)
+  HEADER_RAM_SIZE ||= $100
+
+  ;; Used for SA-1 mode to store methods in RAM
+  MAX_RAM_ROUTINE_SIZE_SA1 ||= $100
+
+  ;; Used for SA-1 mode to store methods in RAM
+  MAX_RAM_ROUTINE_SIZE_SNES ||= $1000
+
+  ;; ==========================================================================
+  ;;   DATA CONFIGURATION
+  ;; ==========================================================================
+  PALETTE_DATA_ROM_BANK ||= $C0
+
+
+  ;; ==========================================================================
+  ;;   SYSTEM CONFIGURATION
+  ;; ==========================================================================
+
+  ;; Number of $100 blocks in variable RAM for fixed content
+  FIXED_CONTENT_BLOCKS = 7
+
+  ;; Number of threads
+  NUM_THREADS = $1F
+
+  ;; Number of VBLANK jobs
+  NUM_VBLANK_JOBS = $1F
+
+  ;; Number of thread events
+  ;; @TODO Update value depending on RAM block size
+  NUM_THREADEVENTS = $E0
+
+  ;; Number of timers
+  ;; @TODO Update value depending on RAM block size
+  NUM_TIMERS = $40
+
+  ;; Number of control listeners
+  ;; @TODO Update value depending on RAM block size
+  MAX_CONTROL_LISTENERS = 35
+
+  ;; Maximum number of bytes for userdata in thread events
+  THREADEVENT_USERDATA_SIZE = 5
+  
+  ;; Number of 'ticks' one byte takes to copy
+  TICKS_PER_DMA_COPY_BYTE = 9
+
+
+  ;; ==========================================================================
+  ;;   SYSTEM THREADS
+  ;; ==========================================================================
+
+  TIMER_THREAD_ID = $FF
+
+  VBLANKCOPY_THREAD_ID = $FE
+
+  CONTROL_THREAD_ID = $FD
+
+
+  ;; ==========================================================================
+  ;;   THREAD PRIORITIES (Low value = Low priority)
+  ;; ==========================================================================
+
+  LEVEL_PRIORITY ||= 192
+
+  COMPOSER_PRIORITY ||= 192
+
+  SCENE_PRIORITY ||= 192
+
+  SPRITE_PRIORITY ||= 160
+
+  PALETTE_PRIORITY ||= 128
+  
+  TILESET_PRIORITY ||= 128
+
+  PLAYER_CONTROL_PRIORITY ||= 112
+
+  SCRIPT_PRIORITY ||= 32
+ 
+  FONT_PRIORITY ||= 16
+
+  AUDIO_PRIORITY ||= 12
+
+  EFFECT_PRIORITY ||= 8
+ 
+  WORLDMAP_PRIORITY ||= 4
+
+
+  ;; ==========================================================================
+  ;;   BUILD CONFIGURATION
+  ;; ==========================================================================
+
+  ;; Path to store object files
+  OBJECT_PATH ||= "obj"
+
+end

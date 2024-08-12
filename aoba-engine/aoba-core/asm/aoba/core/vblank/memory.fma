@@ -1,0 +1,40 @@
+module Aoba::VBlank
+
+  locate_at bank: SYSTEM_ROM_BANK
+
+  ;; The actual queue
+  __range = 0..$DF
+  __range = $6000..$60DF if ENABLE_SA1
+  scope :queue, in: ::Memory::SharedQuickPage, at: __range, length: MAX_QUEUE_SIZE
+
+  ;; The next queue offset
+  declare :queue_offset, as: :uint16, in: ::Memory::VariableRAM
+
+  ;; The current frames VBLANK usage counter
+  declare :usage_counter, as: :uint16, in: ::Memory::VariableRAM
+
+  ;; The transaction queue offset
+  declare :transaction_queue_offset, as: :uint16, in: ::Memory::VariableRAM
+
+  ;; The transaction usage counter
+  declare :transaction_usage_counter, as: :uint16, in: ::Memory::VariableRAM
+
+  ;; Backup for transactions during IRQ
+  declare :transaction_backup, as: :uint16, length: 3, in: ::Memory::VariableRAM
+
+  ;; Initializes the VBLANK
+  ;;
+  ;; @ignore-thread-safety
+  def initialize
+    Job.initialize_ram
+
+    ;; Resets the queue
+    LDA   #queue.to_sym
+    STA   queue_offset
+    STZ   usage_counter
+
+    STZ   transaction_queue_offset
+    STZ   transaction_usage_counter
+  end
+
+end

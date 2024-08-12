@@ -1,0 +1,54 @@
+module Aoba::Tileset::Event::PauseAnimation
+
+  ;; The event
+  class Event < Base
+  end
+
+  ;; Temporary RAM
+  scope :TempRAM, in: ActionRAM
+
+  declare :counter, as: :uint16, in: TempRAM
+
+  ID = List.create "PauseAnimation" do
+    Y.is_a! Event
+
+    SEI
+    LDA   global_flags
+    BIT   #GlobalFlag::ANIMATION_PAUSED
+    BNZ   _rts
+    ORA   #GlobalFlag::ANIMATION_PAUSED
+    STA   global_flags
+
+    LDA   #MAX_TILE_ANIMATIONS
+    STA   dp(counter)
+
+    LDY   #tile_animation_index
+    Y.is_a! TileAnimation
+  _loop:
+    LDX   Y[:timer]
+    BZE   _skip
+
+    X.is_a! Aoba::Thread::Timer::TimerInstance
+    LDA   X[:frame]
+    SEC
+    SBC   Aoba::Thread::Timer.current_frame_low
+    CPU.set A: 8
+    STA   Y[:duration_left]
+    CPU.set A: 16
+    PHY
+    JSL   Aoba::Thread::Timer.unqueue_long
+    PLY
+
+  _skip:
+    TYA
+    CLC
+    ADC   #TileAnimation.size
+    TAY
+    DEC   dp(counter)
+    BNZ   _loop
+
+  _rts:
+    CLI
+  end
+
+end

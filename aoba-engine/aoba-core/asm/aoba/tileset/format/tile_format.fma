@@ -1,0 +1,93 @@
+module Aoba::Tileset
+
+  ;; Initializes the tie format builder
+  class TileFormatBuilder
+    macro initialize(format)
+      @format = format
+    end
+
+    macro bpp(bpp)
+      @format.bpp = bpp
+    end
+
+    macro tile_size(width, height)
+      @format.tile_width = width
+      @format.tile_height = height
+    end
+
+    macro bgtile_size(width, height)
+      @format.bgtile_width = width
+      @format.bgtile_height = height
+    end
+  end
+
+  ;; Tile format
+  class TileFormat < Aoba::EngineObject
+    macro initialize
+      super
+      @bpp = 4
+      @tile_width = 16
+      @tile_height = 16
+      @bgtile_width = 16
+      @bgtile_height = 16
+    end
+
+    macro size_in_bytes_per_bgtile
+      return @bgtile_width * @bgtile_height * @bpp / 8
+    end
+
+    macro pixel_width_to_bgtile
+      @bgtile_width.divided_register_A
+    end
+
+    macro pixel_height_to_bgtile
+      @bgtile_height.divided_register_A
+    end
+
+    macro bgtile_width_to_tile
+      @num_bgtiles_x.divided_register_A
+    end
+
+    macro bgtile_height_to_tile
+      @num_bgtiles_y.divided_register_A
+    end
+
+    ;; Number of bgtiles per tile X
+    macro num_bgtiles_x
+      return @tile_width / @bgtile_width
+    end
+
+    ;; Number of bgtiles per tile Y
+    macro num_bgtiles_y
+      return @tile_height / @bgtile_height
+    end
+
+    ;; Number of bgtiles in total
+    macro num_bgtiles
+      return num_bgtiles_x * num_bgtiles_y
+    end
+
+    ;; Adds this to the tileset
+    macro include_to_tileset_tiles_format(format)
+      format.tile_format = self
+    end
+
+    macro include_to_tileset_storage(format)
+      format.tile_format = self
+    end
+
+    macro include_to_tilemap_renderer(renderer)
+      renderer.tile_format = self
+    end
+
+    ;; Creates a new tileformat
+    macro self.create(&block)
+      format = TileFormat.new
+      builder = TileFormatBuilder.new(format)
+      block.call with_context builder
+      return format
+    end
+  end
+
+
+end

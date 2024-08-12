@@ -1,0 +1,136 @@
+module Aoba::Compression::SimplePalette
+
+
+  ;; Execute decompression
+  ;; @ignore-thread-safety
+  @register A: 16, XY: 16
+  def execute_long
+    PHD
+    TCD
+
+    STZ   dp(State.offset_of(:last_color))
+    CPU.set A: 8
+    PHB
+    LDA   dp(State.offset_of(:source_address)) + 2
+    PHA
+    PLB
+
+    LDX   dp(State.offset_of(:source_address))
+    LDY   #0
+  _loop:
+    CPU.set A: 8
+    LDA   0, X
+    BMI   _decompress_command
+
+  _copy_color:
+    INY
+    STA   State.offset_of(:target_address).indirect.long, Y
+    STA   dp(State.offset_of(:last_color) + 1)
+    LDA   1, X
+    DEY
+    STA   State.offset_of(:target_address).indirect.long, Y
+    STA   dp(State.offset_of(:last_color))
+    INX
+    INY
+    CPU.set A: 16
+
+  _loop_next:
+    INY
+  _loop_next_no_INY:
+    INX
+    DEC   dp(State.offset_of(:num_colors))
+    BNZ   _loop
+
+  _finish:
+    PLB
+    CPU.set A: 16
+    PLD
+    RTL
+    A.pretend_size 8
+
+    ;; ---
+
+  _decompress_command:
+    CMP   #$80
+    BEQ   _decompress_repeat
+    BIT   #$40
+    BZE   _decompress_increment
+
+  _decompress_decrement:
+    JSR   _bits_to_color
+    A.pretend_size 16
+
+    LDA   dp(State.offset_of(:last_color))
+    SEC
+    SBC   dp(State.offset_of(:calc0))
+    STA   dp(State.offset_of(:last_color))
+    STA   State.offset_of(:target_address).indirect.long, Y
+    INY
+    BRA   _loop_next
+
+    ;; ---
+
+  _decompress_increment:
+    JSR   _bits_to_color
+    A.pretend_size 16
+
+    LDA   dp(State.offset_of(:calc0))
+    CLC
+    ADC   dp(State.offset_of(:last_color))
+    STA   dp(State.offset_of(:last_color))
+
+    STA   State.offset_of(:target_address).indirect.long, Y
+    INY
+    BRA   _loop_next
+    
+    ;; ---
+
+  _decompress_repeat:
+    A.pretend_size 8
+    LDA   1, X
+    CPU.set A: 16
+    AND   #$FF
+    STA   dp(State.offset_of(:calc0))
+    LDA   dp(State.offset_of(:num_colors))
+    SEC
+    SBC   dp(State.offset_of(:calc0))
+    INC   A
+    STA   dp(State.offset_of(:num_colors))
+    LDA   dp(State.offset_of(:calc0))
+    STX   dp(State.offset_of(:calc0))
+    TAX
+    LDA   dp(State.offset_of(:last_color))
+  _loop_decompress_repeat:
+    STA   State.offset_of(:target_address).indirect.long, Y
+    INY
+    INY
+    DEX
+    BNZ   _loop_decompress_repeat
+    LDX   dp(State.offset_of(:calc0))
+    INX
+    BRA   _loop_next_no_INY
+
+  _bits_to_color:
+    A.pretend_size 8
+    ;; bbggrr
+    ;; 000bb00 0gg000rr
+    STA   dp(State.offset_of(:current_value))
+    AND   #3
+    STA   dp(State.offset_of(:calc0))
+    LDA   dp(State.offset_of(:current_value))
+    AND   #3 << 2
+    ASL   A
+    ASL   A
+    ASL   A
+    ORA   dp(State.offset_of(:calc0))
+    STA   dp(State.offset_of(:calc0))
+    LDA   dp(State.offset_of(:current_value))
+    AND   #3 << 4
+    LSR   A
+    LSR   A
+    STA   dp(State.offset_of(:calc0) + 1)
+    CPU.set A: 16
+    RTS
+  end
+
+end

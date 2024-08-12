@@ -1,0 +1,61 @@
+module Aoba::VBlank::Job
+
+  macro _send_job_done_event
+    PHX
+    LDA   X[:thread_id]
+    PHA
+    LDA   #Thread::Event.SYSTEMEVENT_ID
+    Thread::Event.allocate_icb
+    
+    X.is_a! Thread::Event::Base
+    CPU.set A: 8
+    LDA   #VBLANKCOPY_THREAD_ID
+    STA   X[:sender_thread_id]
+
+    CPU.set A: 16
+    PLA
+    Thread.send_event_icb
+    PLX
+    X.is_a! JobInstance
+  end
+
+  ;; Notifies all threads
+  ;;
+  ;; @ignore-thread-safety
+  def notify_threads
+    LDA   queued_jobs
+    BZE   _no_queued_jobs
+
+    ;; Tests for trigger on the next job
+  _loop:
+    TAX
+    X.is_a! JobInstance
+
+    Debug.access_8bit_through_16bit
+    LDA   X[:flags]
+    BIT   #Flag::NOTIFY_SENDER_THREAD
+    BZE   _next_job
+
+    ;; Notifies the thread
+  _notify_thread:
+    _send_job_done_event
+
+    ;; Continues with the next job
+  _next_job:
+    LDA   X[:next_job]
+    BNZ   _loop
+    
+    ;; Frees the records
+  _free_queue:
+    LDA   free_jobs
+    Debug.mark_ram_X_unused JobInstance.size
+    STA   X[:next_job]
+    LDX   queued_jobs
+    STZ   queued_jobs
+    STX   free_jobs
+
+  _no_queued_jobs:
+    STZ   usage_counter
+  end
+
+end

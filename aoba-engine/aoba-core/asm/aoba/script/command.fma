@@ -1,0 +1,46 @@
+module Aoba::Script
+
+  __commands = {}
+  __commands_by_name = {}
+
+  datablock CommandPointers
+    256.times do |idx|
+      if __commands.key?(idx)
+        dw   __commands[idx]
+      else
+        dw   __commands[0]
+      end
+    end
+  end
+
+  macro command(value, name, &block)
+    func = Function.new "__script_#{value}_#{name}" do
+      A.pretend_size 16
+      X.pretend_size 16
+
+      ;Debug.only do
+      ;  LDA dp(register_a)
+      ;  LDX dp(register_a) + 2
+      ;  Debug.trace "    ++ Register A: {X}:{A}"
+      ;  LDX #script_pointer
+      ;  Debug.trace "Thread {byte(long(add(word(long(add(D,$FE),#{FIXED_RAM_BANK})),2),#{VARIABLE_RAM_BANK}))}: SCRIPT {byte(add(add(X,D),2))}:{sub(add(word(add(X,D)),Y),1)} | #{name}"
+      ;end
+
+      block.call
+      RTS
+    end
+    func.override_located_at bank: SCRIPT_ROM_BANK
+
+    __commands[value] = func
+    __commands_by_name[name] = value
+  end
+
+  macro command_alias(value, as)
+    __commands[value] = __commands[__commands_by_name[as]]
+  end
+
+  macro command_callback(name)
+    return __commands[__commands_by_name[name]]
+  end
+
+end

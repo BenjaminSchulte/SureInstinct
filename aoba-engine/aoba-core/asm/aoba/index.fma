@@ -1,0 +1,54 @@
+; Configuration
+require "configuration"
+
+; Engine modules
+require "core"
+require "scene"
+require "compression"
+require "image"
+require "camera"
+require "palette"
+require "tileset"
+require "tilemap"
+require "screen"
+require "sprite"
+require "composer"
+require "control"
+require "level"
+require "font"
+require "dialog"
+require "gamevar"
+require "effect"
+
+; Script modules
+require "script"
+require "core/script"
+require "level/script"
+require "composer/script"
+require "sprite/script"
+require "screen/script"
+require "control/script"
+require "palette/script"
+require "font/script"
+require "dialog/script"
+require "gamevar/script"
+
+; Scenes
+require "level/scene"
+
+; IRQ entry point
+;; @ignore-thread-safety
+@locate_at bank: 0
+def _irq
+  JML   Aoba::irq
+end
+
+;; @ignore-thread-safety
+@locate_at bank: 0
+def _brk
+  JML   Aoba::DebugScreen.enter
+end
+
+
+require "header"
+require "boot"

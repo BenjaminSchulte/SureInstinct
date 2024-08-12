@@ -1,0 +1,17 @@
+name: AOBA Audio engine
+id: com.aobastudio.aoba.audio
+version: 1.0.0
+
+author:
+  - Benjamin Schulte
+
+dependencies:
+  com.aobastudio.aoba.core: 1.0.0
+
+provides_interfaces:
+  com.aobastudio.aoba.audio: 1.0.0
+
+includes:
+  - "aoba/audio"
+  - "aoba/audio/script"
+  - "audioengine"

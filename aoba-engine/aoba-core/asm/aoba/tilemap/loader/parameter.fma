@@ -1,0 +1,28 @@
+module Aoba::Tilemap::Loader
+
+  class Parameter
+    macro initialize
+      @loader = nil
+      @offset = 0
+    end
+
+    macro size_in_bytes
+      raise "Missing: size_in_bytes"
+    end
+
+    macro load
+      Debug.error "Missing load routine for #{@@name}"
+      NOP
+    end
+
+    macro wait_for_ready
+    end
+
+    macro preconfigure
+    end
+
+    macro finalize
+    end
+  end
+
+end

@@ -1,0 +1,166 @@
+module Aoba::Dialog::Action::Render
+
+  datablock _pointer_row1_tilemap
+    dw    1
+    dw    2
+  end
+
+  datablock _pointer_row2_tilemap
+    dw    3
+    dw    4
+  end
+
+  ;; Returns the relative address regarding to the position
+  macro _get_relative_vram_address
+    ;; Reads the value stored in the matching option_address field
+    ASL   A
+    CLC
+    ADC   dp(current_dialog)
+    TAX
+    X.is_a! Aoba::Dialog::Hdma::Configuration
+    LDA   X[:font_state] + Font::Render::State.offset_of(:option_address)
+    STA   dp(Aoba::Script.calc0)
+
+    ;; The row in AH must be multiplicated by 64
+    AND   #$FF00
+    LSR   A
+    LSR   A
+    CPU.set A: 8
+    STZ   dp(Aoba::Script.calc0 + 1)
+    CPU.set A: 16
+    CLC
+    ADC   dp(Aoba::Script.calc0)
+  end
+
+  ;; Updates the current selection
+  ;;
+  ;; @param A current selection
+  def _unset_current_selection
+    ;; Pointer to VRAM
+    LDA   dp(Aoba::Script.register_a + 2)
+    CLC
+    ADC   vram_text_tilemap_address
+    STA   dp(Aoba::Script.calc0 + 2)
+
+    ;; Tiles to write (anything with priority 0 is ok)
+    STZ   dp(Aoba::Script.calc0)
+
+    JMP   _set_current_selection.general_setter
+  end
+
+  ;; Updates the current selection
+  ;;
+  ;; @param A current selection
+  def _set_current_selection
+    _get_relative_vram_address
+    STA   dp(Aoba::Script.register_a + 2)
+    CLC
+    ADC   vram_dialog_tilemap_address
+    STA   dp(Aoba::Script.calc0 + 2)
+
+    ;; Tiles to write
+Debug.BRK
+LDA #$AFFE
+    ;LDA   #(Aoba::Composer::VRAM::Text::NUM_TILES * 2) | $2000 | (5 << 10)
+    STA   dp(Aoba::Script.calc0)
+
+  general_setter:
+    LDY   #NUM_POINTER_TILES >> 1
+
+  _loop_x:
+    PHY
+    ;; Allocates a new task
+    LDA   #Aoba::VBlank::Target::VRAM_TILEMAP_X1_Y2
+    JSL   Aoba::VBlank::Job.allocate_icb_long
+
+    ;; Configures the job
+    X.is_a! Aoba::VBlank::Job::JobInstance
+    LDA   dp(Aoba::Script.calc0)
+    STA   X[:source_address] ;used as data
+    CLC
+    ADC   #4
+    STA   dp(Aoba::Script.calc0)
+    CPU.set A: 8
+    LDA   #2 ;used as data increment
+    STA   X[:source_address] + 2
+    CPU.set A: 16
+
+    LDA   dp(Aoba::Script.calc0 + 2)
+    STA   X[:target_address]
+    INC   dp(Aoba::Script.calc0 + 2)
+
+    LDA   #4
+    STA   X[:data_size]
+
+    JSL   Aoba::VBlank::Job.try_queue_icb_long
+    PLY
+    DEY
+    BNZ   _loop_x
+  end
+
+  ;; Choose an option 
+  macro _choose_option_action
+    LDA   #0
+    STZ   dp(Aoba::Script.register_a)
+    _set_current_selection
+
+  _loop:  
+    LDX   #Aoba::Control::Key.bitmap(:a, :b, :direction)
+    JSL   Aoba::Control::ScriptUtils.wait_for_key_icb_long
+
+    TXA
+    BIT   #Aoba::Control::Key::KEY_A
+    BNZ   _confirm
+    BIT   #Aoba::Control::Key::KEY_B
+    BNZ   _decline
+
+    BIT   #Aoba::Control::Key.bitmap(:up, :left)
+    BNZ   _move_previous
+
+  _move_next:
+    CPU.set A: 8
+    INC   dp(Aoba::Script.register_a)
+    LDX   dp(current_dialog)
+    X.is_a! Aoba::Dialog::Hdma::Configuration
+    LDA   X[:font_state] + Font::Render::State.offset_of(:current_option_offset)
+    LSR   A
+    CMP   dp(Aoba::Script.register_a)
+    BNE   _update_and_loop
+    STZ   dp(Aoba::Script.register_a)
+    BRA   _update_and_loop
+
+    ;; ---
+
+  _move_previous:
+    CPU.set A: 8
+    DEC   dp(Aoba::Script.register_a)
+    BPL   _update_and_loop
+    LDX   dp(current_dialog)
+    X.is_a! Aoba::Dialog::Hdma::Configuration
+    LDA   X[:font_state] + Font::Render::State.offset_of(:current_option_offset)
+    LSR   A
+    DEC   A
+    STA   dp(Aoba::Script.register_a)
+
+  _update_and_loop:
+    CPU.set A: 16
+Debug.fatal "TODO: PLAY MENU SAMPLE"
+;    LDA   Audio::Preset.menu_select
+;    ORA   #$8000
+;    JSL   Audio::Api.play_sfx_icb_long
+    _unset_current_selection
+    LDA   dp(Aoba::Script.register_a)
+    _set_current_selection
+    BRA   _loop
+
+    ;; ---
+
+  _decline:
+    LDA   #$FFFF
+    STA   dp(Aoba::Script.register_a)
+  _confirm:
+    _unset_current_selection
+    STZ   dp(Aoba::Script.register_a) + 2
+  end
+
+end

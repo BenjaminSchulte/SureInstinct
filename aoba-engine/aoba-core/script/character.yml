@@ -1,0 +1,37 @@
+functions:
+  Character.Spawn:
+    external: __aobascript_{$Character}_Spawn
+    parameters:
+      position: {type: position}
+      character: {type: asset, asset_type: $Character}
+      animation: {type: aoba.character.animation, depends_on: {character: character}}
+      direction: {type: aoba.character.direction, depends_on: {character: character}}
+      layer: {type: enum, options: {0: back, 1: behind, 2: front, 3: foreground}}
+
+    stack:
+      - {size: 16, value: {type: member, of: {type: parameter, id: position}, member: x}}
+      - {size: 16, value: {type: member, of: {type: parameter, id: position}, member: y}}
+      - {size: 16, value: {type: member, of: {type: parameter, id: animation}, member: animation_id}}
+      - {size: 8, value: {type: member, of: {type: parameter, id: direction}, member: direction_id}}
+      - {size: 8, value: 0} #todo
+
+    registers:
+      A: {size: 16, value: {type: member, of: {type: parameter, id: character}, member: address}}
+
+    returns:
+      character: {type: asset_instance, asset_type: $Character, register: C0}
+    
+  Character.Camera.AddCharacter:
+    external: __aobascript_{$Character}_CameraAddCharacter
+    parameters:
+      character: {type: asset_instance, asset_type: $Character}
+    registers:
+      A: {size: 16, value: {type: parameter, id: character}}
+
+groups:
+  Character:
+    asset_types:
+      Character: Character
+    members:
+      - Character.Spawn
+      - Character.Camera.AddCharacter

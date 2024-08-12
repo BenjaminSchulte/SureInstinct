@@ -1,0 +1,154 @@
+module Game::Ball::TileEvent::Change
+
+  locate_at bank: Aoba::SPRITE_ROM_BANK
+
+  ;; Temporary RAM
+  scope :TempRAM, in: nil, for: SNES::MemoryMap::RAM
+
+  ;; The X position
+  declare :x_position, as: :uint16, in: TempRAM
+
+  ;; The Y position
+  declare :y_position, as: :uint16, in: TempRAM
+
+  ;; The layer
+  declare :layer, as: :uint16, in: TempRAM
+
+  ;; The front tile
+  declare :front_tile, as: :uint16, in: TempRAM
+
+  ;; The back tile
+  declare :back_tile, as: :uint16, in: TempRAM
+
+  ;; Calculates the X and Y position
+  def calculate_x_y_position
+    LDA   dp(Aoba::Sprite::Action::Move.pos_x)
+    16.divided_register_A
+    STA   dp(x_position)
+    LDA   dp(Aoba::Sprite::Action::Move.pos_y)
+    16.divided_register_A
+    STA   dp(y_position)
+  end
+
+  ; -----------------------------------------------------
+  def set_tile
+    STA   dp(layer)
+
+  after_store_layer:
+    ;; Calculates the actual tile value
+    LDA   dp(front_tile)
+    CLC
+    ADC   AssetConfig::Ingame.replacement_tile_list.long
+    TAX
+    LDA   REPLACEMENT_TILE_LIST_BANK.as_bank.long, X
+    STA   dp(front_tile)
+
+    ;; Calculates the tile index
+    LDA   dp(y_position)
+    AssetConfig::Ingame.tilemap_format.max_width.multiplicated_register_A
+    ORA   dp(x_position)
+    CLC
+    ADC   dp(layer)
+    TAX
+    CPU.set A: 8
+    LDA   dp(front_tile)
+    STA   Aoba::FIXED_RAM_BANK.as_bank.long, X
+    CPU.set A: 16
+
+    ;; Updates the layer tile if necessary
+    LDA   dp(layer)
+    CMP   AssetConfig::Ingame.tilemap_storage.tiles[:current].long
+    BNE   _rts
+
+    ;; Renders the tile
+    CPU.set A: 8
+    LDA   #Aoba::Thread::Event::USEREVENT_ID
+    JSL   Aoba::Thread::Event.allocate_icb_long
+    X.is_a! Aoba::Tilemap::Renderer::SingleTilemapTileEvent
+    LDA   #AssetConfig::Ingame.tilemap_tile_renderer.plot_event_id
+    STA   X[:event_id]
+    LDA   dp(x_position)
+    STA   X[:x]
+    LDA   dp(y_position)
+    STA   X[:y]
+    LDA   Aoba::Level.thread_id
+    JSL   Aoba::Thread.send_event_icb_long
+    CPU.set A: 16
+
+  _rts:
+    RTS
+  end
+  
+  ; -----------------------------------------------------
+  def set_tile_by_index
+    STA   dp(x_position)
+    AssetConfig::Ingame.tilemap_format.max_width.divided_register_A
+    STA   dp(y_position)
+    LDA   dp(x_position)
+    AND   #AssetConfig::Ingame.tilemap_format.max_width.bitmask
+    STA   dp(x_position)
+    JMP   set_tile.after_store_layer
+  end
+
+  ; -----------------------------------------------------
+  def set_current_layer_tile
+    Y.is_a! Aoba::Sprite::Instance
+    STA   dp(front_tile)
+    calculate_x_y_position
+    LDA   AssetConfig::Ingame.tilemap_storage.tiles[:current].long
+    JMP   set_tile
+  end
+
+  ; -----------------------------------------------------
+  def set_all_layer_tile
+    STA   dp(back_tile)
+    set_current_layer_tile
+    JMP   set_previous_tile.update_bg_tile
+  end
+
+  ; -----------------------------------------------------
+  def set_hit_tile
+    STA   dp(front_tile)
+    AssetConfig::Ingame.ball_collision_handler.calculate_tile_xy
+    STX   dp(x_position)
+    STY   dp(y_position)
+    LDA   AssetConfig::Ingame.tilemap_storage.tiles[:current].long
+    JMP   set_tile
+  end
+
+  ; -----------------------------------------------------
+  def set_previous_tile
+    Y.is_a! Aoba::Sprite::Instance
+    LDA   Y[:last_tile_x]
+    16.divided_register_A
+    STA   dp(x_position)
+    LDA   Y[:last_tile_y]
+    16.divided_register_A
+    STA   dp(y_position)
+
+    LDA   AssetConfig::Ingame.tilemap_storage.tiles[:current].long
+    set_tile
+
+  update_bg_tile:
+    LDA   AssetConfig::Ingame.tilemap_storage.height.long
+    AND   #$FF
+    CLC ;+1
+    SBC   dp(y_position)
+    STA   dp(y_position)
+
+    LDA   dp(back_tile)
+    STA   dp(front_tile)
+
+    ;LDA   AssetConfig::Ingame.tilemap_storage.tiles[:current].long
+    LDA   dp(layer)
+    CMP   #AssetConfig::Ingame.tilemap_storage.tiles[:top]
+    BEQ   _use_bottom
+    LDA   #AssetConfig::Ingame.tilemap_storage.tiles[:top]
+    BRA   _after_use_front
+  _use_bottom:
+    LDA   #AssetConfig::Ingame.tilemap_storage.tiles[:bottom]
+  _after_use_front:
+    JMP   set_tile
+  end
+
+end

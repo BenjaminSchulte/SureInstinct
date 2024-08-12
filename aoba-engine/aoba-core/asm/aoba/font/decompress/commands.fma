@@ -1,0 +1,26 @@
+module Aoba::Font::Decompress
+
+  ;; No action
+  def _nop
+  end
+  
+  datablock special_commands
+    dw   _print_number
+    dw   _nop
+    dw   _nop
+    dw   _nop
+    dw   _nop
+    dw   _nop
+    dw   _nop
+    dw   _nop
+    dw   _nop
+    dw   _nop
+    dw   _nop
+    dw   _nop
+    dw   _nop
+    dw   _nop
+    dw   _nop
+    dw   _nop
+  end
+
+end

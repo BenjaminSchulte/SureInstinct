@@ -1,0 +1,39 @@
+module Aoba::Thread
+
+  class EventHandlerList
+    macro initialize(bank)
+      @max_event_id = 0
+      @bank = bank
+      @events = {}
+      @routines = DataBlock.new("event_handler_list_routines")
+      @routines.override_located_at bank: bank
+    end
+
+    macro empty?
+      return @max_event_id == 0
+    end
+
+    macro create_from_handler(name, event_handler)
+      @max_event_id += 1
+      @events[name] = @max_event_id
+      @routines.dw event_handler
+      return @events[name]
+    end
+
+    macro create(name, &block)
+      @max_event_id += 1
+      id = @max_event_id
+      @events[name] = @max_event_id
+      handler = Function.new "#{name}_event_handler" do
+        A.pretend_size 16
+        X.pretend_size 16
+        block.call id
+        RTS
+      end
+      handler.override_located_at bank: bank
+      @routines.dw handler
+      return @events[name]
+    end
+  end
+
+end

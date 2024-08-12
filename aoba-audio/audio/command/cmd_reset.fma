@@ -1,0 +1,34 @@
+module Command::Reset
+
+  ;; Processes the reset command
+  def process
+    ; Send answer!
+    MOV   dp(SPC.PORT0), dp(IPC.last_ipc_value)
+
+    reset_sample_index
+
+    MOV   dp(SPC.DSP_ADDR), #DSP.FLG
+    MOV   dp(SPC.DSP_DATA), dp(DSP.flags)
+  end
+
+  def reset_sample_index
+    ; Set up the sample offsets
+    MOV   A, #0
+    MOV   Y, #SAMPLE_OFFSET >> 8
+    MOVW  dp(Sample.next_sample_offset), YA
+    MOV   dp(Sample.next_sample_id), A
+
+    ; Resets the sample ID map
+    DEC   A
+    MOV   Y, #MAX_NUM_SNES_SAMPLES
+  _loop_snes_sample_map:
+    MOV   addr(Sample.snes_sample_id_map - 1, Y), A
+    DBNZ  Y, _loop_snes_sample_map
+
+    MOV   Y, #MAX_LOCAL_SAMPLES
+  _loop_sample_map:
+    MOV   addr(Sample.sample_id_snes_map - 1, Y), A
+    DBNZ  Y, _loop_sample_map
+  end
+
+end

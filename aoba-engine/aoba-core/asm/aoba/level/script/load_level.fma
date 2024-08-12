@@ -1,0 +1,71 @@
+module Aoba::Level
+
+  macro __create_level_loader_script_commands(name, level_loader)
+    ;; Loads the level
+    ;;
+    ;; @param REGA level address
+    Aoba::Script.callback "#{name}_LoadLevel", bank: LEVEL_ROM_BANK do
+
+      ;; Allocates and configures the event
+      LDA   #Aoba::Thread::Event::USEREVENT_ID
+      JSL   Aoba::Thread::Event.allocate_icb_long
+      X.is_a! Aoba::Level::Event::LoadLevel::Event
+      LDA   dp(Aoba::Script.register_a)
+      STA   X[:level_address]
+      CPU.set A: 8
+      LDA   #level_loader.load_event_id
+      STA   X[:event_id]
+      LDA   Aoba::Level.thread_id
+      CPU.set A: 16
+
+      JSL   Aoba::Thread::send_event_icb_long
+
+      ::Debug.full_dump
+    end
+
+    ;; Loads the level
+    ;;
+    ;; @param REGA level address
+    Aoba::Script.callback "#{name}_WaitForLoadLevel", bank: LEVEL_ROM_BANK do
+      ;; Send the ready event request to the level thread
+      CPU.set A: 8
+      LDA   #Aoba::Thread::Event.USEREVENT_ID
+      JSL   Aoba::Thread::Event.allocate_icb_long
+      X.is_a! Aoba::Thread::ReadyEvent::Event
+      LDA   #Aoba::Level::Event::ReadyEvent::ID
+      STA   X[:event_id]
+      LDA   #level_loader.load_event_id
+      STA   X[:response_id]
+      LDA   thread_id
+      CPU.set A: 16
+      JSL   Aoba::Thread.send_event_icb_long
+
+      ;; Waits for the level to be ready
+      CPU.set A: 8
+      LDA   #level_loader.load_event_id
+      XBA
+      LDA   thread_id
+      CPU.set A: 16
+      JML   Aoba::Thread.wait_for_ready_icb_long
+
+    end
+
+    ;; Executes the "onload" script of the current map
+    Aoba::Script.callback "#{name}_CallOnLoadScript", bank: SCRIPT_ROM_BANK do
+      LDA   level_loader.level_header.long
+      TAX
+
+      LDA   LEVEL_DATA_BANK.as_bank(RomHeader.offset_of(:onload_script_address) + 1).long, X
+      BZE   _resume_without_call
+
+    _call_script:
+      XBA
+      TAY
+      LDA   LEVEL_DATA_BANK.as_bank(RomHeader.offset_of(:onload_script_address)).long, X
+      Aoba::Script.call_script_subroutine_icb
+
+    _resume_without_call:
+    end
+  end
+
+end

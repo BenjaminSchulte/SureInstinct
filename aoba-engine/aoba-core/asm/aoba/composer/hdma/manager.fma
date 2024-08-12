@@ -1,0 +1,127 @@
+module Aoba::Composer::Hdma
+
+  ;; Disables the VBLANK update
+  macro disable_hdma_vblank_update
+    LDA   #$6B ;RTL
+    STA   jump_to_hdma_vblank_update.long
+  end
+
+  ;; Sets the VBLANK update routine to A
+  ;; @param A address of update routine
+  macro set_hdma_vblank_update(callback)
+    LDA   #callback.to_sym >> 8
+    STA   (jump_to_hdma_vblank_update + 2).long
+    LDA   #$5C | ((callback.to_sym & $FF) << 8) ;JML
+    STA   jump_to_hdma_vblank_update.long
+  end
+
+  ;; Invokes the VBLANK
+  macro process_vblank
+    CPU.set A: 8
+    LDA   queued_hdma_mode
+    BZE   _skip_release_enable
+
+  _enable_new_hdma_routine:
+    CPU.set A: 8
+
+    ; release = data
+    LDA   hdma_mode
+    STA   release_hdma_mode
+    Debug.allow_invalid_ram_access 2
+    LDY   userdata
+    STY   release_userdata
+
+    ; data = queued
+    LDY   queued_userdata
+    STY   userdata
+    LDA   queued_hdma_mode
+    STA   hdma_mode
+    STZ   queued_hdma_mode
+
+    ; invoke enable
+    DEC   A
+    CPU.set A: 16
+    AND   #$00FF
+    ASL   A
+    TAX
+    JSR   Hdma.mode_enable_pointer.indirect, X
+    CPU.set A: 8
+
+  _skip_release_enable:
+    Debug.allow_invalid_ram_access 2
+    LDY   userdata
+    JSL   jump_to_hdma_vblank_update
+    CPU.set A: 16
+  end
+
+  ;; After VBLANK
+  macro after_vblank
+    LDA   release_hdma_mode
+    BZE   _skip_release_hdma_mode
+
+  _release_hdma_mode:
+    DEC   A
+    CPU.set A: 16
+    AND   #$FF
+    ASL   A
+    TAX
+    LDY   release_userdata
+    JSR   Hdma.mode_release_pointer.indirect, X
+    CPU.set A: 8
+    STZ   release_hdma_mode
+
+  _skip_release_hdma_mode:
+  end
+
+  ;; Initializes the RAM
+  ;; @ignore-thread-safety
+  def initialize_ram
+    ;; Allocates the header RAM
+    SEI
+    LDX   #NUM_HDMA_CHANNEL * HDMA_CHANNEL_HEADER_SIZE
+    JSL   Aoba::Memory.allocate_long
+    STX   hdma_header_ram
+
+    ;; Sets up the disabled HDMA mode
+    CPU.set A: 8
+    LDA   #$60
+    STA   jump_to_hdma_vblank_update.long + 3
+    LDA   #__all_hdma_modes[0].id
+    STA   hdma_mode
+    STZ   queued_hdma_mode
+    STZ   release_hdma_mode
+    CPU.set A: 16
+    ;JSR   Mode.all_hdma_modes[0]._setup.to_sym ; (Is just RTS)
+
+    ;; Queues the initialize_snes_ram to the VBLANK queue to ensure execution on next frame
+    VBlank::Queue.add_without_params _initialize_snes_callback
+    CLI
+  end
+
+  ;; Initializes RAM from SNES 
+  _initialize_snes_callback = VBlank::Callback.new do
+    execute do
+      ;; Preconfigure HDMA to use the header
+      PHD
+      LDA   #$4300
+      TCD
+      TXA
+      CPU.set A: 16
+      CPU.set XY: 8
+      LDX   #VARIABLE_RAM_BANK
+      LDA   hdma_header_ram.long
+      CLC
+      NUM_HDMA_CHANNEL.times do |i|
+        STX   dp(DMA[i + FIRST_HDMA_CHANNEL].source_bank)
+        STA   dp(DMA[i + FIRST_HDMA_CHANNEL].source_address)
+        STX   dp(DMA[i + FIRST_HDMA_CHANNEL].indirect_bank)
+        if i + 1 < NUM_HDMA_CHANNEL
+          ADC   #HDMA_CHANNEL_HEADER_SIZE
+        end
+      end
+      PLD
+      CPU.set XY: 16
+      CPU.set A: 8
+    end
+  end
+end

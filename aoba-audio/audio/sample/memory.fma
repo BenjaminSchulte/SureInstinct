@@ -1,0 +1,51 @@
+module Sample
+
+  ;; The offset of the first sample
+  scope :SampleBuffer, at: SAMPLE_OFFSET, length: $FFC0 - INIT_CODE_SIZE - SAMPLE_OFFSET, in: Memory.RAM
+
+  ;; The next offset to write samples to
+  declare :next_sample_offset, as: :uint16, in: Memory.Page0
+
+  ;; The next ID for samples
+  declare :next_sample_id, as: :uint8, in: Memory.Page0
+
+  ;; Maps SNES sample IDs to current APU sample IDs
+  scope :snes_sample_id_map, length: MAX_NUM_SNES_SAMPLES, in: Memory.RAM
+
+  ;; Maps APU sample IDs to SNES sample IDs
+  scope :sample_id_snes_map, length: MAX_LOCAL_SAMPLES, in: Memory.RAM
+
+  ;; A list of all sample offsets
+  scope :sample_directory, length: MAX_LOCAL_SAMPLES * 4, align: $100, in: Memory.RAM
+
+  ;; Sample pitch
+  scope :sample_pitch_low_byte, length: MAX_LOCAL_SAMPLES, in: Memory.RAM
+
+  ;; Sample pitch
+  scope :sample_pitch_high_byte, length: MAX_LOCAL_SAMPLES, in: Memory.RAM
+
+  ;; ADSR
+  scope :sample_adsr_low_byte, length: MAX_LOCAL_SAMPLES, in: Memory.RAM
+
+  ;; ADSR
+  scope :sample_adsr_high_byte, length: MAX_LOCAL_SAMPLES, in: Memory.RAM
+
+  ;; The sample size (low byte)
+  scope :sample_size_low_byte, length: MAX_LOCAL_SAMPLES, in: Memory.RAM
+
+  ;; The sample size (high byte)
+  scope :sample_size_high_byte, length: MAX_LOCAL_SAMPLES, in: Memory.RAM
+
+  ;; List of all volumes
+  scope :volumes, length: MAX_LOCAL_SAMPLES, in: Memory.RAM
+
+  ;; Muted sample
+  datablock mute_sample_data
+    db   $03
+    dw   0
+    dw   0
+    dw   0
+    dw   0
+  end
+
+end

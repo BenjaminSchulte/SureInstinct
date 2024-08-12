@@ -1,0 +1,176 @@
+module Aoba::Palette::Effect::Rotate
+
+  ;; Temporary RAM
+  scope :TempRAM, in: Aoba::Palette::TempRAM
+
+  ;; The first color
+  declare :color_index, as: :uint16, in: TempRAM
+
+  ;; The first color
+  declare :palette_index, as: :uint16, in: TempRAM
+
+  ;; The number of color
+  declare :num_colors, as: :uint16, in: TempRAM
+
+  ;; Palette address
+  declare :palette_row_offset, as: :uint16, in: TempRAM
+
+  ;; Palette address
+  declare :palette_offset, as: :uint16, in: TempRAM
+
+  ;; Palette address
+  declare :palette_end_offset, as: :uint16, in: TempRAM
+
+
+  ;; The first color
+  declare :first_color, as: :uint16, in: TempRAM
+  ;; The first color
+  declare :first_original_color, as: :uint16, in: TempRAM
+  declare :first_color_red, as: :uint16, in: TempRAM
+  declare :first_color_green, as: :uint16, in: TempRAM
+  declare :first_color_blue, as: :uint16, in: TempRAM
+  declare :first_calc_red, as: :uint16, in: TempRAM
+  declare :first_calc_green, as: :uint16, in: TempRAM
+  declare :first_calc_blue, as: :uint16, in: TempRAM
+
+  ;; Loads common animation parameters
+  ;; @param Y PaletteEffectSlot (-tilemap_effects)
+  macro _load_common_paletteeffect_parameter
+    Thread.assert_thread thread_id
+    Y.is_a! PaletteEffectSlot
+
+    LDA   Y[:palette] + tilemap_effects
+    AND   dp(x00FF)
+    16.multiplicated_register_A
+    STA   dp(palette_index)
+    ASL   A
+    STA   dp(palette_row_offset)
+
+    LDA   Y[:color_index] + tilemap_effects
+    AND   dp(x00FF)
+    STA   dp(color_index)
+    ASL   A
+    CLC
+    ADC   dp(palette_row_offset)
+    STA   dp(palette_offset)
+    LDA   Y[:size] + tilemap_effects
+    DEC   A
+    AND   dp(x00FF)
+    ASL   A
+    STA   dp(num_colors)
+    CLC
+    ADC   dp(palette_offset)
+    STA   dp(palette_end_offset)
+  end
+
+  ;; Triggers the CGRAM update
+  macro _trigger_cgram_update
+    LDA   dp(palette_offset)
+    CLC
+    ADC   #cgram
+    TAX
+    CPU.set A: 8
+    LDA   #FIXED_RAM_BANK
+    XBA
+    LDA   dp(color_index)
+    CLC
+    ADC   dp(palette_index)
+    CPU.set A: 16
+    LDY   dp(num_colors)
+    INY
+    INY
+    JSL   Aoba::VBlank::queue_cgram_update_long
+  end
+
+  def process_effect
+    ;; Reads the start address
+    LDX   dp(palette_offset) 
+
+    ;; Reads the first color to RAM
+    LDA   cgram, X
+    STA   dp(first_color)
+    Debug.allow_invalid_ram_access 2
+    LDA   original_cgram, X
+    STA   dp(first_original_color)
+    LDA   cgram_red, X
+    STA   dp(first_color_red)
+    LDA   cgram_green, X
+    STA   dp(first_color_green)
+    LDA   cgram_blue, X
+    STA   dp(first_color_blue)
+    Debug.allow_invalid_ram_access 2
+    LDA   cgram_red_calc, X
+    STA   dp(first_calc_red)
+    Debug.allow_invalid_ram_access 2
+    LDA   cgram_green_calc, X
+    STA   dp(first_calc_green)
+    Debug.allow_invalid_ram_access 2
+    LDA   cgram_blue_calc, X
+    STA   dp(first_calc_blue)
+
+    ;; Shift all colors
+  _loop:
+    LDA   cgram + 2, X
+    STA   cgram, X
+    Debug.allow_invalid_ram_access 2
+    LDA   original_cgram + 2, X
+    STA   original_cgram, X
+    LDA   cgram_red + 2, X
+    STA   cgram_red, X
+    LDA   cgram_green + 2, X
+    STA   cgram_green, X
+    LDA   cgram_blue + 2, X
+    STA   cgram_blue, X
+    Debug.allow_invalid_ram_access 2
+    LDA   cgram_red_calc + 2, X
+    STA   cgram_red_calc, X
+    Debug.allow_invalid_ram_access 2
+    LDA   cgram_green_calc + 2, X
+    STA   cgram_green_calc, X
+    Debug.allow_invalid_ram_access 2
+    LDA   cgram_blue_calc + 2, X
+    STA   cgram_blue_calc, X
+    INX
+    INX
+    CPX   dp(palette_end_offset)
+    BLT   _loop
+
+  _skip:
+    ;; Write back last color
+    LDA   dp(first_color)
+    STA   cgram, X
+    LDA   dp(first_original_color)
+    STA   original_cgram, X
+    LDA   dp(first_color_red)
+    STA   cgram_red, X
+    LDA   dp(first_color_green)
+    STA   cgram_green, X
+    LDA   dp(first_color_blue)
+    STA   cgram_blue, X
+    LDA   dp(first_calc_red)
+    STA   cgram_red_calc, X
+    LDA   dp(first_calc_green)
+    STA   cgram_green_calc, X
+    LDA   dp(first_calc_blue)
+    STA   cgram_blue_calc, X
+
+    ;; Trigger color update
+    _trigger_cgram_update
+  end
+
+  ;; @param Y PaletteEffectSlot (-tilemap_effects)
+  ;; @ignore-thread-safety
+  def execute
+    ;; Loads all common information to the DP RAM
+    _load_common_paletteeffect_parameter
+
+    process_effect
+
+    ;; Queues the timer again
+    LDX   dp(_calc0)
+    LDA   VARIABLE_RAM_BANK.as_bank(Aoba::Thread::Timer::TimerInstance.offset_of(:interval)).long, X
+    TAY
+    JSL   Aoba::Thread::Timer.queue_long
+  end
+
+end

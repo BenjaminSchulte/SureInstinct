@@ -1,0 +1,893 @@
+module Game::Level::UserInterface::StageClear
+
+  module HdmaFlag
+    SETUP_SCORE = 1
+    SCORE_IS_SETUP = 2
+    SETUP_TIME = 4
+    TIME_IS_SETUP = 8
+  end
+
+
+  FONT_RENDER_BUFFER_WIDTH = 10
+
+  VRAM_FONT_RENDER_BUFFER_SIZE = FONT_RENDER_BUFFER_WIDTH * $20
+
+  FONT_RENDER_BUFFER_SIZE = 2 * $20 + VRAM_FONT_RENDER_BUFFER_SIZE
+
+  TEXT_DECOMPRESS_BUFFER_SIZE = $20
+
+
+  SCORE_NUMBER_TILES_OFFSET = 400 - FONT_RENDER_BUFFER_WIDTH * 2
+
+  TOTAL_NUMBER_TILES_OFFSET = SCORE_NUMBER_TILES_OFFSET - FONT_RENDER_BUFFER_WIDTH * 2
+
+  TIME_NUMBER_TILES_OFFSET = TOTAL_NUMBER_TILES_OFFSET - FONT_RENDER_BUFFER_WIDTH * 2
+
+  
+
+  scope :RAM, in: SubScreenRAM
+
+  declare :effect_is_active, as: :uint16, in: RAM
+
+  declare :gamepad_listener, as: :uint16, in: RAM
+
+  declare :current_menu_item, as: :uint16, in: RAM
+  
+  declare :current_menu_calculating, as: :uint16, in: RAM
+
+  declare :calculation_buffer, as: :uint8, in: RAM, length: 4
+
+  declare :font_rendering_buffer, as: :uint16, in: RAM
+  declare :text_decompress_buffer, as: :uint16, in: RAM
+  declare :font_rendering_state, as: :uint16, in: RAM
+  
+  declare :hdma_flags, as: :uint16, in: RAM
+
+  declare :current_score_value, as: :uint16, in: RAM
+  declare :current_total_value, as: :uint16, in: RAM
+
+  declare :current_time_ms, as: :uint16, in: RAM
+  declare :current_time_seconds, as: :uint16, in: RAM
+  current_time_minutes = current_time_seconds + 1
+
+  declare :time_in_seconds, as: :uint16, in: RAM
+  declare :time_bonus, as: :uint16, in: RAM
+  declare :total_score, as: :uint16, in: RAM
+
+  declare :current_cached_calculation, as: :uint16, in: RAM
+  declare :current_cached_calculation2, as: :uint16, in: RAM
+  declare :current_cached_calculation3, as: :uint16, in: RAM
+  declare :current_counter, as: :uint16, in: RAM
+  declare :last_calculated_frame, as: :uint16, in: RAM
+
+
+  scope :TempRAM, in: Aoba::Effect::ActionRAM
+
+  ;; The current value
+  declare :_value, as: :uint16, in: TempRAM
+
+
+
+  ;; The thread RAM
+  scope :ThreadRAM, in: ::Memory::ThreadRAM
+  declare :_calc0, as: :uint32, in: ThreadRAM
+
+
+  class Configuration
+  end
+
+  @locate_at bank: Aoba::EFFECT_ROM_BANK
+  def level_succeeded
+    Aoba::routine do
+      make_thread_safe
+
+      declare :variable_id, as: :uint16
+      declare :level_list, as: :uint24
+      declare :calc, as: :uint16
+
+      execute do |variable_id, level_list, calc|
+        LDA   Game::Scene::StageSelect.level_list_pointer.long
+        STA   dp(level_list)
+        LDA   Game::Scene::StageSelect.level_list_pointer.long + 1
+        STA   dp(level_list) + 1
+
+        LDY   #Game::Scene::StageSelect::LevelListRomFormat.offset_of(:visible_level_variable)
+        LDA   level_list.indirect.long, Y
+        STA   dp(variable_id)
+        JSL   Aoba::GameVariable.load_number_long
+        DEX
+        BMI   _is_first_stage_visible
+        CPX   current_stage_number
+        BGE   _skip_visible
+      _is_first_stage_visible:
+        LDY   #0
+        LDX   current_stage_number
+        INX
+        LDA   dp(variable_id)
+        JSL   Aoba::GameVariable.write_number_long
+      _skip_visible:
+
+        LDY   #Game::Scene::StageSelect::LevelListRomFormat.offset_of(:unlocked_level_variable)
+        LDA   level_list.indirect.long, Y
+        STA   dp(variable_id)
+        JSL   Aoba::GameVariable.load_number_long
+        DEX
+        DEX
+        BMI   _store_unlocked
+        CPX   current_stage_number
+        BGE   _skip_unlocked
+      _store_unlocked:
+        LDY   #0
+        LDX   current_stage_number
+        INX
+        INX
+        LDA   dp(variable_id)
+        JSL   Aoba::GameVariable.write_number_long
+      _skip_unlocked:
+
+
+        ;;; ============== stage specific
+
+        LDA   current_stage_number
+        JSL   Game::Scene::StageSelect._level_id_to_data_pointer
+        STA   dp(level_list)
+
+        ;; Stores best time. Multiplicate by 10 (for ms)
+        LDA   #99 * 60 + 59
+        SEC
+        SBC   time_in_seconds
+        STA   dp(variable_id)
+        CLC
+        ADC   dp(variable_id)
+        ADC   dp(variable_id)
+        ADC   dp(variable_id)
+        ADC   dp(variable_id)
+        STA   dp(variable_id)
+        ADC   dp(variable_id)
+        ADC   time_ms
+        STA   dp(calc)
+
+        LDY   #Game::Scene::StageSelect::LevelListLevelRomFormat.offset_of(:best_time_variable0)
+        LDA   level_list.indirect.long, Y
+        STA   dp(variable_id)
+        JSL   Aoba::GameVariable.load_number_long
+        CPX   #0
+        BEQ   _first_time
+        CPX   dp(calc)
+        BLT   _skip_time
+      _first_time:
+        LDX   dp(calc)
+        LDY   #0
+        LDA   dp(variable_id)
+        JSL   Aoba::GameVariable.write_number_long
+      _skip_time:
+        
+        ;; Stores best score
+        LDY   #Game::Scene::StageSelect::LevelListLevelRomFormat.offset_of(:best_score_variable0)
+        LDA   level_list.indirect.long, Y
+        STA   dp(variable_id)
+        JSL   Aoba::GameVariable.load_number_long
+        CPX   #0
+        BEQ   _first_score
+        CPX   total_score
+        BGE   _skip_score
+      _first_score:
+        LDX   total_score
+        LDY   #0
+        LDA   dp(variable_id)
+        JSL   Aoba::GameVariable.write_number_long
+      _skip_score:
+
+        JSL   Aoba::GameVariable.commit_long
+      end
+    end
+  end
+
+
+  @locate_at bank: Aoba::EFFECT_ROM_BANK
+  def on_keydown
+    STZ   current_menu_item
+    BIT   #Aoba::Control::Key.bitmap(:y, :x, :rmb)
+    BZE   _only_continue
+    INC   current_menu_item
+  _only_continue:
+    MenuThread.kill_from_self
+  end
+
+  MenuThread = Aoba::Thread::Builder.create "StageClear" do
+    locate_at bank: Aoba::EFFECT_ROM_BANK
+    priority LEVEL_CONTROL_PRIORITY
+
+    use_temporary Aoba::Effect._calc0
+    use_dp_ram ThreadRAM
+
+    load do
+      LDA   MenuThread.thread_id
+      LDX   gamepad
+      LDY   #Aoba::Control::Key.bitmap(:y, :x, :a, :b, :start, :lmb, :rmb)
+      JSL   Aoba::Control.attach_new_listener_icb_long
+      STY   gamepad_listener
+    end
+
+    unload do
+      STZ   effect_is_active
+      LDY   #5
+      JSL   Aoba::Thread.delay_long ;wait for effect to be finished
+      LDX   gamepad
+      LDY   gamepad_listener
+      JSL   Aoba::Control.detach_and_free_listener_icb_long
+    end
+
+    after_unload do
+      LDA   current_menu_item
+      BZE   _to_menu
+
+    _restart:
+      LDX   #__com_aobastudio_sureinstinct_ingame_restart.bank
+      LDA   #__com_aobastudio_sureinstinct_ingame_restart
+      BRA   _rts
+
+    _to_menu:
+      LDX   #__com_aobastudio_sureinstinct_ingame_to_stageselect.bank
+      LDA   #__com_aobastudio_sureinstinct_ingame_to_stageselect
+
+    _rts:
+      JSL   Aoba::Scene::Api.execute_script_long
+    end
+
+    on :keydown do
+      LDA   Y[:keys]
+      on_keydown
+    end
+  end
+
+  ;; Sets up the HDMA
+  @locate_at bank: Aoba::SYSTEM_ROM_BANK
+  def _setup_score
+    CPU.set A: 8
+    PHD
+    PEA   #$2100
+    PLD
+    LDA   #$80
+    STA   dp(PPU.VMAIN)
+
+    _plot_set_address 26 - FONT_RENDER_BUFFER_WIDTH, 9, base: AssetConfig::Ingame.ui_menu_tilemap.address
+    _plot_tile AssetConfig::Ingame.ui_menu_tiles.relative_tile_offset + SCORE_NUMBER_TILES_OFFSET, 1, 1
+    _plot_overnext_tile repeat: FONT_RENDER_BUFFER_WIDTH - 1
+
+    _plot_set_address 26 - FONT_RENDER_BUFFER_WIDTH, 10, base: AssetConfig::Ingame.ui_menu_tilemap.address
+    _plot_tile AssetConfig::Ingame.ui_menu_tiles.relative_tile_offset + SCORE_NUMBER_TILES_OFFSET + 1, 1, 1
+    _plot_overnext_tile repeat: FONT_RENDER_BUFFER_WIDTH - 1
+
+    _plot_set_address 26 - FONT_RENDER_BUFFER_WIDTH, 15, base: AssetConfig::Ingame.ui_menu_tilemap.address
+    _plot_tile AssetConfig::Ingame.ui_menu_tiles.relative_tile_offset + TOTAL_NUMBER_TILES_OFFSET, 1, 1
+    _plot_overnext_tile repeat: FONT_RENDER_BUFFER_WIDTH - 1
+
+    _plot_set_address 26 - FONT_RENDER_BUFFER_WIDTH, 16, base: AssetConfig::Ingame.ui_menu_tilemap.address
+    _plot_tile AssetConfig::Ingame.ui_menu_tiles.relative_tile_offset + TOTAL_NUMBER_TILES_OFFSET + 1, 1, 1
+    _plot_overnext_tile repeat: FONT_RENDER_BUFFER_WIDTH - 1
+
+    PLD
+    CPU.set A: 16
+  end
+
+  ;; Sets up the HDMA
+  @locate_at bank: Aoba::SYSTEM_ROM_BANK
+  def _setup_time
+    CPU.set A: 8
+    PHD
+    PEA   #$2100
+    PLD
+    LDA   #$80
+    STA   dp(PPU.VMAIN)
+
+    _plot_set_address 26 - FONT_RENDER_BUFFER_WIDTH, 12, base: AssetConfig::Ingame.ui_menu_tilemap.address
+    _plot_tile AssetConfig::Ingame.ui_menu_tiles.relative_tile_offset + TIME_NUMBER_TILES_OFFSET, 1, 1
+    _plot_overnext_tile repeat: FONT_RENDER_BUFFER_WIDTH - 1
+
+    _plot_set_address 26 - FONT_RENDER_BUFFER_WIDTH, 13, base: AssetConfig::Ingame.ui_menu_tilemap.address
+    _plot_tile AssetConfig::Ingame.ui_menu_tiles.relative_tile_offset + TIME_NUMBER_TILES_OFFSET + 1, 1, 1
+    _plot_overnext_tile repeat: FONT_RENDER_BUFFER_WIDTH - 1
+
+    PLD
+    CPU.set A: 16
+  end
+
+  ;; Sets up the HDMA
+  @locate_at bank: Aoba::SYSTEM_ROM_BANK
+  def update_hdma
+    LDY   gamepad
+    Y.is_a! Aoba::Control::GamepadPlayer
+    LDA   Y[:flags] - 1
+    BPL   _is_gamepad
+  _is_mouse:
+    LDA   #$0F
+    BRA   _after_mouse_gamepad
+  _is_gamepad:
+    LDA   #$1F
+  _after_mouse_gamepad:
+    STA   calculation_buffer + 2
+
+    ; Stage Clear
+    LDA   #120
+    STA   3 * _hdma_header_size, X
+    LDA   #calculation_buffer
+    STA   3 * _hdma_header_size + 1, X
+    LDA   #90
+    STA   3 * _hdma_header_size + 3, X
+    LDA   #calculation_buffer
+    STA   3 * _hdma_header_size + 4, X
+    
+    LDA   #100
+    STA   3 * _hdma_header_size + 6, X
+    LDA   #calculation_buffer + 2
+    STA   3 * _hdma_header_size + 7, X
+
+    LDA   hdma_flags
+    BIT   #HdmaFlag::SETUP_SCORE
+    BZE   _no_setup_score
+    BIT   #HdmaFlag::SCORE_IS_SETUP
+    BNZ   _no_setup_score
+    ORA   #HdmaFlag::SCORE_IS_SETUP
+    STA   hdma_flags
+
+    _setup_score
+
+  _no_setup_score:
+
+    LDA   hdma_flags
+    BIT   #HdmaFlag::SETUP_TIME
+    BZE   _no_setup_time
+    BIT   #HdmaFlag::TIME_IS_SETUP
+    BNZ   _no_setup_time
+    ORA   #HdmaFlag::TIME_IS_SETUP
+    STA   hdma_flags
+
+    _setup_time
+
+  _no_setup_time:
+  end
+  
+
+  @locate_at bank: Aoba::EFFECT_ROM_BANK
+  def _prepare_write_number_only
+    ;; Configures the font rendering state
+    LDX   font_rendering_state
+    X.is_a! Aoba::Font::Render::State
+    STA   X[:color_and_flags]
+    LDA   #Assets::Font::LargeDigits.bank << 8
+    STA   X[:font_address] + 1
+    LDA   #Assets::Font::LargeDigits
+    STA   X[:font_address]
+    LDA   font_rendering_buffer
+    STA   X[:target_buffer]
+    LDA   text_decompress_buffer
+    STA   X[:current_line]
+    STZ   X[:state]
+    LDA   #FONT_RENDER_BUFFER_WIDTH >> 1
+    STA   X[:max_num_tiles_per_row]
+  end
+
+  @locate_at bank: Aoba::EFFECT_ROM_BANK
+  def _prepare_write_number
+    _prepare_write_number_only
+
+    ;; Renders the digits
+    LDX   dp(_value)
+    LDY   #0
+    LDA   text_decompress_buffer
+    JSL   Aoba::Font::Decompress::HexDec.write_long
+  end
+
+  @locate_at bank: Aoba::EFFECT_ROM_BANK
+  def _trigger_write_number
+    LDA   #Aoba::Thread::Event::USEREVENT_ID
+    JSL   Aoba::Thread::Event.allocate_icb_long
+    X.is_a! Aoba::Font::Event::RenderText::Event
+    LDA   #Aoba::Font::Event::RenderText::ID
+    STA   X[:event_id]
+    LDA   font_rendering_state
+    STA   X[:renderer_state]
+    LDA   Aoba::Font.thread_id
+    JSL   Aoba::Thread.send_event_icb_long
+
+    ;; Waits for the font to be rendered
+    SEI
+    JSL   Aoba::Thread.pause_current_thread_temporary_icb_long
+    CLI
+  end
+
+  macro _add_orange_line
+    LDX   font_rendering_buffer
+    LDY   #FONT_RENDER_BUFFER_WIDTH
+
+  _loop_digit:
+    CPU.set A: 8
+    LDA   16 + 5 * 2, X
+    ORA   16 + 5 * 2 + 1, X
+    EOR   #$FF
+    ORA   16 + 5 * 2, X
+    STA   16 + 5 * 2, X
+    LDA   16 + 6 * 2, X
+    ORA   16 + 6 * 2 + 1, X
+    EOR   #$FF
+    ORA   16 + 6 * 2, X
+    STA   16 + 6 * 2, X
+    CPU.set A: 16
+    
+    TXA
+    CLC
+    ADC   #$20
+    TAX
+    DEY
+    BNZ   _loop_digit
+
+  end
+
+  @locate_at bank: Aoba::EFFECT_ROM_BANK
+  def copy_text_attribute_to_vram
+    PHA
+
+    _add_orange_line  
+
+    Aoba::VBlank::Job.allocate_job_icb_long :vram, notify_sender: true
+
+    ;; Configures the job
+    TXY
+    Y.is_a! Aoba::VBlank::Job::JobInstance
+    LDA   #Aoba::VARIABLE_RAM_BANK << 8
+    STA   Y[:source_address] + 1
+
+    LDA   font_rendering_buffer
+    STA   Y[:source_address]
+    PLA   
+    STA   Y[:target_address]
+    LDA   #VRAM_FONT_RENDER_BUFFER_SIZE
+    STA   Y[:data_size]
+
+    ;; Upload data and wait for it
+    TYX
+    JSL   Aoba::VBlank::Job.try_queue_and_wait_icb_long
+  end
+
+  @locate_at bank: Aoba::EFFECT_ROM_BANK
+  def write_score_value
+    LDA   #$FF03
+    _prepare_write_number
+    LDA   dp(_value)
+    BZE   _is_zero
+    LDA   SystemText.system_characters.long + Aoba::Font::DIGIT_BASE
+    AND   #$FF
+    STA   0, Y
+    INY
+    INY
+  _is_zero:
+    LDA   #$8000
+    STA   0, Y
+    _trigger_write_number
+  end
+
+  @locate_at bank: Aoba::EFFECT_ROM_BANK
+  def calculate_total
+    LDA   current_total_value
+    STA   dp(_value)
+    JSR   write_score_value
+    LDA   #(AssetConfig::Ingame.ui_menu_tiles.address + TOTAL_NUMBER_TILES_OFFSET * $10) >> 1
+    JSR   copy_text_attribute_to_vram
+
+    SEI
+    LDA   hdma_flags
+    ORA   #HdmaFlag::SETUP_SCORE
+    STA   hdma_flags
+    LDA   AssetConfig::Ingame.ingame_hdma_config.flags
+    ORA   #Game::Hdma::Ingame::Flag.NEEDS_UPDATE_DMA_CALL
+    STA   AssetConfig::Ingame.ingame_hdma_config.flags
+    CLI
+  end
+
+  @locate_at bank: Aoba::EFFECT_ROM_BANK
+  def update_and_calculate_score
+  _loop_increment:
+    LDA   last_calculated_frame
+    CMP   Aoba::Thread::Timer.current_frame_low
+    BEQ   _done
+    INC   last_calculated_frame
+
+    LDA   current_score_value
+    CLC
+    ADC   current_cached_calculation
+    CMP   Game::Level.score
+    BLT   _ok
+    LDA   Game::Level.score
+    STA   current_score_value
+    STA   current_total_value
+    INC   current_menu_calculating
+    _precalculate_time_counter_menu
+    BRA   _done
+  _ok:
+    STA   current_score_value
+    STA   current_total_value
+    BRA   _loop_increment
+
+  _done:
+    LDA   current_score_value
+    STA   dp(_value)
+    JSR   write_score_value
+    LDA   #(AssetConfig::Ingame.ui_menu_tiles.address + SCORE_NUMBER_TILES_OFFSET * $10) >> 1
+    JSR   copy_text_attribute_to_vram
+    JMP   calculate_total
+  end
+
+  @locate_at bank: Aoba::EFFECT_ROM_BANK
+  def calculate_time_score
+  _loop_increment:
+    LDA   last_calculated_frame
+    CMP   Aoba::Thread::Timer.current_frame_low
+    BNE   _do_decrement
+    RTS
+
+    ;; ---
+
+  _do_decrement:
+    INC   last_calculated_frame
+
+    ;; Seconds to add
+    CPU.set XY: 8
+    LDA   current_cached_calculation
+    CMP   #60
+    BLT   _skip_minutes
+    LDY   current_time_minutes
+  _loop_minutes:
+    DEY
+    SEC
+    SBC   #60
+    CMP   #60
+    BGE   _loop_minutes
+    STY   current_time_minutes
+  _skip_minutes:
+    CPU.set A: 8
+    STA   dp(Aoba::Effect._calc0)
+    LDA   current_time_seconds
+    SEC
+    SBC   dp(Aoba::Effect._calc0)
+    BPL   _no_seconds_fix
+    DEC   current_time_minutes
+    CLC
+    ADC   #60
+  _no_seconds_fix:
+    STA   current_time_seconds
+
+    LDA   current_time_minutes
+    CMP   time_minutes
+    BLT   _finish_time
+    BNE   _skip_finish_test
+    LDA   current_time_seconds
+    CMP   time_seconds
+    BEQ   _finish_time
+    BGE   _skip_finish_test
+  _finish_time:
+    LDA   time_minutes
+    STA   current_time_minutes
+    LDA   time_seconds
+    STA   current_time_seconds
+    LDA   time_ms
+    STA   current_time_ms
+    INC   current_menu_calculating
+    CPU.set XY: 16, A: 16
+    LDA   current_cached_calculation3
+    STA   current_total_value
+    BRA   _done
+
+    A.pretend_size 8
+
+  _skip_finish_test:
+    DEC   current_counter
+    BZE   _finish_time
+    CPU.set XY: 16, A: 16
+    LDA   current_total_value
+    CLC
+    ADC   current_cached_calculation2
+    STA   current_total_value
+    CMP   current_cached_calculation3
+    BGE   _finish_time
+    JMP   _loop_increment
+
+  _done:
+    RTS
+  end
+
+  @locate_at bank: Aoba::EFFECT_ROM_BANK
+  def update_and_calculate_time
+    calculate_time_score
+
+    ;; Write minutes
+    LDA   current_time_minutes
+    AND   #$FF
+    TAX
+    LDY   #0
+    LDA   text_decompress_buffer
+    JSL   Aoba::Font::Decompress::HexDec.write_long
+
+    ;; Writes seconds
+    LDA   SystemText.system_characters.long + Aoba::Font::DIGIT_BASE + 13
+    AND   #$FF
+    STA   0, Y
+    INY
+    INY
+    LDA   current_time_seconds
+    AND   #$FF
+    CMP   #10
+    BGE   _skip_additional_zero
+    STA   dp(Aoba::Effect._calc0)
+    LDA   SystemText.system_characters.long + Aoba::Font::DIGIT_BASE
+    AND   #$FF
+    STA   0, Y
+    INY
+    INY
+    LDX   dp(Aoba::Effect._calc0)
+    LDA   SystemText.system_characters.long + Aoba::Font::DIGIT_BASE, X
+    AND   #$FF
+    STA   0, Y
+    INY
+    INY
+    BRA   _after_additional_zero
+
+  _skip_additional_zero:
+    TAX
+    TYA
+    LDY   #0
+    JSL   Aoba::Font::Decompress::HexDec.write_long
+  _after_additional_zero:
+    LDA   SystemText.system_characters.long + Aoba::Font::DIGIT_BASE + 14
+    AND   #$FF
+    STA   0, Y
+    LDA   current_time_ms
+    AND   #$FF
+    TAX
+    LDA   SystemText.system_characters.long + Aoba::Font::DIGIT_BASE, X
+    AND   #$FF
+    STA   2, Y
+    LDA   #$8000
+    STA   4, Y
+
+    LDA   #$FF03
+    _prepare_write_number_only
+    _trigger_write_number
+    LDA   #(AssetConfig::Ingame.ui_menu_tiles.address + TIME_NUMBER_TILES_OFFSET * $10) >> 1
+    copy_text_attribute_to_vram
+
+    SEI
+    LDA   hdma_flags
+    ORA   #HdmaFlag::SETUP_TIME
+    STA   hdma_flags
+    LDA   AssetConfig::Ingame.ingame_hdma_config.flags
+    ORA   #Game::Hdma::Ingame::Flag.NEEDS_UPDATE_DMA_CALL
+    STA   AssetConfig::Ingame.ingame_hdma_config.flags
+    CLI
+
+    JMP   calculate_total
+  end
+
+  macro _full_allocation_ram
+    return TEXT_DECOMPRESS_BUFFER_SIZE + FONT_RENDER_BUFFER_SIZE + Aoba::Font::Render::State.size
+  end
+
+  macro _precalculate_score_counter
+    LDA   Game::Level.score
+    BZE   _score_is_zero
+    LSR   A
+    LSR   A
+    LSR   A
+    LSR   A
+    LSR   A
+    LSR   A
+    BNZ   _score_increment_at_least_1
+    INC   A  
+  _score_increment_at_least_1:
+  _score_is_zero:
+    STA   current_cached_calculation
+    STA   current_score_value
+    STA   current_total_value
+    LDA   #64
+    STA   current_counter
+  end
+
+  macro _precalculate_time_counter
+    LDA   #9
+    STA   current_time_ms
+    LDA   #59 | (99 << 8)
+    STA   current_time_seconds
+
+    CPU.set A: 8
+    TDC
+    XBA
+    LDA   time_minutes
+    CPU.set A: 16
+    TAY
+    STZ   dp(Aoba::Effect._calc0)
+    
+    BZE   _skip_minute_counter
+    LDA   #0
+    CLC
+  _loop:
+    ADC   #60
+    DEY
+    BNZ   _loop
+    STA   dp(Aoba::Effect._calc0)
+
+  _skip_minute_counter:
+    LDA   time_seconds
+    AND   #$FF
+    CLC
+    ADC   dp(Aoba::Effect._calc0)
+    STA   dp(Aoba::Effect._calc0)
+    LDA   #99 * 60 + 59
+    SEC
+    SBC   dp(Aoba::Effect._calc0)
+    BPL   _is_positive
+    LDA   #0
+  _is_positive:
+    STA   time_in_seconds
+
+    CMP   #89 * 60 + 59
+    BLT   _time_less_than_10_minutes
+
+  _time_over_10_minutes:
+    SEC
+    SBC   #89 * 60 + 59
+  
+  _calculate_seconds:
+    STA   dp(Aoba::Effect._calc0)
+    LDA   #89 * SCORE_PER_MINUTE
+    CLC
+    SCORE_PER_SECOND.times do
+      ADC   dp(Aoba::Effect._calc0)
+    end
+    BRA   _rts
+
+    ;; ---
+
+  _time_less_than_10_minutes:
+    LDY   #0 - SCORE_PER_MINUTE
+  _loop_minute_score:
+    SCORE_PER_MINUTE.times do
+      INY
+    end
+    SEC
+    SBC   #60
+    BPL   _loop_minute_score
+    TYA
+
+  _rts:
+    STA   time_bonus
+    CLC
+    ADC   Game::Level.score
+    STA   total_score
+  end
+
+  macro _precalculate_time_counter_menu
+    LDA   time_in_seconds
+    LSR   A
+    LSR   A
+    LSR   A
+    LSR   A
+    LSR   A
+    LSR   A
+    STA   current_cached_calculation
+    LDA   time_bonus
+    LSR   A
+    LSR   A
+    LSR   A
+    LSR   A
+    LSR   A
+    LSR   A
+    STA   current_cached_calculation2
+    LDA   #64
+    STA   current_counter
+    LDA   current_score_value
+    CLC
+    ADC   time_bonus
+    STA   current_cached_calculation3
+  end
+
+  ;; The effect
+  effect = Aoba::Effect.create "StageClear" do
+    start do
+      ;; Allocation stuff
+      LDX   #_full_allocation_ram
+      SEI
+      JSL   Aoba::Memory.allocate_long
+      CLI
+      STX   font_rendering_buffer
+      TXA
+      CLC
+      ADC   #FONT_RENDER_BUFFER_SIZE
+      STA   text_decompress_buffer
+      ADC   #TEXT_DECOMPRESS_BUFFER_SIZE
+      STA   font_rendering_state
+
+      STZ   hdma_flags
+      LDA   #-1
+      STA   effect_is_active
+      STZ   current_menu_calculating
+      STA   calculation_buffer
+
+      LDX   #Assets::Stream::Yatta
+      LDA   #$7F80
+      JSL   Aoba::Audio::Api.play_stream_icb_long
+
+      JSL   subscreen_disable_ui_long
+      JSL   subscreen_pause_game_long
+
+      LDA   #Assets::Image::StageClear
+      JSL   subscreen_load_tiles_long
+      JSL   Aoba::Composer::Api.request_ready_event_long
+      LDA   #Assets::Palette::UserInterfaceStageClear
+      LDX   #0
+      JSL   Aoba::Palette::Api.load_palette_group_long
+      JSL   Aoba::Composer::Api.wait_for_ready_event_long
+
+      LDA   #update_hdma.to_sym - 2
+      JSL   subscreen_setup_hdma_long
+      JSL   subscreen_configure_menu_ui_long
+      JSL   subscreen_enable_ui_long
+      
+      _precalculate_time_counter
+      _precalculate_score_counter
+      level_succeeded
+
+      LDA   Aoba::Thread::Timer.current_frame_low
+      STA   last_calculated_frame
+
+      queue_update 1
+
+      MenuThread.allocate_and_queue
+    end
+
+    update do
+      LDA   effect_is_active
+      BNZ   _no_finish
+      trigger_finish
+      RTS
+
+      ;; --
+    
+    _no_finish:
+      queue_update 1
+
+      LDA   current_menu_calculating
+      BNZ   _skip_calculate_score
+      update_and_calculate_score
+      RTS
+
+      ;; --
+
+    _skip_calculate_score:
+      DEC   A
+      BNZ   _skip_calculate_time
+      update_and_calculate_time
+    _skip_calculate_time:
+    end
+
+    finish do
+      Debug.log "FINISH EFFECT"
+      NOP
+      Debug.fatal "FREE effect_ram"
+      NOP
+    end
+  end
+
+  macro _fade_to_dark_palette
+    LDA   #4
+    LDX   pause_palette_address
+    LDY   #$00FC
+    JSL   Aoba::Palette::Api.fade_to_palette_group_long
+  end
+
+  def trigger_long
+    _fade_to_dark_palette
+    effect.start
+    RTL
+  end
+
+end

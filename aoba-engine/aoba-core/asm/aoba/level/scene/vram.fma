@@ -1,0 +1,49 @@
+module Aoba::LevelScene::VRAM
+
+
+  module Dialog
+
+    ;; dialog height in bg tiles
+    DIALOG_HEIGHT = 7
+
+    ;; Number of dialog tiles (16x8 tiles)
+    NUM_TILES = 32
+
+    ;; Size of the VRAM (16 pixel width tiles 4bpp) = $800
+    TILES_SIZE = NUM_TILES * 16 * 4
+
+    ;; Tilemap size = $1C0
+    TILEMAP_SIZE = DIALOG_HEIGHT * 32 * 2
+  end
+
+  module Text
+    ;; VRAM maximum number of text rows
+    NUM_ROWS = 3
+
+    ;; Tilemap rows is +1 because we need an empty row
+    NUM_TILEMAP_ROWS = NUM_ROWS
+
+    ;; VRAM maximum number of letter tiles per row (16 pixel depth)
+    NUM_TILES_PER_ROW = 30
+
+    ;; Number of bgtiles per row
+    NUM_BGTILES_PER_ROW = NUM_TILES_PER_ROW * 2
+
+    ;; Number of tiles for the pointer
+    NUM_POINTER_TILES = 4
+
+    ;; VRAM maximum number of text tiles
+    NUM_TILES = NUM_ROWS * NUM_BGTILES_PER_ROW
+
+    ;; Text size (16 pixel width tiles 2bpp) = $1500
+    TILES_SIZE = NUM_TILES * 16 * 2
+
+    ;; Text size (16 pixel width tiles 2bpp) = $1500
+    FULL_TILES_SIZE = TILES_SIZE + NUM_POINTER_TILES * 16 * 2
+
+    ;; Tilemap size (32 tiles per row, 2 rows per text row, 2 byte per tile)
+    TILEMAP_SIZE = 32 * NUM_TILEMAP_ROWS * 2 * 2
+  end
+
+
+end

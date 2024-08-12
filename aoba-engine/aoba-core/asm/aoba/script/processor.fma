@@ -1,0 +1,46 @@
+module Aoba::Script
+
+  ;; Reads the current script value
+  macro read_current_script_value
+    LDA   script_pointer.long.indirect, Y
+  end
+
+  ;; Updates the script pointer
+  macro update_script_pointer
+    TYA
+    CLC
+    ADC   dp(script_pointer)
+    STA   dp(script_pointer)
+  end
+
+  ;; Executes the script
+  ;; @ignore-thread-safety
+  def execute_loop
+  _loop:
+    ;; Reads the command
+    read_current_script_value
+    INY
+    STA   dp(current_command)
+    AND   dp(x00FF)
+
+    ;; Executes the command
+    ASL   A
+    TAX
+    JSR   CommandPointers.to_sym.indirect, X
+
+    ;; Loop if FLAG_RETURN is not set
+    Debug.allow_invalid_ram_access 1
+    LDA   dp(flags) - 1
+    BPL   _loop
+
+    ;; Updates the script pointer
+    update_script_pointer
+  end
+
+  ;; Execute loop long
+  def execute_loop_long
+    execute_loop
+    RTL
+  end
+
+end

@@ -1,0 +1,147 @@
+module Game::Ball::MoveEvent
+
+  ; -----------------------------------------------------
+  macro __build_arrow(field, plus)
+    TYX
+    LDA   X[field] - 1
+    if plus
+      CLC
+      ADC   #BALL_ARROW_SPEED
+      BMI  _negative
+      CMP   #BALL_MAX_SPEED
+      BLT   _positive
+      LDA   #BALL_MAX_SPEED
+      BRA   _positive
+    else
+      SEC
+      SBC   #BALL_ARROW_SPEED
+      BPL   _positive
+      CMP   #-BALL_MAX_SPEED
+      BGE   _negative
+      LDA   #-BALL_MAX_SPEED
+    end
+
+  _negative:
+    STA   X[field] - 1
+    LDA   X[field]
+    ORA   #$FF00
+    STA   X[field]
+    RTS
+
+    ;; --
+
+  _positive:
+    STZ   X[field]
+    STA   X[field] - 1
+  end
+
+  ; -----------------------------------------------------
+  arrow_left = Aoba::Sprite::MoveEvent.create :arrow_left do
+    __build_arrow :speed_x, false
+  end
+
+  ; -----------------------------------------------------
+  arrow_right = Aoba::Sprite::MoveEvent.create :arrow_right do
+    __build_arrow :speed_x, true
+  end
+
+  ; -----------------------------------------------------
+  arrow_up = Aoba::Sprite::MoveEvent.create :arrow_up do    
+    __build_arrow :speed_y, false
+  end
+
+  ; -----------------------------------------------------
+  arrow_down = Aoba::Sprite::MoveEvent.create :arrow_down do
+    __build_arrow :speed_y, true
+  end
+  ; -----------------------------------------------------
+  acid = Aoba::Sprite::MoveEvent.create :acid do
+    LDA   #-ACID_HP_DAMAGE
+    _modify_hp
+    TYX
+    LDA   X[:speed_x]
+    PHP
+    LSR   A
+    ROR   X[:speed_x_decimal]
+    PLP
+    BPL   _positive_x
+    ORA   #$8000
+  _positive_x:
+    STA   X[:speed_x]
+    LDA   X[:speed_y]
+    PHP
+    LSR   A
+    ROR   X[:speed_y_decimal]
+    PLP
+    BPL   _positive_y
+    ORA   #$8000
+  _positive_y:
+    STA   X[:speed_y]
+  end
+
+  ; -----------------------------------------------------
+  spikes = Aoba::Sprite::MoveEvent.create :spikes do
+    LDA   Level.global_ingame_flags
+    BIT   #Level::GlobalIngameFlag.SPIKES_ENABLED
+    BZE   _rts
+
+    LDA   #-ACID_HP_DAMAGE
+    _modify_hp
+    TYX
+    STZ   X[:speed_x]
+    STZ   X[:speed_x_decimal]
+    STZ   X[:speed_y]
+    STZ   X[:speed_y_decimal]
+
+  _rts:
+  end
+
+  ; -----------------------------------------------------
+  steal = Aoba::Sprite::MoveEvent.create :steal do
+    DEC   Level.current_steal_timer
+    BNZ   _rts
+
+    LDA   Level.current_steal_price
+    SEC
+    SBC   Level.num_coins
+    ASL   A
+    ASL   A
+    ASL   A
+    STA   Level.current_steal_price
+
+    CMP   Level.hp
+    BGE   _rts
+
+    LDA   Level.hp
+    SEC
+    SBC   Level.current_steal_price
+    STA   Level.hp
+
+    STZ   Level.num_coins
+    __update_modified_attributes Level::ModifiedAttribute.COINS | Level::ModifiedAttribute.HP
+
+    JMP   ItemPurchase.buy_item
+
+  _rts:
+  end
+
+  ; -----------------------------------------------------
+  bomb_test_trigger = Aoba::Sprite::MoveEvent.create :bomb_test_trigger do
+    Bomb.on_test_trigger
+  end
+
+  ; -----------------------------------------------------
+  events = Aoba::Sprite::MoveEvent::Collection.create do
+    nop $00
+    add $02, arrow_left
+    add $03, arrow_right
+    add $04, arrow_up
+    add $05, arrow_down
+    add $10, acid
+    add $11, spikes
+    add $12, bomb_test_trigger
+
+    add $40, steal
+  end
+
+end

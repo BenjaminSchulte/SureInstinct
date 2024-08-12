@@ -1,0 +1,29 @@
+module Memory
+  ;; General RAM memory
+  scope :RAM, in: SNES::MemoryMap::RAM
+  if SNES::ENABLE_SA1
+    RAM.allow bank: $40, at: $2000..$FFFF
+    RAM.allow bank: $41, at: $0000..$FFFF
+  else
+    RAM.allow bank: $7E, at: $2000..$FFFF
+    RAM.allow bank: $7F, at: $0000..$FFFF
+  end
+
+  ;; Alias for VRAM
+  scope :VRAM, in: SNES::MemoryMap::VRAM
+
+  ;; RAM accessible by addressing bank 0
+  scope :QuickPage, in: SNES::MemoryMap::RAM, bank: $0, at: $0000..$1FFF
+
+  ;; Shared quick page
+  SharedQuickPage = QuickPage
+
+  ;; Snes shared quick page
+  SnesSharedQuickPage = QuickPage
+
+  if SNES::ENABLE_SA1
+    scope :_SharedQuickPage, in: SNES::MemoryMap::RAM, bank: $0, at: $6000..$7FFF
+    SharedQuickPage = _SharedQuickPage
+  end
+
+end

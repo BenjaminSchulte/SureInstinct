@@ -1,0 +1,27 @@
+module Aoba::Mutex
+
+  macro lock_icb(ram)
+    _old_A = A.size
+    CPU.set A: 8 if _old_A == 16
+    PHP
+    SEI
+  _loop:
+    LDA   ram
+    BZE   _ok
+    LDY   #1
+    JSL   Thread.delay_long
+    BRA   _loop
+  _ok:
+    INC   ram
+    PLP
+    CPU.set A: 16 if _old_A == 16
+  end
+
+  macro unlock_icb(ram)
+    _old_A = A.size
+    CPU.set A: 8 if _old_A == 16
+    DEC   ram
+    CPU.set A: 16 if _old_A == 16
+  end
+
+end

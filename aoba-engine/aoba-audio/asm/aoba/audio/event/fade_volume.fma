@@ -1,0 +1,78 @@
+module Aoba::Audio::Event::FadeVolume
+
+  ;; The event ID
+  ID = $0E
+
+  ;; The event
+  class Event < Base
+    ;; Target volume
+    declare :target_volume, as: :uint8
+
+    ;; Fade speed
+    declare :fade_speed, as: :uint8
+    
+    ;; Song to play afterwards
+    declare :autoplay_song_id, as: :uint8
+    
+    ;; Song to play afterwards (high bit must be set to activate autoplay)
+    declare :autoplay_song_volume, as: :uint8
+  end
+
+  ;; Fades the volume
+  ;; @ignore-thread-safety
+  event_handler = make_audio_event do 
+    Y.is_a! Event
+    LDA   current_played_song_id.long
+    BZE   _no_active_song
+
+    ;; We are currently playing a song
+  _with_active_song:
+    CMP   Y[:autoplay_song_id]
+    BNE   _no_same_song
+    LDA   Y[:autoplay_song_volume]
+    BMI   _play_current_song
+
+    ;; We have a new song. 
+  _no_same_song:
+    LDA   Y[:autoplay_song_id]
+    STA   autoplay_song_id.long
+    LDA   Y[:autoplay_song_volume]
+    STA   autoplay_song_volume.long
+    LDA   Y[:fade_speed]
+    XBA
+    LDA   Y[:target_volume]
+    SNES_RAM_JMP Aoba::Audio::Action::Volume.fade_to, :JMP, :JMP
+
+    ;; --
+
+    ;; There is no active song. Set volume directly
+  _no_active_song:
+    ;; Is there an autoplay song?
+    LDA   Y[:autoplay_song_volume]
+    BPL   _no_autoplay
+
+    ;; Has autoplay song. Load song
+    LDA   Y[:autoplay_song_id]
+    INC   A
+    PHY
+    SNES_RAM_JMP Aoba::Audio::Action::LoadSong.invoke_icb, :JSR, :JSR
+    PLY
+
+    ;; Play song
+  _play_current_song:
+    LDA   #$80
+    STA   fade_volume.long
+    LDA   Y[:autoplay_song_volume]
+    AND   #$7F
+    TAX
+    SNES_RAM_JMP Aoba::Audio::Action::PlaySong.invoke_icb, :JMP, :JMP
+
+    ;; --
+
+  _no_autoplay:
+    LDA   Y[:target_volume]
+    STA   fade_volume.long
+    SNES_RAM_JMP Action::Volume.update_volume, :JMP, :JMP
+  end
+
+end

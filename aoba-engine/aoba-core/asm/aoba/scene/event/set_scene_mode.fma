@@ -1,0 +1,41 @@
+module Aoba::Scene::Event::SetSceneMode
+
+  ;; The event
+  class Event < Base
+    ;; The new mode
+    declare :mode, as: :uint8
+  end
+
+  ;; Temporary RAM
+  scope :TempRAM, in: ActionRAM
+
+  ;; The sender thread ID
+  declare :sender_thread_id, as: :uint8, in: TempRAM
+
+  ;; Changes the scene mode
+  ;; @ignore-thread-safety
+  ID = List.create "SetSceneMode" do
+    Y.is_a! Event
+
+    CPU.set A: 8
+    LDA   Y[:sender_thread_id]
+    STA   dp(sender_thread_id)
+
+    LDA   Y[:mode]
+    CPU.set A: 16
+    Manager.set_scene_mode_icb
+
+    CPU.set A: 8
+    LDA   #Aoba::Thread::Event::READYEVENT_ID
+    JSL   Aoba::Thread::Event.allocate_icb_long
+    X.is_a! Aoba::Thread::Event::ReadyEvent
+    LDA   #READY_ID
+    STA   X[:event_id]
+    LDA   dp(sender_thread_id)
+    JSL   Aoba::Thread.send_event_icb_long
+    CPU.set A: 16
+  end
+
+  READY_ID = ID | $80
+
+end

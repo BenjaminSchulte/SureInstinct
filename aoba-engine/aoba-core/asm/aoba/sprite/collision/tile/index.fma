@@ -1,0 +1,5 @@
+require "diagonal"
+require "test"
+require "detect"
+require "tile_event"
+require "collision"

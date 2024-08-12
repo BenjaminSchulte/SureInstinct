@@ -1,0 +1,124 @@
+module CPU
+  ;; IRQ disable flag
+  FLAG_I = $04
+
+  ;; Decimal flag
+  FLAG_D = $08
+
+  ;; Index register flag
+  FLAG_X = $10
+
+  ;; Accumulator flag
+  FLAG_M = $20
+
+  ;; NTSC/PAL flag
+  STAT78_PAL = $10
+
+  ;; IRQ VCOUNTER
+  NMITIMEN_VBLANK = $20
+
+  ;; IRQ VCOUNTER
+  NMITIMEN_AUTOJOY = $01
+
+
+  ;; Min scope
+  scope :_scope, in: SNES::MemoryMap.SYSTEM, bank: $00
+
+  ;; WRAM data register
+  declare :MPYL, as: :uint8, at: $2134, in: _scope
+
+  declare :MPYM, as: :uint8, at: $2135, in: _scope
+
+  declare :MPYH, as: :uint8, at: $2136, in: _scope
+
+  declare :SLHV, as: :uint8, at: $2137, in: _scope
+
+  declare :OAMDATAREAD, as: :uint8, at: $2138, in: _scope
+
+  declare :VMDATAREAD, as: :uint16, at: $2139, in: _scope
+
+  declare :CGDATAREAD, as: :uint8, at: $213B, in: _scope
+
+  declare :OPHCT, as: :uint8, at: $213C, in: _scope
+  declare :OPVCT, as: :uint8, at: $213D, in: _scope
+  declare :STAT77, as: :uint8, at: $213E, in: _scope
+  declare :STAT78, as: :uint8, at: $213F, in: _scope
+  declare :APUIO0, as: :uint8, at: $2140, in: _scope
+  declare :APUIO1, as: :uint8, at: $2141, in: _scope
+  declare :APUIO2, as: :uint8, at: $2142, in: _scope
+  declare :APUIO3, as: :uint8, at: $2143, in: _scope
+
+  ;; WRAM data register
+  declare :WMDATA, as: :uint8, at: $2180, in: _scope
+
+  ;; WRAM address
+  declare :WMADDR, as: :uint24, at: $2181, in: _scope
+
+  ;; Interrupt enable
+  declare :JOYSER0, as: :uint8, at: $4016, in: _scope
+
+  ;; Interrupt enable
+  declare :JOYSER1, as: :uint8, at: $4017, in: _scope
+
+  ;; Interrupt enable
+  declare :NMITIMEN, as: :uint8, at: $4200, in: _scope
+
+  ;; IO Port Write
+  declare :WRIO, as: :uint8, at: $4201, in: _scope
+
+  ;; Multiplicand
+  declare :WRMPYA, as: :uint8, at: $4202, in: _scope
+
+  ;; Multiplicand
+  declare :WRMPYB, as: :uint8, at: $4203, in: _scope
+
+  ;; Divisor & Dividend
+  declare :WRDIVL, as: :uint8, at: $4204, in: _scope
+
+  ;; Divisor & Dividend
+  declare :WRDIVH, as: :uint8, at: $4205, in: _scope
+
+  ;; Divisor & Dividend
+  declare :WRDIVB, as: :uint8, at: $4206, in: _scope
+
+  ;; IRQ Timer register (Horizontal)
+  declare :HTIME, as: :uint16, at: $4207, in: _scope
+
+  ;; IRQ Timer register (Vertical)
+  declare :VTIME, as: :uint16, at: $4209, in: _scope
+
+  ;; DMA enable
+  declare :MDMAEN, as: :uint8, at: $420B, in: _scope
+
+  ;; HDMA enable
+  declare :HDMAEN, as: :uint8, at: $420C, in: _scope
+
+  ;; ROM speed
+  declare :MEMSEL, as: :uint8, at: $420D, in: _scope
+
+  ;; Debug
+  declare :DEBUG, as: :uint16, at: $420E, in: _scope
+
+  ;; Interrupt flag
+  declare :RDNMI, as: :uint8, at: $4210, in: _scope
+
+  ;; Interrupt flag
+  declare :TIMEUP, as: :uint8, at: $4211, in: _scope
+
+  ;; PPU Status
+  declare :HVBJOY, as: :uint8, at: $4212, in: _scope
+
+  ;; IO Port read
+  declare :RDIO, as: :uint8, at: $4213, in: _scope
+
+  ;; Multiplion or divide result
+  declare :RDDIV, as: :uint16, at: $4214, in: _scope
+
+  ;; Multiplion or divide result
+  declare :RDMPY, as: :uint16, at: $4216, in: _scope
+
+  ;; Joypad
+  declare :JOY, as: :uint16, at: $4218, in: _scope, length: 4
+
+
+end

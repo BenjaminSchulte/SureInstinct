@@ -1,0 +1,177 @@
+module Aoba::Sprite
+
+  ;; Sets up an timer which triggers the sprite thread every frame
+  ;;
+  ;; @param A the thread ID
+  ;; @ignore-thread-safety
+  def _setup_interval_timer
+    LDA   Memory::active_thread_id
+    JSL   Aoba::Thread::Timer.allocate_icb_long
+    X.is_a! Aoba::Thread::Timer::TimerInstance
+
+    LDA   #0
+    LDY   #1
+    JSL   Aoba::Thread::Timer.queue_long
+  end
+
+  ;; The timer has been triggered
+  macro _on_timer
+    Instance.event.invoke :update_before_transaction
+    ;; ScrollMap
+    JSL   Aoba::VBlank::Transaction.start
+
+    Instance.event.invoke :update_before_oam
+    OAM.update
+    Instance.event.invoke :update_after_oam
+
+    JSL   Aoba::VBlank::Transaction.commit
+
+    Instance.event.invoke :update_after_transaction
+
+    ;; Notify palette thread if palettes need to be updated
+    Action::ManagePalette._notify_palette_thread_if_necessary
+
+    ;; Updates the sprites
+    Action::ManageSprite.update_all_sprites
+
+    _setup_interval_timer
+  end
+
+  ;; Event 80+ handler
+  def event_80plus_handler
+    A.pretend_size 8
+    CMP   #Thread::Event.KILLACKEVENT_ID
+    BEQ   _is_killevent
+
+    CPU.set A: 16
+    RTS
+
+  _is_killevent:
+    X.is_a! Aoba::Thread::Event::ReadyEvent
+    LDA   X[:userdata]
+    JMP   Event::DestroySprite.on_thread_killed
+  end
+
+  ;; The event handler
+  ;; @ignore-thread-safety
+  def event_handler
+    PHX
+
+    ;; Tests how to handle the event
+    CPU.set A: 8
+    X.is_a! Event::Base
+    LDA   X[:event_bitmask]
+    ASL   A
+    BMI   _system_event
+    LDA   X[:sender_thread_id]
+    BMI   _test_special_event
+
+    ;; ---
+    ;; Custom events
+  _invoke_custom_event:
+    TXY
+    LDA   X[:event_id]
+    Debug.profile_event_start
+
+    BMI   _test_80_plus_event
+
+    CPU.set A: 16
+    AND   dp(x00FF)
+    DEC   A
+    Debug.test_A_less_than Event::List.max_event_id, "Sprite Event ID out of range"
+
+    ASL   A
+    TAX
+    JSR   Event::List.routines.indirect, X
+    PLX
+    Debug.profile_event_stop
+    RTS
+
+    ;; --
+
+    A.pretend_size 8
+  _system_event:
+    X.is_a! Event::Base
+    LDA   X[:event_id]
+    CMP   #Script.EventId::READYEVENT
+    BNE   _skip_script_ready
+
+  _script_ready:
+    Event::TriggerScript.on_readyevent
+    BRA   _after_system_event
+
+  _skip_script_ready:
+    Debug.warn "+++ Thread {byte(long(add(word(long(add(D,$FE),#{FIXED_RAM_BANK})),2),#{VARIABLE_RAM_BANK}))}: SKIP SYSTEM EVENT {X}"
+    NOP
+  _after_system_event:
+    PLX
+    CPU.set A: 16
+    RTS
+
+    ;; ---
+    ;; Special events
+  _test_special_event:
+    INC   A
+    BZE   _invoke_timer_event
+
+    fatal_error "Unexpected event in Sprite handler"
+
+    ;; ---
+    ;; Events $80+
+  _test_80_plus_event:
+    JSR   event_80plus_handler
+    PLX
+    RTS
+
+    ;; ---
+    ;; Timer events
+  _invoke_timer_event:
+    CPU.set A: 16
+    X.is_a! Thread::Timer::TimerEvent
+    LDA   X[:timer]
+    TAX
+    JSL   Aoba::Thread::Timer.free_icb_long
+
+    _on_timer
+
+    PLX
+  end
+
+  ;; Thread entry point
+  ;; @ignore-thread-safety
+  def main
+    CPU.set A: 8
+    LDA   Memory::active_thread_id
+    STA   thread_id
+    Debug.profile_introduce 5
+    Debug.info "Thread {A}: Sprite Thread"
+    CPU.set A: 16
+    _setup_interval_timer
+    CLI
+
+    JSR   initialize_ram
+    JSR   OAM.reset
+
+  _loop:
+    LDA   #$FE
+    JSL   Thread.wait_for_event_icb_long
+    event_handler
+    JSL   Thread::Event.free_icb_long
+    BRA   _loop
+  end
+end
+
+module Aoba
+  SpriteThread = Thread.new "Sprite" do
+    locate_at bank: SPRITE_ROM_BANK
+    priority SPRITE_PRIORITY
+
+    execute do
+      Sprite::main
+    end
+  end
+end
+
+Aoba::Event.on :system_initialize_A8_VARRAM do
+  STZ   Aoba::Sprite.thread_id
+end

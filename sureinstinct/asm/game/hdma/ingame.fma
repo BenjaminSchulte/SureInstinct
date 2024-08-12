@@ -1,0 +1,322 @@
+module Game::Hdma::Ingame
+
+  module Flag
+    ;; Whether the perspective change is active
+    CHANGE_PERSPECTIVE = $01
+
+    ;; Whether the front buffer is ready
+    FRONT_BUFFER_IS_READY = $02
+
+    ;; User interface needs DMA setup
+    NEEDS_SETUP_DMA_CALL = $04
+
+    ;; User interface needs DMA update
+    NEEDS_UPDATE_DMA_CALL = $08
+  end
+
+  ;; Configuration class
+  class Configuration
+    ;; Whether a perspective change is active
+    declare :flags, as: :uint8
+    ;; - no space here -
+    ;; The current rotation
+    declare :rotation, as: :uint8
+    
+    ;; Enabled HDMA
+    declare :enabled_hdma, as: :uint8
+
+    ;; Scrolling
+    declare :rotation_scrolling, as: :uint16
+
+    ;; Back buffer for horizontal rows
+    declare :back_buffer, as: :uint16
+
+    ;; Front buffer for horizontal rows
+    declare :front_buffer, as: :uint16
+
+    ;; Ice reflection table
+    declare :icereflect_table, as: :uint16
+
+    ;; Custom HDMA update routine
+    declare :custom_hdma_routine, as: :uint16
+
+    ;; Menu offset
+    declare :menu_offset, as: :uint16
+
+    ;; Menu offset
+    declare :menu_y, as: :uint16
+
+    ;; Menu size
+    declare :menu_size, as: :uint16
+  end
+
+  scope :TempSetupRAM, in: Aoba::Composer::ActionRAM
+
+  declare :decompress, as: Aoba::Compression::SimplePalette.State, in: TempSetupRAM
+
+  macro _load_ice_reflection
+    ;; Configures the decompression RAM
+    LDA   #Aoba::VARIABLE_RAM_BANK << 8
+    STA   dp(decompress.target_address) + 1
+    LDA   #Assets::Palette::IceReflect.bank << 8
+    STA   dp(decompress.source_address) + 1
+    LDA   #Assets::Palette::IceReflect
+    STA   dp(decompress.source_address)
+    LDA   #224
+    STA   dp(decompress.num_colors)
+    PHY
+
+    ;; Allocates the target RAM
+    LDX   #224 * 4
+    JSL   Aoba::Memory.allocate_long
+    PLY
+    PHY
+    TXA
+    STA   Y[:icereflect_table]
+    STA   dp(decompress.target_address)
+    TDC
+    CLC
+    ADC   #decompress
+    JSL   Aoba::Compression::SimplePalette.execute_long
+
+    ;; Adjusts the RAM
+    LDA   dp(decompress.target_address)
+    CLC
+    ADC   #224 * 2 - 2
+    TAX
+    ADC   #224 * 2 - 2
+    TAY
+  _loop:
+    LDA   0, X
+    STA   2, Y
+    LDA   #42 | 42 << 8
+    STA   0, Y
+    DEX
+    DEX
+    DEY
+    DEY
+    DEY
+    DEY
+    CPY   dp(decompress.target_address)
+    BGE   _loop
+
+    PLY
+  end
+
+
+  HdmaMode = Aoba::Composer::Hdma::Mode.create do
+    configuration Configuration
+
+    enable_script_support "Ingame"
+
+    load do
+      LDA   #0
+      STA   Y[:flags]
+      STA   Y[:menu_size]
+
+      LDA   #$FFFF
+      STA   Y[:custom_hdma_routine]
+
+      _load_ice_reflection
+    end
+
+    release do
+      LDA   AssetConfig::Ingame.ingame_hdma_config.icereflect_table
+      PHY
+      TAX
+      LDY   #224 * 4
+      JSL   Aoba::Memory.free_long
+      PLY
+    end
+
+    enable8 do
+      LDA   #$BE
+      STA   CPU.HDMAEN.long
+      STA   Y[:enabled_hdma]
+    end
+
+    table_setup8 do
+      STZ   0 * _header_size + 0, X
+      STZ   1 * _header_size + 0, X
+      STZ   2 * _header_size + 0, X
+      STZ   3 * _header_size + 0, X
+      STZ   4 * _header_size + 6, X
+      STZ   6 * _header_size + 0, X
+
+      LDA   #127 | $80
+      STA   4 * _header_size + 0, X
+      LDA   #(224 - 127) | $80
+      STA   4 * _header_size + 3, X
+    end
+
+    table_setup16 do
+      LDA   #Aoba::Screen.ppu_register.BG1HOFS
+      STA   0 * _header_size + 1, X
+      STA   1 * _header_size + 1, X
+      LDA   #Aoba::Screen.ppu_register.TM
+      STA   2 * _header_size + 1, X
+      LDA   #Aoba::Screen.ppu_register.WH0
+      STA   6 * _header_size + 1, X
+
+      LDA   Y[:icereflect_table]
+      STA   4 * _header_size + 1, X
+      STA   4 * _header_size + 7, X
+      CLC
+      ADC   #127 * 4
+      STA   4 * _header_size + 4, X
+
+      ;; Used for TM register
+      LDA   #$1714
+      STA   0 * _header_size + 12, X
+      STA   0 * _header_size + 14, X
+    end
+
+    dma_setup do
+      LDX   #(PPU.BGOFFSET[0].vertical << 8) | DMA[0].configure_value(:transfer_1_twice, indirect: true)
+      STX   dp(DMA[1].control)
+      LDX   #(PPU.BGOFFSET[1].vertical << 8) | DMA[0].configure_value(:transfer_1_twice, indirect: true)
+      STX   dp(DMA[2].control)
+      LDX   #(PPU.TM << 8) | DMA[0].configure_value(:transfer_4_once, indirect: true)
+      STX   dp(DMA[3].control)
+      LDX   #(PPU.BGOFFSET[2].vertical << 8) | DMA[0].configure_value(:transfer_1_twice, indirect: true)
+      STX   dp(DMA[4].control)
+      LDX   #(PPU.CGADD << 8) | DMA[0].configure_value(:transfer_2_twice_each, indirect: true)
+      STX   dp(DMA[5].control)
+
+      LDX   #(PPU.WH[0].to_sym << 8) | DMA[0].configure_value(:transfer_2_once, indirect: true)
+      STX   dp(DMA[7].control)
+    end
+
+    routine :_update_row_effect do
+      Y.is_a! Configuration
+      A.pretend_size 8
+      LDA   Y[:flags]
+      AND   #Flag::FRONT_BUFFER_IS_READY
+      BNZ   _enable_row_effect
+
+    _disable_row_effect:
+      LDX   Aoba::Composer::Hdma.hdma_header_ram
+      LDA   #1
+      STA   0 * _header_size + 0, X
+      STA   1 * _header_size + 0, X
+      STA   2 * _header_size + 0, X
+      STZ   0 * _header_size + 3, X
+      STZ   1 * _header_size + 3, X
+      STZ   2 * _header_size + 3, X
+      CPU.set A: 16
+      LDA   #Aoba::Screen.ppu_register.BG1VOFS
+      STA   0 * _header_size + 1, X
+      STA   1 * _header_size + 1, X
+      LDA   #Aoba::Screen.ppu_register.TM
+      STA   2 * _header_size + 1, X
+      CPU.set A: 8
+      RTS
+
+      ;; ---
+
+    _enable_row_effect:
+      LDX   Y[:front_buffer]
+      TXY
+
+      LDX   Aoba::Composer::Hdma.hdma_header_ram
+      LDA   0, Y
+      ; A = top row
+      STA   0 * _header_size + 0, X
+      STA   1 * _header_size + 0, X
+      STA   2 * _header_size + 0, X
+      STZ   3 * _header_size + 0, X
+      ; A = height
+      LDA   1, Y
+      PHP
+      BPL   _no_inc_a
+      INC   A
+      AND   #$7F
+    _no_inc_a:
+      STA   2 * _header_size + 3, X
+      ORA   #$80
+      STA   0 * _header_size + 3, X
+      STA   1 * _header_size + 3, X
+      PLP
+      BPL   _is_small_area
+
+      CPU.set A: 16
+      AND   #$7F
+      STA   0 * _header_size + 7, X
+      TYA
+      INC   A
+      INC   A
+      STA   0 * _header_size + 4, X
+      STA   1 * _header_size + 4, X
+      TYA
+      CLC
+      ADC   0 * _header_size + 7, X
+      ADC   0 * _header_size + 7, X
+      TAY
+      CPU.set A: 8
+      INX
+      INX
+      INX
+      LDA   #$FF
+      STA   0 * _header_size + 3, X
+      STA   1 * _header_size + 3, X
+      AND   #$7F
+      STA   2 * _header_size + 3, X
+
+    _is_small_area:
+      STZ   0 * _header_size + 6, X
+      STZ   1 * _header_size + 6, X
+      STZ   2 * _header_size + 9, X
+      LDA   #1
+      STA   2 * _header_size + 6, X
+      CPU.set A: 16
+      TYA
+      INC   A
+      INC   A
+      STA   0 * _header_size + 4, X
+      STA   1 * _header_size + 4, X
+      LDA   #Aoba::Screen.ppu_register.TM
+      STA   2 * _header_size + 1, X
+      STA   2 * _header_size + 4, X
+      LDA   Aoba::Composer::Hdma.hdma_header_ram
+      CLC
+      ADC   #12
+      STA   2 * _header_size + 7, X
+      LDX   Aoba::Composer::Hdma.hdma_header_ram
+      STA   2 * _header_size + 1, X
+      CPU.set A: 8
+      RTS
+    end
+
+    update do
+      ;; Initializes the VRAM
+      Y.is_a! Configuration
+      LDA   Y[:enabled_hdma]
+      STA   CPU.HDMAEN.long
+
+      LDA   Y[:flags]
+      BIT   #Flag::NEEDS_SETUP_DMA_CALL
+      BZE   _no_setup_dma
+      AND   #$FFFF ^ Flag::NEEDS_SETUP_DMA_CALL
+      STA   Y[:flags]
+      PHY
+      Game::Level::UserInterface.setup_vblank_vram
+      PLY
+      LDA   Y[:flags]
+    _no_setup_dma:
+
+      ;; Initializes the VRAM
+      BIT   #Flag::NEEDS_UPDATE_DMA_CALL
+      BZE   _no_update_dma
+      AND   #$FFFF ^ Flag::NEEDS_UPDATE_DMA_CALL
+      STA   Y[:flags]
+      PHY
+      Game::Level::UserInterface.update_vblank_vram
+      PLY
+    _no_update_dma:
+
+      ;; Updates the row effect
+      _update_row_effect
+    end
+  end
+
+end

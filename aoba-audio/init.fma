@@ -1,0 +1,105 @@
+module Initialize
+
+  ;; Write address
+  write_address = $EE
+  current_apu_byte = $0
+
+  ;; Waits for the SNES to start the transfer
+  macro _wait_for_write_start
+    CLRP
+  _loop:
+    MOV   A, dp(SPC.PORT1)
+    BEQ   _loop
+
+    MOV   X, A
+
+    MOV   A, #0
+    MOV   dp(SPC.PORT0), A
+    MOV   dp(current_apu_byte), A
+
+    MOVW  YA, dp(SPC.PORT2)
+    MOV   dp(SPC.PORT1), X
+    MOVW  dp(write_address), YA
+  end
+
+  ;; Waits for ack
+  macro _wait_for_ack
+    MOV   A, dp(current_apu_byte)
+  _loop:
+    CMP   A, dp(SPC.PORT0)
+    BEQ   _loop
+
+    MOV   A, dp(SPC.PORT0)
+    MOV   dp(current_apu_byte), A
+  end
+
+  ;; Copies the main code
+  macro _copy_data
+  _loop:
+    _wait_for_ack
+    BBS7  dp(current_apu_byte), _end_of_copy
+
+    MOV   A, dp(SPC.PORT2)
+    MOV   Y, #0
+    MOV   indirect(write_address, Y), A
+    MOV   A, dp(SPC.PORT3)
+    MOV   X, dp(SPC.PORT1)
+    MOV   dp(SPC.PORT0), dp(current_apu_byte)
+
+    INCW  dp(write_address)
+    MOV   indirect(write_address, Y), A
+    INCW  dp(write_address)
+    MOV   A, X
+    MOV   indirect(write_address, Y), A
+    INCW  dp(write_address)
+    BRA   _loop
+
+  _end_of_copy:
+    MOVW   YA, dp(SPC.PORT1)
+    MOV   dp(SPC.PORT0), dp(current_apu_byte)
+    MOVW  dp(write_address), YA
+  end
+
+  ;; Jumps to the main routine
+  macro _jump_to_main_routine
+    MOVW  YA, dp($0) ; YA = #0
+    MOV   X, #0
+    JMP   addr(write_address, X)
+  end
+
+  ;; Clears the direct page RAM
+  macro _clear_direct_page
+    MOV   A, #0
+
+    SETP
+    MOV   X, A
+  _loop_page1:
+    MOV   indirect(X), A
+    DEC   X
+    BNE   _loop_page1
+
+    CLRP
+  _loop_page2:
+    MOVI  indirect(X), A
+    CMP   X, #write_address
+    BNE   _loop_page2
+
+    MOV   X, #Memory.stack + Memory.STACK_SIZE - 1
+    MOV   SP, X
+  end
+
+  ;; Copies the main code
+  macro init
+    _wait_for_write_start
+    _copy_data
+    _clear_direct_page
+    _jump_to_main_routine
+  end
+
+end
+
+;; Initializes the ROM
+@locate_at address: $FFC0 - INIT_CODE_SIZE
+export def init
+  Initialize.init
+end

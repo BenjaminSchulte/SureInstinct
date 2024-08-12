@@ -1,0 +1,87 @@
+module Script::Action::SetPitch
+
+  scope :TempSetPitchMemory, in: Script.SharedTempScriptRAM
+  declare :low_byte, as: :uint8, in: TempSetPitchMemory
+  declare :high_byte, as: :uint8, in: TempSetPitchMemory
+
+  def process_fine
+    MOV   X, A
+    MOV   A, indirect(Script.address, X)
+    BMI   _is_negative
+
+  _is_positive:
+    XCN   A
+    AND   A, #$F
+    BRA   _update_value
+
+  _is_negative:
+    XCN   A
+    OR    A, #$F0
+
+  _update_value:
+    MOV   Y, dp(Channel.pointer)
+    MOV   addr(Channel.modify_pitch_high_bytes, Y), A
+
+    MOV   A, indirect(Script.address, X)
+    XCN   A
+    AND   A, #$F0
+    MOV   addr(Channel.modify_pitch_low_bytes, Y), A
+
+    INCW  dp(Script.address)
+  end
+
+  def _calculate_set_pitch
+    MOV   X, A
+    MOV   dp(low_byte), A ; zero
+
+    MOV   A, indirect(Script.address, X)
+    BMI   _is_negative
+
+    LSR   A
+    ROR   dp(low_byte)
+    LSR   A
+    ROR   dp(low_byte)
+    BRA   _store_result
+
+  _is_negative:
+    SETC
+    ROR   A
+    ROR   dp(low_byte)
+    SETC
+    ROR   A
+    ROR   dp(low_byte)
+
+  _store_result:
+    ;;MOV   dp(low_byte), A
+    INCW  dp(Script.address)
+  end
+
+  def process
+    _calculate_set_pitch
+
+    ;;MOV   A, dp(high_byte)
+    MOV   addr(Channel.modify_pitch_high_bytes, Y), A
+    MOV   A, dp(low_byte)
+    MOV   addr(Channel.modify_pitch_low_bytes, Y), A
+  end
+
+  def enable_pitchmod
+    BBS0  dp(ch_control_flags), _is_sfx_channel
+    OR    dp(Song.song_enabled_pitchmod_voices), dp(Channel.voice_bit_pointer)
+    BRA   _set_pitchmod_on
+
+  _is_sfx_channel:
+    OR    dp(SFX.sfx_enabled_pitchmod_voices), dp(Channel.voice_bit_pointer)
+
+  _set_pitchmod_on:
+    MOV   dp(SPC.DSP_ADDR), #DSP.PMON
+    MOV   A, dp(Song.song_enabled_pitchmod_voices)
+    EOR   A, dp(SFX.sfx_enabled_pitchmod_voices)
+    AND   A, dp(Channel.enabled_voices)
+    MOV   dp(SPC.DSP_DATA), A
+  end
+
+  macro set_pitchmod_on
+    CALL  enable_pitchmod._set_pitchmod_on
+  end
+end

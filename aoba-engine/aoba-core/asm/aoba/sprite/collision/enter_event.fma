@@ -1,0 +1,103 @@
+module Aoba::Sprite::Collision::Tile
+
+  ;; @ignore_thread_safety
+  def _invalid_enter_event
+    TXA
+    LSR   A
+    Debug.warn "Invalid enter event {A}"
+  end
+
+  ;; Makes reflection visible
+  def event_show_reflection
+    LDX   dp(current_sprite)
+    X.is_a! Instance
+    CPU.set A: 8
+    LDA   #8
+    STA   X[:reflection_distance]
+    CPU.set A: 16
+  end
+
+  ;; Moves the sprite to the FG
+  ;; @ignore_thread_safety
+  def event_move_to_bg_layer
+    LDX   dp(current_sprite)
+    X.is_a! Instance
+    LDA   X[:basic_flags]
+    AND   #$FFFF ^ BasicFlag.COLLISION_FG_LAYER
+    STA   X[:basic_flags]
+  end
+
+  ;; Moves the sprite to the FG
+  ;; @ignore_thread_safety
+  def event_move_to_fg_layer
+    LDX   dp(current_sprite)
+    X.is_a! Instance
+    LDA   X[:basic_flags]
+    ORA   #BasicFlag.COLLISION_FG_LAYER
+    STA   X[:basic_flags]
+  end
+
+  ;; Moves the sprite to the FG
+  ;; @ignore_thread_safety
+  def event_move_to_foreground 
+    LDX   dp(current_sprite)
+    X.is_a! Instance
+    CPU.set A: 8
+    LDA   X[:renderable_flags]
+    AND   #$CF
+    ORA   #$30
+    STA   X[:renderable_flags]
+    LDA   X[:renderable_configuration_flags]
+    AND   #$CF
+    ORA   #$30
+    STA   X[:renderable_configuration_flags]
+    CPU.set A: 16
+  end
+
+  ;; Moves the sprite to the BG
+  ;; @ignore_thread_safety
+  def event_move_to_background
+    LDX   dp(current_sprite)
+    X.is_a! Instance
+    CPU.set A: 8
+    LDA   X[:renderable_flags]
+    AND   #$CF
+    ORA   #$20
+    STA   X[:renderable_flags]
+    LDA   X[:renderable_configuration_flags]
+    AND   #$CF
+    ORA   #$20
+    STA   X[:renderable_configuration_flags]
+    CPU.set A: 16
+  end
+
+  ;; Moves the sprite to a deep area
+  ;; @ignore_thread_safety
+  def event_move_to_deep
+    LDX   dp(current_sprite)
+    X.is_a! Instance
+    CPU.set A: 8
+    LDA   X[:renderable_flags]
+    AND   #$CF
+    ORA   #$20
+    STA   X[:renderable_flags]
+    LDA   X[:renderable_configuration_flags]
+    AND   #$CF
+    ORA   #$30
+    STA   X[:renderable_configuration_flags]
+    CPU.set A: 16
+  end
+
+  ;; Pointer to all events
+  datablock EnterEvents
+    dw _invalid_enter_event
+    dw _invalid_enter_event
+    dw event_move_to_deep
+    dw event_show_reflection
+    dw event_move_to_bg_layer
+    dw event_move_to_fg_layer
+    dw event_move_to_background
+    dw event_move_to_foreground
+  end
+
+end

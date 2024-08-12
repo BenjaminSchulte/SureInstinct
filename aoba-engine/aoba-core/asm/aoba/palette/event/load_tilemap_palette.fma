@@ -1,0 +1,18 @@
+module Aoba::Palette::Event::LoadTilemapPalette
+
+  ;; The event
+  class Event < Base
+    ;; The palette to load
+    declare :palette_address, as: :uint16
+  end
+
+  ;; Loads the palette
+  ;; @ignore-thread-safety
+  ID = List.create "LoadTilemapPalette" do
+    Y.is_a! Event
+
+    LDX   Y[:palette_address]
+    Action::LoadTilemapPalette.invoke
+  end
+
+end

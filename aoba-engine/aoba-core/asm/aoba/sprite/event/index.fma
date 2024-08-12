@@ -1,0 +1,25 @@
+module Aoba::Sprite::Event
+  class Base < Aoba::Thread::Event::Base
+    declare :event_id, as: :uint8
+  end
+
+  List = Aoba::Thread::EventHandlerList.new(SPRITE_ROM_BANK)
+end
+
+require "queue_animation"
+require "camera_disable"
+require "camera_add_sprite"
+require "set_movement"
+require "on_map_changed"
+require "move_sprite_relative"
+require "move_sprite_to"
+require "stop_movement"
+require "set_animation"
+require "trigger_npc_in_range"
+require "destroy_sprite"
+require "set_position"
+require "trigger_script"
+require "create_sprite"
+require "create_character"
+require "queue_sprite"
+require "assign_direct_oam_table"

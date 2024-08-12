@@ -1,0 +1,20 @@
+module Aoba::GameVariable
+
+  ;; Sets up the game variables
+  macro setup
+    saveramsize = SRAM_SAVESLOT_DATA_SIZE
+    saveramsize = 1 if saveramsize == 0
+
+    tempramsize = SRAM_TEMPORARY_DATA_SIZE
+    tempramsize = 1 if tempramsize == 0
+
+    ram = MemoryScope.new("SaveSlotRAM", in: Aoba::GameVariable::RAM, size: saveramsize)
+    Aoba::GameVariable.SaveSlotRAM = ram.to_sym
+
+    ram = MemoryScope.new("TempSlotRAM", in: Aoba::GameVariable::RAM, size: tempramsize)
+    Aoba::GameVariable.TempSlotRAM = ram.to_sym
+
+    raise "SRAM_HEADER_SIZE is invalid" if EXPECTED_SRAM_HEADER_SIZE != SRAM_HEADER_SIZE
+  end
+
+end

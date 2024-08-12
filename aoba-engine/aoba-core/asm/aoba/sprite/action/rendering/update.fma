@@ -1,0 +1,355 @@
+module Aoba::Sprite::Action::Rendering
+
+  ;; Copies the sprite header to the DP
+  macro _setup_sprite_bank_pointer
+    CPU.set A: 8
+    LDA   X[:sprite_header] + 2
+    PHB
+    PHA
+    CPU.set A: 16
+    LDY   X[:sprite_header]
+    STY   dp(sprite_header_pointer)
+    Y.is_a! SpriteRomHeader
+    PLB
+
+    Debug.allow_invalid_ram_access 1
+    LDA   Composer.vram_sprite.long - 1
+    AND   #$FF00
+    LSR   A
+    LSR   A
+    LSR   A
+    XBA
+    STA   dp(vram_address)
+  end
+
+  ;; Loads the animation and frame reference pointer
+  macro __load_animation_and_frame_reference_pointer
+    LDA   VARIABLE_RAM_BANK.as_bank(Instance.offset_of(:calculated_animation_id)).long, X
+    ASL   A
+    ASL   A
+    CLC
+    ADC   Y[:animation_index_pointer]
+    TAY
+    LDA   0, Y
+    STA   dp(sprite_script_pointer)
+    STA   VARIABLE_RAM_BANK.as_bank(Instance.offset_of(:animation_start_script_pointer)).long, X
+    LDA   2, Y
+    TAY
+    INC   A
+    STA   dp(sprite_frame_reference_pointer)
+    STA   VARIABLE_RAM_BANK.as_bank(Instance.offset_of(:animation_start_frame_reference_pointer)).long, X
+  end
+
+  ;; Allocates the required slots
+  macro __allocate_instance_slots(failed)
+    LDA   VARIABLE_RAM_BANK.as_bank(Instance.offset_of(:slot_pointer)).long, X
+    STA   dp(_calc0)
+
+    ;; Ensure that enough slots are reserved for this sprite
+    TYX
+    LDA   FRAME_REFERENCE_ROM_BANK.as_bank.long, X
+    CPU.with_bank! VARIABLE_RAM_BANK do
+      LDX   dp(_calc0)
+      Aoba::Sprite::Slot.reallocate
+    end
+    BCS   failed
+  end
+
+  ;; Loads the current script address
+  macro _load_script_address
+    LDA   VARIABLE_RAM_BANK.as_bank(Instance.offset_of(:animation_script_pointer)).long, X
+    BNZ   _skip_reconfigure
+
+    ;; The animation script has been changed, reconfigure the sprite pointer
+  _needs_reconfigure:
+    __load_animation_and_frame_reference_pointer
+    __allocate_instance_slots _failed_slot_allocation
+    BRA   _after_reconfigure
+
+    ;; No free slots for animation
+  _failed_slot_allocation:
+    SEC
+    PLB
+    RTS
+
+    ;; Resume animation with next default frame
+  _skip_reconfigure:
+    STA   dp(sprite_script_pointer)
+    LDA   VARIABLE_RAM_BANK.as_bank(Instance.offset_of(:animation_frame_reference_pointer)).long, X
+    STA   dp(sprite_frame_reference_pointer)
+
+  _after_reconfigure:
+  end
+
+  ;; Queues the stand animation
+  macro _queue_stand_animation
+    return if config.idle_animation_id.nil?
+
+    LDA   X[:animation_duration]
+    BNZ   _skip_queue
+
+    LDA   X[:queued_animation_id]
+    BNZ   _skip_queue
+
+    LDA   X[:animation_id]
+    CMP   #config.idle_animation_id
+    BEQ   _skip_queue
+    
+    LDA   #config.idle_animation_id + 1
+    STA   X[:queued_animation_id]
+
+  _skip_queue:
+  end
+
+  ;; Tests whether we need to rerender the graphics
+  macro _rerender_if_necessary
+    LDA   VARIABLE_RAM_BANK.as_bank(Instance.offset_of(:renderable_configuration_flags)).long, X
+    BIT   #RenderableConfigurationFlag::FORCE_REUPLOAD_TO_VRAM
+    BZE   _skip_force
+
+    _render_previous_frame
+
+  _skip_force:
+  end
+
+  ;; Updates the frame directll
+  macro __direct_frame_mode
+    Y.is_a! SpriteRomHeader
+    
+    ;; Reads the frame group pointer
+    LDA   VARIABLE_RAM_BANK.as_bank(Instance.offset_of(:calculated_animation_id)).long, X
+    ASL   A
+    CLC
+    ADC   Y[:frame_group_index_pointer]
+    TAY
+
+    ;; Reads the frame pointer
+    LDA   VARIABLE_RAM_BANK.as_bank(Instance.offset_of(:animation_script_pointer)).long, X
+    ASL   A
+    CLC
+    ADC   0, Y
+    TAY
+    LDA   0, Y
+    TAY
+    Y.is_a! FrameRomHeader
+    LDA   Y[:num_parts]
+    PHY
+    AND   #$7F
+    STA   dp(_calc0)
+    STZ   dp(relative_slot_x)
+
+    LDA   VARIABLE_RAM_BANK.as_bank(Instance.offset_of(:slot_pointer)).long, X
+    TAX
+    CPU.with_bank! VARIABLE_RAM_BANK do
+      LDA   dp(_calc0)
+      Aoba::Sprite::Slot.reallocate
+    end
+    BCS   _failed
+
+    LDX   dp(sprite_instance)
+    PLY
+    CPU.set A: 8
+    STZ   dp(slot_flag)
+    CPU.set A: 16
+    _copy_sprite_characters
+
+    CLC
+  _failed:
+    PLB
+  end
+
+  ;; Sets a new palette
+  def set_new_palette
+    ; TODO: This does not work with shared palettes yet
+    X.is_a! Instance
+    CPU.set A: 8
+    DEC   A
+    STA   X[:current_palette_index]
+    STZ   X[:new_palette_index]
+    INC   A
+    CPU.set A: 16
+    AND   #$FF
+    ASL   A
+    CLC
+    ADC   X[:palette_group_id]
+    TXY
+    TAX
+    LDA   Aoba::Palette::DATA_ROM_BANK.as_bank(0).long, X
+    STA   Y[:palette_id]
+    TYX
+    ManagePalette.reallocate_sprite_slot
+  end
+
+  ;; Tests whether the palette needs to be updated
+  macro _test_palette_update
+    LDA   X[:new_palette_index]
+    AND   #$FF
+    BZE   _skip_new_palette
+    set_new_palette
+    LDX   dp(sprite_instance)
+  _skip_new_palette:
+  end
+
+  ;; Updates a single record
+  ;;
+  ;; @param X Instance
+  def update_record
+    Thread.assert_thread thread_id
+
+    X.is_a! Instance
+    LDA   X[:renderable_configuration_flags]
+    BIT   #RenderableConfigurationFlag.NO_SPRITE
+    BZE   _start_update
+    CLC
+    RTS
+
+    ;; ---
+
+  _direct_frame_mode:
+    __direct_frame_mode
+    RTS
+
+    ;; ---
+
+  _start_update:
+    X.is_a! Instance
+    STX   dp(sprite_instance)
+    _test_palette_update
+
+    _setup_sprite_bank_pointer
+
+    LDA   VARIABLE_RAM_BANK.as_bank(Instance.offset_of(:animation_flags) - 1).long, X
+    BMI   _direct_frame_mode
+
+    _load_script_address
+    _parse_script
+    BCS   _failed
+
+  _succeeded:
+    LDX   dp(sprite_instance)
+    CPU.set A: 8
+    _rerender_if_necessary
+    PLB
+    _queue_stand_animation
+    CPU.set A: 16
+  _success_rts:
+    CLC
+    RTS
+
+    ;; ---
+
+  _failed:
+    PLB
+  end
+
+  ;; Updates the palettes
+  macro update_palettes
+    CPU.set A: 8
+    LDA   Aoba::Palette.sprite_palette_is_modified
+    BZE   _skip_update_palettes
+
+  _update_palettes:
+    Debug.allow_invalid_ram_access 1
+    STZ   Aoba::Palette.sprite_palette_is_modified
+    CPU.set A: 16
+    Aoba::Palette::CGRAM.upload_sprite_cgram
+
+  _skip_update_palettes:
+    CPU.set A: 16
+  end
+
+  ;; Updates all animations
+  def update
+    Thread.assert_thread thread_id
+    
+    LDY   animation_queue_last
+    STY   dp(old_animation_last)
+  
+  _loop:
+    ;; TODO: Test whether the PPU vcounter is below a specific line (to have time for other stuff afterwards)
+
+    ;; Tests whether there is any update to perform
+    LDY   animation_queue_first
+    CPY   dp(old_animation_last)
+    BEQ   _end_of_update_loop
+
+    ;; Updates the animation of this record
+  _update_record:
+    LDX   animation_queue, Y
+    BZE   _resume_next
+    update_record
+    BCS   _requeue_animation
+
+    ;; Increments the queue pointer
+  _resume_next:
+    LDA   animation_queue_first
+    INC   A
+    INC   A
+    AND   #(MAX_ANIMATION_QUEUE_SIZE * 2).bitmask
+    STA   animation_queue_first
+    BRA   _loop
+
+    ;; The animation could not be updated, try again next frame
+  _requeue_animation:
+    LDY   animation_queue_first
+    LDA   animation_queue, Y
+    LDY   animation_queue_last
+    STA   animation_queue, Y
+    TYA
+    INC   A
+    INC   A
+    AND   #(MAX_ANIMATION_QUEUE_SIZE*2).bitmask
+    STA   animation_queue_last
+    BRA   _resume_next
+
+  _end_of_update_loop:
+    update_palettes
+    RTS
+  end
+
+  ;; Updates the visibility of the record
+  def update_visibility
+    LDX   dp(current_sprite)
+
+    X.is_a! Aoba::Sprite::Instance
+    LDA   X[:renderable_configuration_flags]
+    BIT   #RenderableConfigurationFlag::NO_CAMERA_RELATIVE
+    BNZ   _visible
+
+    LDA   X[:collision_x_bitmask]
+    AND   scroll_bitmask_x
+    BZE   _invisible
+    LDA   X[:collision_y_bitmask]
+    AND   scroll_bitmask_y
+    BZE   _invisible
+
+  _visible:
+    CPU.set A: 8
+    LDA   X[:renderable_configuration_flags]
+    BIT   #RenderableConfigurationFlag::HIDDEN
+    BNZ   _invisible_set
+
+    BIT   #RenderableConfigurationFlag::IS_VISIBLE_ON_SCREEN
+    BNZ   _skip_set_visible_again
+
+  _is_newly_visible:
+    ORA   #RenderableConfigurationFlag::IS_VISIBLE_ON_SCREEN | RenderableConfigurationFlag::FORCE_REUPLOAD_TO_VRAM
+    STA   X[:renderable_configuration_flags]
+    CPU.set A: 16
+    queue_sprite
+    RTS
+
+    ;; --
+
+  _invisible:
+    CPU.set A: 8
+    LDA   X[:renderable_configuration_flags]
+  _invisible_set:
+    AND   #$FF ^ RenderableConfigurationFlag::IS_VISIBLE_ON_SCREEN
+    STA   X[:renderable_configuration_flags]
+
+  _skip_set_visible_again:
+    CPU.set A: 16
+  end
+
+end

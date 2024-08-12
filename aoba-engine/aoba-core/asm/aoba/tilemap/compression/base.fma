@@ -1,0 +1,58 @@
+module Aoba::Tilemap::Compression
+
+  class BaseBuilder
+    macro initialize(compressor)
+      @compressor = compressor
+    end
+
+    macro locate_at(*args, **kwargs)
+      @compressor.class.__static_locate_at_args = args
+      @compressor.class.__static_locate_at_kwargs = kwargs
+    end
+  end
+
+  class Base < Aoba::StaticRoutineEngineObject
+    register A: 16, XY: 16
+
+    ;; Initialize
+    macro initialize
+      super
+
+      @@__static_locate_at_kwargs = {bank: LEVEL_ROM_BANK}
+      @TempRAM = MemoryScope.new("CompressorTempRAM", in: nil, for: ::SNES::MemoryMap::RAM)
+    end
+
+    macro include_ram_to_tilemap_loader(loader)
+      loader.SharedTempRAM.include @TempRAM
+    end
+
+    ;; Initialize
+    macro finalize
+      setup_static_routines
+    end
+
+    ;; Whether the map size needs to be configures
+    macro requires_map_size?
+      return false
+    end
+
+    ;; Configures the decompress
+    ;; @param X map width
+    ;; @param Y map height
+    ;; @param A target address
+    macro configure_decompress
+    end
+  
+    ;; Configures the source address
+    ;; @param XH bank
+    ;; @param A address
+    macro configure_source_address
+    end
+
+    ;; Decompressed
+    macro decompress
+      raise "decompress not implemented"
+    end
+  end
+
+end

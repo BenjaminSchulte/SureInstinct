@@ -1,0 +1,86 @@
+module Aoba::Tilemap::Loader
+
+  class TilemapLoaderBuilder
+    macro initialize(loader)
+      @loader = loader
+    end
+
+    macro locate_at(*args, **kwargs)
+      @loader.class.__static_locate_at_args = args
+      @loader.class.__static_locate_at_kwargs = kwargs
+    end
+    
+    macro use(other)
+      other.include_to_tilemap_loader @loader
+    end
+
+    macro add(param)
+      param.loader = @loader
+      param.offset = @loader.header_size
+      @loader.header_size += param.size_in_bytes
+      @loader.parameter << param
+      param.preconfigure
+    end
+  end
+
+  class TilemapLoader < Aoba::StaticRoutineEngineObject
+    register A: 16, XY: 16
+
+    macro initialize
+      super
+
+      @@__static_locate_at_kwargs = {bank: LEVEL_ROM_BANK}
+
+      @TempRAM = MemoryScope.new("TilemapLoaderTempRAM", in: nil, for: ::SNES::MemoryMap::RAM)
+      @SharedTempRAM = MemoryScope.new("SharedTilemapLoaderTempRAM", in: @TempRAM, shared: true)
+
+      @header_address = MemoryVariable.new("header_address", as: :uint24, in: @TempRAM)
+
+      @header_size = 0
+      @parameter = []
+    end
+
+    ;; Finalizes the loader
+    macro finalize
+      @parameter.each do |p|
+        p.finalize
+      end
+      setup_static_routines
+    end
+
+    ;; Waits until all parameter are ready
+    macro wait_for_ready
+      @parameter.each do |p|
+        p.wait_for_ready
+      end
+    end
+
+    macro read_header_at(offset)
+      if offset == 0
+        LDA   @header_address.indirect.long
+      else
+        LDY   #offset
+        LDA   @header_address.indirect.long, Y
+      end
+    end
+
+    ;; Loads the tilemap
+    routine :load do
+      @parameter.each do |p|
+        p.load
+      end
+
+      RTS
+    end
+
+    ;; Creates the storage
+    macro self.create(&block)
+      loader = TilemapLoader.new
+      builder = TilemapLoaderBuilder.new(loader)
+      block.call with_context builder
+      loader.finalize
+      return loader
+    end
+  end
+
+end

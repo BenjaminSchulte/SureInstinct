@@ -1,0 +1,226 @@
+module Aoba::Sprite::Action::Camera
+
+  ;; List of sprites to follow
+  declare :sprites, as: Instance.pointer(:uint16), in: ::Memory::VariableRAM, length: MAX_CAMERA_SPRITES
+
+
+  ;; Adds a sprite to the camera
+  ;;
+  ;; @param X sprite to add
+  def add_sprite
+    Thread.assert_thread thread_id
+
+    ;; Set flag
+    LDA   global_flags
+    ORA   #GlobalFlag::CAMERA_ENABLED
+    Debug.access_8bit_through_16bit
+    STA   global_flags
+
+    ;; Tests if the sprite is already listed
+    (MAX_CAMERA_SPRITES).times do |i|
+      CPX   sprites + i + i
+      BEQ   _skip_add
+    end
+
+    ;; Not present, find a free slot
+    LDY   #0
+    (MAX_CAMERA_SPRITES - 1).times do |i|
+      LDA   sprites + i + i
+      BZE   _found_slot
+      INY
+      INY
+    end
+    LDA   sprites + MAX_CAMERA_SPRITES * 2
+    BNZ   _skip_add
+
+  _found_slot:
+    TXA
+    STA   sprites, Y
+
+  _skip_add:
+  end
+
+  ;; Disables the camera
+  def disable
+    Thread.assert_thread thread_id
+
+    ;; Remove flag
+    LDA   global_flags
+    AND   #$FFFF ^ GlobalFlag::CAMERA_ENABLED
+    STA   global_flags
+
+    ;; Clear follow list
+    MAX_CAMERA_SPRITES.times do |i|
+      STZ   sprites + i + i
+    end
+  end
+
+  ;; Stores the target position
+  macro _set_target_scroll(target_scroll, max_scroll)
+    BPL   _skip_set_zero
+    LDA   #0
+  _skip_set_zero:
+    CMP   max_scroll
+    BLT   _skip_set_max
+    LDA   max_scroll
+  _skip_set_max:
+    STA   target_scroll
+  end
+
+  ;; Calculates the target position
+  def calculate_target_camera_position
+    Thread.assert_thread thread_id
+
+    LDX   sprites
+    X.is_a! Instance
+    BZE   _skip_camera_target_position_recalculation
+
+    ;; Temporary calculation of sprite positions
+    LDA   X[:x]
+    SEC
+    SBC   #128
+
+    _set_target_scroll target_scroll_x, max_scroll_x
+
+    ;; Temporary calculation of sprite positions
+    LDA   X[:y]
+    SEC
+    SBC   #112
+
+    _set_target_scroll target_scroll_y, max_scroll_y
+
+  _skip_camera_target_position_recalculation:  
+  end
+
+  ;; Recalculates the camera depending on 
+  macro _recalculate_camera_target_on_scroll
+
+    LDA   global_flags
+    EOR   #GlobalFlag.VALID_MAX_SCROLL | GlobalFlag.CAMERA_ENABLED
+    AND   #GlobalFlag.VALID_MAX_SCROLL | GlobalFlag.CAMERA_ENABLED
+    BNZ   _skip_camera_target_position_recalculation
+    
+    calculate_target_camera_position
+    _calculate_move_limited_to_camera_speed
+    recalculate_view_bitmask
+
+  _skip_camera_target_position_recalculation:
+  end
+
+  ;; Calculates the target camera position limited by the maximum scroll speed
+  macro _calculate_move_limited_to_camera_speed
+    _calculate_move_limited_to_camera_speed_axis scroll_y, target_scroll_y
+    _calculate_move_limited_to_camera_speed_axis scroll_x, target_scroll_x
+  end
+
+  ;; Recalculates the view bitmask
+  def recalculate_view_bitmask
+    LDA   scroll_x
+    (SPRITE_MAX_VISIBLE_POSITION_X >> 5).fast_divided_register_A
+    AND   #$FE
+    TAX
+    LDA   axis_screen_bitmask.long, X
+    STA   scroll_bitmask_x
+
+    LDA   scroll_y
+    (SPRITE_MAX_VISIBLE_POSITION_Y >> 5).fast_divided_register_A
+    AND   #$FE
+    TAX
+    LDA   axis_screen_bitmask.long, X
+    STA   scroll_bitmask_y
+  end
+
+  ;; Calculates the target camera position limited by the maximum scroll speed per axis
+  macro _calculate_move_limited_to_camera_speed_axis(scroll, target_scroll)
+    LDA   target_scroll
+    SEC
+    SBC   scroll
+    BEQ   _skip_scroll
+
+    BPL   _test_positive
+
+  _test_negative:
+    CMP   #-MAX_CAMERA_SPEED
+    BGE   _update_scroll
+    LDA   #-MAX_CAMERA_SPEED
+    BRA   _update_scroll
+
+  _test_positive:
+    CMP   #MAX_CAMERA_SPEED
+    BLT   _update_scroll
+    LDA   #MAX_CAMERA_SPEED
+
+  _update_scroll:
+    CLC
+    ADC   scroll
+    STA   scroll
+
+  _skip_scroll:
+  end
+
+  ;; Notify the level thread about scroll changes
+  def _notify_level_thread
+    if config.camera.nil? || config.level_loader.nil? || config.tilemap_scroll_renderer.nil?
+      return
+    end
+
+    Debug.access_8bit_through_16bit
+    LDA   global_flags
+    AND   #GlobalFlag.SCROLL_THREAD_READY | Sprite::GlobalFlag.VALID_MAX_SCROLL
+    EOR   #GlobalFlag.SCROLL_THREAD_READY | Sprite::GlobalFlag.VALID_MAX_SCROLL
+    BNZ   _no_level_thread_A16
+
+    ;; Tests if an update is necessary
+    LDA   scroll_x
+    TAX
+    CMP   config.camera.x.long
+    BNE   _require_update
+    LDA   scroll_y
+    TAY
+    CMP   config.camera.y.long
+    BEQ   _skip_update
+
+  _require_update:
+    ;; Sends the scroll event to the level
+    CPU.set A: 8
+    LDA   Aoba::Level.thread_id
+    BZE   _no_level_thread
+
+    LDA   #Aoba::Thread::Event::USEREVENT_ID
+    JSL   Aoba::Thread::Event.allocate_icb_long
+    X.is_a! Aoba::Level::Event::ScrollLevel::Event
+    LDA   #config.tilemap_scroll_renderer.scroll_event_id
+    STA   X[:event_id]
+    CPU.set A: 16
+    LDA   scroll_x
+    STA   X[:target_scroll_x]
+    LDA   scroll_y
+    STA   X[:target_scroll_y]
+    LDA   Aoba::Level.thread_id
+    JSL   Aoba::Thread.send_event_icb_long
+
+    ;; Pauses this thread. The level thread will be invoked because it has a higher priority
+    SEI
+    JSL   Aoba::Thread.pause_current_thread_temporary_icb_long
+    CLI
+
+  _no_level_thread:
+    CPU.set A: 16
+  _no_level_thread_A16:
+  _skip_update:
+  end
+
+  Instance.event.on :update_before_transaction do
+    _recalculate_camera_target_on_scroll
+  end
+
+  Instance.event.on :update_after_oam do
+    _notify_level_thread
+  end
+
+  ;; Disables the camera on initialize
+  Aoba::Event.on :sprite_initialize_ram16 do
+    disable
+  end
+
+end

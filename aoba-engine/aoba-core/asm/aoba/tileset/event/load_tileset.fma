@@ -1,0 +1,25 @@
+module Aoba::Tileset::Event::LoadTileset
+
+  ;; The event
+  class Event < Base
+    ;; The tileset to load
+    declare :tileset_address, as: :uint16
+
+    ;; The target address (upper byte)
+    declare :vram_address, as: :uint8
+  end
+
+  ;; Creates a load event for a tileset_loader
+  macro create_for(tileset_loader)
+    List.create "LoadTileset" do
+      Y.is_a! Event
+
+      ;; Remembers the tileset address
+      LDX   Y[:tileset_address]
+      LDA   Y[:vram_address] - 1
+      AND   #$FF00
+      JMP   tileset_loader.load
+    end
+  end
+
+end

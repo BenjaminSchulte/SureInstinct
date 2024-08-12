@@ -1,0 +1,10 @@
+module Aoba::Thread::Timer
+
+  ;; @param X TimerInstance
+  macro get_duration_left
+    LDA   X[:frame]
+    SEC
+    SBC   current_frame_low
+  end
+
+end

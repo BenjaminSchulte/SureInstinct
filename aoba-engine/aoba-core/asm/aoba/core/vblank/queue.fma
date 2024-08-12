@@ -1,0 +1,97 @@
+module Aoba::VBlank::Queue
+
+  ;; Out of range
+  ;; @ignore-thread-safety
+  def _vblank_out_of_range
+    fatal_error "VBLANK queue exceeded $100 bytes"
+  end
+
+  ;; Adds a callback without parameters
+  macro add_without_params(callback)
+    LDA   queue_offset.long
+    TAX
+    INC   A
+    INC   A
+    STA   queue_offset.long
+
+    LDA   #callback.function.to_sym - 1
+    STA   0.long, X
+  end
+
+  ;; Adds a new item with parameters
+  macro add_with_params(callback, use_A, &configure)
+    PHD
+    PHA if use_A
+    LDA   queue_offset.long
+    TCD
+    PLA if use_A
+
+    callback.invoke_configure &configure
+
+    LDA   #callback.function.to_sym - 1
+    STA   dp($0)
+
+    TDC
+    CLC
+    ADC   #callback.size + 2
+    STA   queue_offset.long
+    
+    if Debug::ENABLED
+      CMP   #$100 + queue.to_sym
+      BLT   _ok
+      JML   _vblank_out_of_range
+    end
+    _ok:
+    PLD
+  end
+
+  ;; Adds a new item to the queue
+  macro add(callback, use_A, &configure=nil)
+    if callback.no_params?
+      add_without_params callback
+    else
+      add_with_params callback, use_A, &configure
+    end
+  end
+
+  ;; Processes the queue
+  ;;
+  ;; @ignore-thread-safety
+  def process
+    LDA   queue_offset.long
+    CMP   #queue.to_sym
+    BEQ   _queue_is_empty
+
+    CPU.with_bank 0, from_bank: VARIABLE_RAM_BANK do
+      PHD
+      TAX
+
+      LDA   #_after_process - 1
+      STA   queue.to_sym.bank_address.long, X
+      TSC
+      STA   (queue.to_sym.bank_address + 2).long, X
+
+      LDA   #queue - 1
+      TCS
+
+      LDA   #REGISTER_BASE
+      TCD
+
+      CPU.set A: 8
+      RTS
+
+    _after_process:
+      CPU.set A: 16
+      PLA
+      TCS
+      PLD
+    end
+
+  _queue_is_empty:
+    Transaction.irq_finish
+
+    ;LDA   #queue.to_sym
+    ;STA   queue_offset.long
+  end
+
+end

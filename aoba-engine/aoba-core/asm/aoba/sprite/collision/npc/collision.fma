@@ -1,0 +1,220 @@
+module Aoba::Sprite::Collision::NPC
+
+  ;; Triggers the start shift event for an NPC
+  def _trigger_npc_start_shift
+    Y.is_a! Instance
+    Debug.fatal "NPC {Y} :: START"
+
+    ORA   #MovableFlag::IS_BEING_PUSHED
+    STA   Y[:movable_flags]
+
+    X.is_a! Instance
+    LDA   X[:movable_flags]
+    BIT   #MovableFlag::IS_PUSHING
+    BNZ   _skip_notify_player
+    ORA   #MovableFlag::IS_PUSHING | MovableFlag::IDLE_IS_PUSHING
+    STA   X[:movable_flags]
+    LDA   X[:automation_script_id]
+    BZE   _skip_notify_player
+
+    PHA
+    STX   dp(_calc0)
+    STY   dp(_calc0) + 2
+    
+    LDA   #Aoba::Thread::Event::USEREVENT_ID
+    JSL   Aoba::Thread::Event.allocate_icb_long
+    X.is_a! Aoba::Thread::Event::ReadyEvent
+    LDA   #Aoba::Script::EventId::START_PUSH_NPC
+    STA   X[:event_id]
+    LDY   dp(_calc0) + 2
+    LDA   Y[:id]
+    STA   X[:userdata]
+    PLA
+    JSL   Aoba::Thread.send_event_icb_long
+
+    LDY   dp(_calc0) + 2
+    LDX   dp(_calc0)
+
+  _skip_notify_player:
+  end
+
+  ;; Applies shifting in positive axis
+  macro _apply_axis(axis, shift_speed, pos_decimal, speed, speed_decimal, bbneg, bbpos)
+    X.is_a! Instance
+    Y.is_a! Instance
+
+    DEC   dp(can_shift)
+    BZE   _proceed_with_shift
+
+    STZ   dp(speed)
+    STZ   dp(speed_decimal)
+    RTS
+    
+    ;; ---
+
+  _proceed_with_shift:
+    ;; Sets the speed to the register
+    STA   Y["shift_#{axis}_speed_decimal"] + 1
+    ASL   A
+    CPU.set A: 8
+    BCC   _positive
+
+  _negative:
+    LDA   #$FF
+    STA   Y["shift_#{axis}_speed"] + 1
+    INC   A
+    BRA   _after_positive
+
+  _positive:
+    LDA   #$00
+    STA   Y["shift_#{axis}_speed"] + 1
+  _after_positive:
+    STA   Y["shift_#{axis}_speed_decimal"]
+
+  _skip_set_shift_speed:
+    CPU.set A: 16
+
+    ;; Calculates the new speed for this player
+    STZ   dp(speed)
+    STZ   dp(speed_decimal)
+  end
+
+  ;; Applies shifting an NPC on X axis
+  def _apply_axis_x
+    _apply_axis :x, shift_x_speed, Action::Move.pos_x_decimal, Action::Move.speed_x, Action::Move.speed_x_decimal, :left, :right
+    ; RTS in macro!
+  end
+
+  ;; Applies shifting an NPC on Y axis
+  def _apply_axis_y
+    _apply_axis :y, shift_y_speed, Action::Move.pos_y_decimal, Action::Move.speed_y, Action::Move.speed_y_decimal, :top, :bottom
+    ; RTS in macro!
+  end
+
+  ;; Applies shifting an NPC
+  def _apply_shift_npc
+    X.is_a! Instance
+    Y.is_a! Instance
+
+    LDA   dp(shift_x_speed)
+    BZE   _only_y_axis
+
+  _test_x_axis:
+    LDA   dp(shift_y_speed)
+    BNZ   _complex_angle
+
+  _only_x_axis:
+    LDA   dp(shift_x_speed)
+    JMP   _apply_axis_x
+
+    ;; --
+
+  _only_y_axis:
+    LDA   dp(shift_y_speed)
+    JMP   _apply_axis_y
+  
+    ;; --
+
+  _complex_angle:
+    LDA   dp(shift_x_speed)
+    BMI   _complex_negative_x
+  
+  _complex_positive_x:
+    LDA   dp(shift_y_speed)
+    BMI   _complex_right_up
+
+  _complex_right_down:
+    LDA   X[:boundingbox_bottom]
+    SEC
+    SBC   Y[:boundingbox_top]
+    STA   dp(_calc0)
+    LDA   X[:boundingbox_right]
+    SEC
+    SBC   Y[:boundingbox_left]
+    CMP   dp(_calc0)
+    BGE   _only_y_axis
+    BRA   _only_x_axis
+
+  _complex_right_up:
+    LDA   Y[:boundingbox_bottom]
+    SEC
+    SBC   X[:boundingbox_top]
+    STA   dp(_calc0)
+    LDA   X[:boundingbox_right]
+    SEC
+    SBC   Y[:boundingbox_left]
+    CMP   dp(_calc0)
+    BGE   _only_y_axis
+    BRA   _only_x_axis
+
+  _complex_negative_x:
+    LDA   dp(shift_y_speed)
+    BMI   _complex_left_up
+
+  _complex_left_down:
+    LDA   X[:boundingbox_bottom]
+    SEC
+    SBC   Y[:boundingbox_top]
+    STA   dp(_calc0)
+    LDA   Y[:boundingbox_right]
+    SEC
+    SBC   X[:boundingbox_left]
+    CMP   dp(_calc0)
+    BGE   _only_y_axis
+    BRA   _only_x_axis
+
+  _complex_left_up:
+    LDA   Y[:boundingbox_bottom]
+    SEC
+    SBC   X[:boundingbox_top]
+    STA   dp(_calc0)
+    LDA   Y[:boundingbox_right]
+    SEC
+    SBC   X[:boundingbox_left]
+    CMP   dp(_calc0)
+    BLT   _only_x_axis
+    BRA   _only_y_axis
+  end
+
+  ;; The NPC collided
+  def _update_movement_after_npc_collision
+    X.is_a! Instance
+    Y.is_a! Instance
+
+    STZ   dp(can_shift)
+    CPU.set A: 8
+
+    ;; Tests whether we can shift NPCs
+    LDA   X[:movable_flags]
+    BIT   #MovableFlag::CAN_PUSH
+    BZE   _resume
+    
+    ;; Tests whether the NPC can be shifted
+    LDA   Y[:movable_flags]
+    BIT   #MovableFlag::CAN_BE_PUSHED
+    BZE   _resume
+
+    INC   dp(can_shift)
+
+    ;; Triggers a "start shift" event
+    ORA   #MovableFlag::IDLE_IS_BEING_PUSHED
+    STA   Y[:movable_flags]
+    BIT   #MovableFlag::IS_BEING_PUSHED
+    BNZ   _resume
+    _trigger_npc_start_shift
+  
+    ;; Updates the player to be pushing
+    LDA   X[:movable_flags]
+    ORA   #MovableFlag::IS_PUSHING | MovableFlag::IDLE_IS_PUSHING
+    STA   X[:movable_flags]
+  
+  _resume:
+    CPU.set A: 16
+    _apply_shift_npc
+
+    Action::Move._recalculate_new_position
+    recalculate_bounding_box_in_dp
+    JMP   process_collision._loop_next
+  end
+
+end

@@ -1,0 +1,89 @@
+module Aoba::Sprite
+
+  class LinkedList < StaticRoutineClass
+    locate_at bank: SPRITE_ROM_BANK
+    register A: 16, XY: 16
+
+    macro initialize(Instance, id)
+      @Instance = Instance
+      @id = id
+
+      @first = MemoryVariable.new("first_#{id}", as: :uint16, in: ::Memory::VariableRAM)
+
+      _self = self
+      ::Aoba::Event.on :sprite_initialize_ram16 do
+        STZ   _self.first
+      end
+
+      @Instance.event.on :reset16 do 
+        STZ   X[id]
+      end
+
+      setup_static_routines
+    end
+
+    ;; @param X Instance
+    routine :add do
+      X.is_a! @Instance
+      PHP
+      SEI
+      LDA   @first
+      STA   X[@id]
+      STX   @first
+      PLP
+      RTS
+    end
+
+    routine :add_long do
+      add
+      RTL
+    end
+    
+    ;; Remove item
+    routine :remove do
+      X.is_a! Instance
+      Y.is_a! Instance
+      PHP
+      SEI
+      CPX   @first
+      BEQ   _is_first
+      TXA
+      LDX   @first
+
+    _loop:
+      CMP   X[@id]
+      BEQ   _is_next
+      LDY   X[@id]
+      TYX
+      BNZ   _loop
+      PLP
+      TAX
+      RTS
+
+      ;; ---
+
+      ; A=delete
+      ; X=previous
+    _is_next:
+      TAY
+      LDA   Y[@id]
+      STA   X[@id]
+      PLP
+      TYX
+      RTS
+
+      ;; ---
+
+    _is_first:
+      LDA   X[@id]
+      STA   @first
+      PLP
+      RTS
+    end
+
+    macro self.create(Instance, id)
+      return LinkedList.new(Instance, id)
+    end
+  end
+
+end

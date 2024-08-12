@@ -1,0 +1,98 @@
+module Aoba::Composer::Event::SetScreenMode
+
+  ;; The event
+  class Event < Base
+    ;; The screen mode
+    declare :mode, as: :uint8
+  end
+
+  ;; Sets the screen mode
+  ;; @ignore-thread-safety
+  ID = List.create "SetScreenMode" do
+    Y.is_a! Event
+
+    CPU.set A: 8
+    _bitmap8 = 0
+    _bitmap16 = 0
+
+    Debug.todo "Update SetScreenMode to a more dynamic routine"
+
+    ;LDA   #1 | $80
+    ;STA   Screen.register.BGMODE
+    ;_bitmap8 |= Screen.Flag.BGMODE
+
+    Debug.allow_invalid_ram_access 2
+    LDA   vram_bg1_tilemap.long
+    ORA   #1
+    STA   Screen.register.BG1SC
+    _bitmap8 |= Screen.Flag.BG1SC
+
+    Debug.allow_invalid_ram_access 2
+    LDA   vram_bg2_tilemap.long
+    ORA   #1
+    STA   Screen.register.BG2SC
+    _bitmap8 |= Screen.Flag.BG2SC
+
+    Debug.allow_invalid_ram_access 2
+    LDA   vram_bg1_tileset.long
+    LSR   A
+    LSR   A
+    LSR   A
+    LSR   A
+    Debug.allow_invalid_ram_access 2
+    ORA   vram_bg2_tileset.long
+    STA   Screen.register.BG12NBA
+    _bitmap8 |= Screen.Flag.BG12NBA
+
+    LDA   vram_sprite.long
+    Debug.allow_invalid_ram_access 2
+    STA   Screen.register.OBSEL
+    _bitmap8 |= Screen.Flag.OBSEL
+
+    ;LDA   #3 | $10
+    ;STA   Screen.register.TM
+    _bitmap8 |= Screen.Flag.TM
+
+    ;LDA   #1 | $10
+    ;STA   Screen.register.TS
+    _bitmap8 |= Screen.Flag.TS
+
+    LDA   #2
+    Debug.allow_invalid_ram_access 2
+    STA   Screen.register.CGWSEL
+    _bitmap8 |= Screen.Flag.CGWSEL
+
+    LDA   #$43
+    STA   Screen.register.CGADSUB
+    Debug.allow_invalid_ram_access 2
+    _bitmap8 |= Screen.Flag.CGADSUB
+
+    CPU.set A: 16
+    Debug.allow_invalid_ram_access 2
+    STZ   Screen.register.BG1HOFS
+    _bitmap16 |= Screen.Flag.BG1HOFS
+
+    Debug.allow_invalid_ram_access 2
+    STZ   Screen.register.BG1VOFS
+    _bitmap16 |= Screen.Flag.BG1VOFS
+    
+    Debug.allow_invalid_ram_access 2
+    STZ   Screen.register.BG2HOFS
+    _bitmap16 |= Screen.Flag.BG2HOFS
+
+    Debug.allow_invalid_ram_access 2
+    STZ   Screen.register.BG2VOFS
+    _bitmap16 |= Screen.Flag.BG2VOFS
+    
+    SEI
+    LDA   Screen.update_registers_8
+    ORA   #_bitmap8
+    STA   Screen.update_registers_8
+    LDA   Screen.update_registers_16
+    ORA   #_bitmap16
+    STA   Screen.update_registers_16
+    CLI
+
+  end
+
+end

@@ -1,0 +1,57 @@
+if SNES::ENABLE_SA1
+module Aoba::Audio::SA1
+
+  ;; Direct page RAM for commands
+  scope :WorkRAM, in: ::Memory.SnesSharedQuickPage, length: 256
+
+  ;; Invokes the event
+  _invoke = create_sa1_ram_routine bank: AUDIO_ROM_BANK do
+    PHA
+    CPU.set A: 8
+    RTS
+  end
+
+  ;; Updates the audio interface
+  macro update_loop
+    LDA   sa1_command_start.long
+    CMP   sa1_command_end.long
+    BEQ   _skip_update_audio
+
+  _has_audio_command:
+    PHD
+    CPU.with_bank VARIABLE_RAM_BANK, from_bank: FIXED_RAM_BANK do
+      AND   #(MAX_SA1_SNES_COMMANDS * 2).bitmask
+      TAX
+
+      ;; Increments the read command
+      INC   A
+      INC   A
+      STA   sa1_command_start
+
+      ;; Sets up a temporary data bank
+      LDA   #WorkRAM
+      TCD
+
+      ;; Invokes the command
+      LDA   sa1_command_event, X
+      TAY
+      PHY
+      LDA   sa1_command_routine, X
+      SNES_RAM_JMP _invoke, :JSR, :JSR
+      PLY
+
+      ;; Notifies SA1 that command is finished
+      Y.is_a! Event::Base
+      CPU.set A: 8
+      LDA   #$FF
+      STA   Y[:event_id]
+      CPU.set A: 16
+    end
+
+    PLD
+
+  _skip_update_audio:
+  end
+
+end
+end

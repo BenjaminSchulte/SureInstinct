@@ -1,0 +1,79 @@
+macro __boot_initialize_ram
+  ;; Initializes the memory allocation
+  Aoba::Memory.initialize
+
+  ;; Sets the default bank
+  PEA   #(Aoba::VARIABLE_RAM_BANK << 8) | Aoba::FIXED_RAM_BANK
+  PLB
+
+  Aoba::Event.invoke :system_initialize_A16_FIXEDRAM
+  CPU.set A: 8
+  Aoba::Event.invoke :system_initialize_A8_FIXEDRAM
+  PLB
+  Aoba::Event.invoke :system_initialize_A8_VARRAM
+  CPU.set A: 16
+  Aoba::Screen.initialize_icb
+  Aoba::Event.invoke :system_initialize_A16_VARRAM
+
+  ;; Initializes the core modules
+  Aoba::Thread.initialize
+  Aoba::Thread::Event.initialize
+  Aoba::Thread::Timer.initialize
+  Aoba::VBlank.initialize
+  Aoba::Control.initialize
+end
+
+macro __boot_reset_timer
+  ;; Reset IRQ timer once again
+  CPU.set A: 8
+  LDA   CPU.TIMEUP.long
+  CPU.set A: 16
+end
+
+;; @ignore-thread-safety
+@locate_at bank: Aoba::SYSTEM_ROM_BANK
+def main
+  ;; Sets up a temporary stack to the end of the QuickPage
+  CPU.set A: 16
+  LDA   #$FF
+  TCS
+  LDA   #0
+  TCD
+
+  ;; Sets up the interrupts and sets DB to 0
+  PEA   #(SNES::Arch.ESTIMATED_VBLANK_START - 1) << 8
+  PLB
+  CPU.set A: 8
+  SNES.initialize
+
+  PLA
+  STA   CPU.VTIME
+  STZ   CPU.VTIME + 1
+  LDA   #CPU.NMITIMEN_VBLANK | CPU.NMITIMEN_AUTOJOY
+  STA   CPU.NMITIMEN
+
+  CPU.set A: 16
+  LDA   #0
+  STA   Aoba::DebugScreen.error_message.long
+
+  Aoba::Event.invoke :snes_system_initialize_A16
+
+  ;; Configures the SA1
+  SA1.configure if SNES::ENABLE_SA1
+
+  if SNES::ENABLE_SA1
+    SA1.boot
+    __snes_sa1_loop
+  else
+    ;; Initializes all RAM
+    __boot_initialize_ram
+
+    ;; Starts the application
+    ::start
+
+    ;; Resets the timer
+    __boot_reset_timer
+
+    JMP   Aoba::Thread.start
+  end
+end

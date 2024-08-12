@@ -1,0 +1,14 @@
+module Aoba
+
+  ;; The ROM bank
+  COMPOSER_ROM_BANK ||= SCREEN_ROM_BANK
+
+end
+
+require "configuration"
+require "memory"
+require "hdma"
+require "thread"
+require "action"
+require "event"
+require "api"

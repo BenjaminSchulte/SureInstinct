@@ -1,0 +1,13 @@
+name: "Stage 1: Retro Console"
+scripts:
+  []
+tilemap: stage1
+palette: wood/main
+top_palette: wood/main
+bottom_palette: wood/dark
+pause_palette: wood/pause
+custom_properties:
+  name: Retro Console
+  stage: Stage 1
+  stage_index: 1
+  start_position: {x: 17.5, y: 11.5}

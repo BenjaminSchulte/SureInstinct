@@ -1,0 +1,66 @@
+module Aoba::Dialog
+
+  ;; Loads the dialog graphic
+  ;;
+  ;; @param REGA dialog image
+  Aoba::Script.callback "Dialog_SetDialogGraphic", bank: DIALOG_ROM_BANK do
+    LDX   dp(Script.register_a)
+
+    ;; Trigger load image in this thread
+    LDY   vram_dialog_tiles_address
+    JSL   Image.load_tiles_icb_long
+
+    ;; Loads the dialog image pointer
+    LDX   dp(Script.register_a)
+    LDA   Aoba::Image::IMAGE_HEADER_ROM_BANK.as_bank(DialogImageRomHeader.offset_of(:large_tilemap)).long, X
+    CLC
+    ADC   #Tilemap::RomHeader.size
+    STA   dialog_tilemap_header.long
+  end
+
+  ;; Loads the dialog graphic
+  ;;
+  ;; @param REGA dialog image
+  Aoba::Script.callback "Dialog_SetTextPointer", bank: DIALOG_ROM_BANK do
+    LDX   dp(Script.register_a)
+    CPU.set A: 8
+    LDA   #NUM_POINTER_TILES * 2
+    XBA
+    LDA   dp(Script.register_a + 2)
+    CPU.set A: 16
+    LDY   vram_pointer_tiles_address
+    JSL   Image.load_raw_bpp2_tiles_icb_long
+  end
+
+  ;; Loads the dialog palette
+  ;;
+  ;; @param REGA dialog image
+  Aoba::Script.callback "Dialog_SetDialogPalette", bank: DIALOG_ROM_BANK do
+    ;; Triggers a cgram upload
+    CPU.set A: 8
+    LDA   #Aoba::Thread::Event::USEREVENT_ID
+    JSL   Aoba::Thread::Event.allocate_icb_long
+    X.is_a! Aoba::Palette::Event::LoadRawPalette::Event
+    LDA   #Aoba::Palette::Event::LoadRawPalette::ID
+    STA   X[:event_id]
+    LDA   #DIALOG_PALETTE_SIZE
+    STA   X[:num_colors]
+    LDA   #DIALOG_PALETTE_COLOR_INDEX
+    STA   X[:target]
+    CPU.set A: 16
+    LDA   dp(Script.register_a)
+    STA   X[:palette_address]
+
+    LDA   Palette.thread_id
+    JSL   Aoba::Thread.send_event_icb_long
+  end
+
+  ;; Loads the default font
+  Aoba::Script.callback "Dialog_SetDefaultFont", bank: DIALOG_ROM_BANK do
+    LDA   dp(Script.register_a)
+    STA   dialog_default_font.long
+    LDA   dp(Script.register_a + 1)
+    STA   dialog_default_font.long + 1
+  end
+
+end

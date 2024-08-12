@@ -1,0 +1,136 @@
+module CPU
+  ;; Enables or disables flags
+  ;;
+  ;; @param A=nil number - defines the size of the A register (either 8 or 16)
+  ;; @param XY=nil number - defines the size of the XY register (either 8 or 16)
+  macro set(A=nil, XY=nil)
+    _set   = 0
+    _clear = 0
+
+    unless A.nil?
+      case A
+      when 8
+        _set |= CPU.FLAG_M
+      when 16
+        _clear |= CPU.FLAG_M
+      else
+        raise "Unexpected size for register A"
+      end
+    end
+
+    unless XY.nil?
+      case XY
+      when 8
+        _set |= CPU.FLAG_X
+      when 16
+        _clear |= CPU.FLAG_X
+      else 
+        raise "Unexpected size for register XY"
+      end
+    end
+
+    SEP #_set   if _set
+    REP #_clear if _clear
+  end
+
+  ;; Enables or disables flags
+  ;;
+  ;; @param A=nil number - defines the size of the A register (either 8 or 16)
+  ;; @param XY=nil number - defines the size of the XY register (either 8 or 16)
+  macro set_if_necessary(A=nil, XY=nil)
+    _set   = 0
+    _clear = 0
+
+    unless A.nil?
+      case A
+      when 8
+        _set |= CPU.FLAG_M if ::A.size != 8
+      when 16
+        _clear |= CPU.FLAG_M if ::A.size != 16
+      else
+        raise "Unexpected size for register A"
+      end
+    end
+
+    unless XY.nil?
+      case XY
+      when 8
+        _set |= CPU.FLAG_X if ::X.size != 16
+      when 16
+        _clear |= CPU.FLAG_X if ::X.size != 16
+      else 
+        raise "Unexpected size for register XY"
+      end
+    end
+
+    SEP #_set   if _set
+    REP #_clear if _clear
+  end
+
+  ;; Sets the data bank
+  macro set_bank(bank)
+    PEA   #bank << 8
+    PLB
+    PLB
+  end
+
+  ;; Sets the data bank to a specific one but safes the old one
+  ;;
+  ;; @param bank number - the bank to use
+  macro with_bank(bank, from_bank=nil, &block)
+    if from_bank.nil?
+      raise "CPU.with_bank without from_bank is deprecated. Use CPU.with_bank!"
+    end
+
+    with_bank! bank, from_bank, &block
+  end
+
+  ;; Sets the data bank to a specific one but safes the old one
+  ;;
+  ;; @param bank number - the bank to use
+  macro with_bank!(bank, from_bank=nil, &block)
+    if from_bank.nil?
+      PHB
+      PEA   #bank << 8
+      PLB
+      PLB
+      block.call
+      PLB
+    elsif bank == from_bank
+      block.call
+    else
+      PEA   #(from_bank << 8) | bank
+      PLB
+      block.call
+      PLB
+    end
+  end
+
+  ;; Reads the vertical scanline
+  macro fetch_vertical_scanline(use_db=false, use_long=false)
+    old_size = A.size
+    CPU.set A: 8 if old_size == 16
+
+    if use_db
+      LDA   db(CPU.SLHV)
+      LDA   db(CPU.OPVCT)
+      XBA
+      LDA   db(CPU.OPVCT)
+    elsif use_long
+      LDA   CPU.SLHV.long
+      LDA   CPU.OPVCT.long
+      XBA
+      LDA   CPU.OPVCT.long
+    else
+      LDA   CPU.SLHV
+      LDA   CPU.OPVCT
+      XBA
+      LDA   CPU.OPVCT
+    end
+
+    AND   #1
+    XBA
+
+    CPU.set A: 16 if old_size == 16
+  end
+end

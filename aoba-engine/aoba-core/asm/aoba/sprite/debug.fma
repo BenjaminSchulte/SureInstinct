@@ -1,0 +1,113 @@
+module Debug::Sprite
+
+  macro __dump_attribute(attr)
+    return "long(add(X,#{Aoba::Sprite::Instance.offset_of(attr)}),$7F)"
+  end
+
+  def list_long
+    Debug.error "========================================"
+
+    LDX   Aoba::Sprite.first_sprite
+    X.is_a! Aoba::Sprite::Instance
+    BZE   _no_first_sprite
+
+  _loop:
+    _debug = "SPRITE {X}: PRIORITY {byte(#{__dump_attribute(:render_priority)})} X {word(#{__dump_attribute(:x)})} Y {word(#{__dump_attribute(:y)})} | RENDER {word(#{__dump_attribute(:renderable_flags)})}"
+    Debug.log _debug
+
+    LDY   X[:next_sprite]
+    TYX
+    BNZ   _loop
+
+  _no_first_sprite:
+    RTL
+  end
+
+  def test_slots_long
+    PHP
+    SEI
+    CPU.set A: 16
+    PHA
+    PHX
+    PHY
+    LDY #32
+    CPU.with_bank! Aoba::VARIABLE_RAM_BANK do
+
+      LDX   Aoba::Sprite.first_slot
+      X.is_a! Aoba::Sprite::Slot::SlotAllocation
+      BZE   _skip
+
+    _loop:
+      DEY
+      BNZ   _ok
+      JSL   dump_slots_long
+
+    _ok:
+      LDA   X[:next_slot]
+      TAX
+      BNZ   _loop
+
+      Debug.trace "Slot list is OK"
+      NOP
+
+    _skip:
+    end
+    PLY
+    PLX
+    PLA
+    PLP
+    RTL
+  end
+
+  def dump_slots_long
+    PHP
+    SEI
+    CPU.set A: 16
+    PHA
+    PHX
+    PHY
+    LDY #32
+    CPU.with_bank! Aoba::VARIABLE_RAM_BANK do
+
+      LDX   Aoba::Sprite.first_slot
+      X.is_a! Aoba::Sprite::Slot::SlotAllocation
+      Debug.log "FIRST_SLOT: {X}"
+      BZE   _skip
+
+    _loop:
+      DEY
+      BNZ   _ok
+      Debug.fatal "Slot list is corrupt"
+      NOP
+      Debug.BRK
+      BRA   _skip
+
+    _ok:
+      LDA   X[:slot_index]
+      Debug.log "- {X} index:               {and(A,$FF)}"
+      LDA   X[:allocated_slot_size]
+      Debug.log "  {X} allocated_slot_size: {and(A,$FF)}"
+      LDA   X[:used_slot_size]
+      Debug.log "  {X} used_slot_size:      {and(A,$FF)}"
+      LDA   X[:free_slots_before]
+      Debug.log "  {X} free slots before:   {and(A,$FF)}"
+      LDA   X[:previous_slot]
+      Debug.log "  {X} previous slot:   <=  {A}"
+      LDA   X[:next_slot]
+      Debug.log "  {X} next slot:       =>  {A}"
+      TAX
+      BNZ   _loop
+
+    _skip:
+      LDX   Aoba::Sprite.last_slot
+      Debug.log "LAST_SLOT: {X}"
+
+    end
+    PLY
+    PLX
+    PLA
+    PLP
+    RTL
+  end
+
+end

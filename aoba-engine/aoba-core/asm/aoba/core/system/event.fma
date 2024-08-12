@@ -1,0 +1,66 @@
+module Aoba::Event
+
+  module Order
+    ALWAYS_FIRST = -100
+    FIRST = -90
+    EARLY = -50
+    NORMAL = 0
+    LATE = 50
+    LAST = 90
+    ALWAYS_LAST = 100
+  end
+
+  class Emitter
+    ;; Initialize the event list
+    macro initialize
+      @events = {}
+    end
+
+    ;; Adds a new event listener
+    macro on(name, order=0, &block)
+      @events[name] = {}        unless @events.key?(name)
+      @events[name][order] = [] unless @events[name].key?(order)
+
+      @events[name][order] << block
+    end
+
+    ;; Invokes all events
+    macro invoke(name, *args)
+      return unless @events.key?(name)
+
+      events_in_context = @events[name]
+      events_in_context.keys.map {|i| i.to_n}.each do |key|
+        events_in_context[key].each do |block|
+          block.call *args
+        end
+      end
+    end
+
+    macro any_handler?
+      return @events.keys.size > 0
+    end
+
+    macro any_handler_for?(name)
+      return @events.key?(name)
+    end
+  end
+
+  ;; List of global events
+  global = Emitter.new
+
+  ;; Adds an event handler to the list of events
+  ;;
+  ;; @param name string - the name of the event to hook into
+  ;; @param order=Event.ORDER_DEFAULT number - a priority value for your hook, lower numbers will be called earlier
+  macro on(*args, **kwargs, &block)
+    global.on *args, **kwargs, &block
+  end
+
+  ;; Invokes an event
+  ;;
+  ;; @param name string - the name of the event
+  macro invoke(*args, **kwargs)
+    global.invoke *args, **kwargs
+  end
+
+end

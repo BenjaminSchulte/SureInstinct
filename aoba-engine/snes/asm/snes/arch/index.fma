@@ -1,0 +1,12 @@
+module SNES::Arch
+  macro configure_for(architecture)
+    case architecture
+    when :pal
+      require "pal"
+    when :ntsc
+      require "ntsc"
+    else
+      raise "Unsupported architecture #{architecture}"
+    end
+  end
+end

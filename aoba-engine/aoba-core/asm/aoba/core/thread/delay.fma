@@ -1,0 +1,215 @@
+module Aoba::Thread
+
+  macro __create_delay(event_stack, last_event_stack, event_id, userdata=true)
+    STZ   dp(event_stack)
+    STZ   dp(last_event_stack)
+
+  _wait_for_timer_8bit:
+    CPU.set A: 8
+    ;; Waits for the timer
+  _wait_for_timer:
+    LDA   #event_id
+    JSR   wait_for_event_icb
+    X.is_a! Event::ReadyEvent
+
+    yield _wrong_event, _correct_event
+
+    ;; The returned event is something different
+  _wrong_event:
+    CPU.set A: 16
+    STZ   X[:next_event]
+    LDY   dp(last_event_stack)
+    STX   dp(last_event_stack)
+    BZE   _is_first_wrong_event
+    Y.is_a! Event::ReadyEvent
+    TXA
+    STA   Y[:next_event]
+    BRA   _wait_for_timer_8bit
+
+  _is_first_wrong_event:
+    STX   dp(event_stack)
+    BRA   _wait_for_timer_8bit
+
+    ;; The event was the correct one
+  _correct_event:
+    CPU.set A: 16
+    if userdata
+      Debug.allow_invalid_ram_access 2
+      LDA   X[:userdata]
+      PHA
+    end
+    JSR   Event.free_icb
+
+    ;; Tests whether we have to fix events or not
+    LDA   dp(event_stack)
+    BZE   _no_events_delayed
+
+    ;; Fixes the event stack (if necessary)
+    Y.is_a! Instance
+    get_current_thread_pointer_Y
+    SEI
+
+    ;; Attach previous events to list if available
+    LDA   Y[:first_event]
+    BZE   _no_other_events
+
+    LDX   dp(last_event_stack)
+    STA   X[:next_event]
+    BRA   _inject_first_event
+
+  _no_other_events:
+    LDA   dp(last_event_stack)
+    STA   Y[:last_event]
+  _inject_first_event:
+    LDA   dp(event_stack)
+    STA   Y[:first_event]
+
+  _no_events_delayed:
+    PLX if userdata ;userdata 
+  end
+
+  ;; Creates a delay
+  ;; @param Y Delay in Frames
+  def delay_icb
+    routine do
+      is_thread_safe
+      
+      declare :event_stack, as: :uint16
+      declare :last_event_stack, as: :uint16
+
+      execute do |event_stack, last_event_stack|
+        X.is_a! Instance
+
+        ;; Queues the timer
+        get_current_thread_pointer_X
+        LDA   X[:timer]
+        TAX
+        LDA   #0
+        Timer.queue_icb
+
+        __create_delay event_stack, last_event_stack, Event.SYSTEMEVENT_ID do |_wrong_event, _correct_event|
+          ;; Tests whether the returned event is the expected one
+          X.is_a! Timer.TimerEvent
+          LDA   X[:sender_thread_id]
+          CMP   #TIMER_THREAD_ID
+          BNE   _wrong_event
+
+          ;; The event is correct, test whether the timer matches ours
+          CPU.set A: 16
+          Y.is_a! Instance
+          get_current_thread_pointer_Y
+          LDA   Y[:timer]
+          CMP   X[:timer]
+          CPU.set A: 8
+          BEQ   _correct_event
+        end
+      end
+    end
+  end
+
+  ;; @param Y Delay in Frames
+  def delay_icb_long
+    delay_icb
+    RTL
+  end
+
+  ;; @param Y Delay in Frames
+  ;; @ignore-thread-safety
+  def delay_long
+    CPU.with_bank! VARIABLE_RAM_BANK do
+      JSR   delay_icb
+    end
+    RTL
+  end
+
+  ;; @param AL Thread ID to wait for
+  ;; @param AH Event ID to wait for
+  ;; @return X useddata
+  def wait_for_ready_icb
+    routine do
+      is_thread_safe
+      input A
+      
+      declare :event_stack, as: :uint16
+      declare :compare_thread_id, as: :uint16
+      declare :last_event_stack, as: :uint16
+
+      execute do |event_stack, compare_thread_id, last_event_stack|
+        X.is_a! Instance
+
+        STA   dp(compare_thread_id)
+
+        __create_delay event_stack, last_event_stack, Event.READYEVENT_ID, true do |_wrong_event, _correct_event|
+
+          LDA   X[:sender_thread_id]
+          CMP   dp(compare_thread_id)
+          BNE   _wrong_event
+
+          LDA   X[:event_id]
+          CMP   dp(compare_thread_id + 1)
+          BEQ   _correct_event
+        end
+
+      end
+    end
+  end
+
+  ;; @param AL Thread ID to wait for
+  ;; @param AH Event ID to wait for
+  def wait_for_ready_icb_long
+    wait_for_ready_icb
+    RTL
+  end
+
+  ;; @param X Pointer to thread ID
+  ;; @ignore-thread-safety
+  def _wait_for_thread
+    PHP
+    CPU.with_bank! VARIABLE_RAM_BANK do
+      CPU.set   A: 8
+    _loop:
+      LDA   0, X
+      BNZ   _thread_is_loaded
+      PHX
+      LDY   #1
+      delay_icb
+      PLX
+      BRA   _loop
+    _thread_is_loaded:
+    end
+    PLP
+    RTL
+  end
+
+  macro wait_for_thread(pointer)
+    LDX   #pointer
+    JSL   _wait_for_thread
+  end
+
+
+  ;; @param X Pointer to thread ID
+  ;; @ignore-thread-safety
+  def _wait_for_unload
+    PHP
+    CPU.with_bank! VARIABLE_RAM_BANK do
+      CPU.set   A: 8
+    _loop:
+      LDA   0, X
+      BZE   _thread_is_unloaded
+      PHX
+      LDY   #1
+      delay_icb
+      PLX
+      BRA   _loop
+    _thread_is_unloaded:
+    end
+    PLP
+    RTL
+  end
+
+  macro wait_for_unload(pointer)
+    LDX   #pointer
+    JSL   _wait_for_unload
+  end
+
+end

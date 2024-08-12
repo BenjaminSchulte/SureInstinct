@@ -1,0 +1,106 @@
+module Aoba::Audio
+
+  locate_at bank: AUDIO_ROM_BANK
+
+  ;; The thread RAM
+  scope :RAM, in: ::Memory::ThreadRAM
+
+  ;; The event RAM
+  scope :ActionRAM, in: RAM, shared: true
+
+  ;; The event RAM
+  scope :InternalActionRAM, in: RAM, shared: true
+
+  ;; Calc register
+  declare :_calc0, as: :uint16, in: RAM
+
+  ;; The static RAM
+  scope :StaticRAM, in: ::Memory::FixedRAM
+  
+  ;; The thread ID for the tileset thread
+  declare :thread_id, as: :uint8, in: ::Memory::VariableRAM
+
+  ;; The last IPC value
+  declare :last_ipc_value, as: :uint8, in: ::Memory::VariableRAM
+
+  ;; The current song ID
+  declare :current_loaded_song_id, as: :uint8, in: StaticRAM
+
+  ;; The current song being played
+  declare :current_played_song_id, as: :uint8, in: StaticRAM
+
+  ;; The current master volume
+  declare :master_volume, as: :uint8, in: StaticRAM
+
+  ;; The current fade volume
+  declare :fade_volume, as: :uint8, in: StaticRAM
+
+  ;; The current fade volume
+  declare :echo_volume, as: :uint8, in: StaticRAM
+
+  ;; The fade timer
+  declare :fade_timer, as: :uint16, in: StaticRAM
+
+  ;; The fade timer
+  declare :fade_target_volume, as: :uint8, in: StaticRAM
+
+  ;; The fade timer
+  declare :fade_speed, as: :uint8, in: StaticRAM
+
+  ;; Autoplay id
+  declare :autoplay_song_id, as: :uint8, in: StaticRAM
+
+  ;; Autoplay volume (high bit = enabled or not)
+  declare :autoplay_song_volume, as: :uint8, in: StaticRAM
+
+  ;; List of loaded instruments
+  scope :loaded_instruments, in: StaticRAM, length: MAX_INSTRUMENTS / 4
+
+
+  if ENABLE_SA1
+
+    ;; Commands sent between SNES and SA1
+    declare :sa1_command_event, as: :uint16, in: ::Memory::VariableRAM, length: MAX_SA1_SNES_COMMANDS
+    
+    ;; Commands sent between SNES and SA1
+    declare :sa1_command_routine, as: :uint16, in: ::Memory::VariableRAM, length: MAX_SA1_SNES_COMMANDS
+
+    ;; Current start pointer
+    declare :sa1_command_start, as: :uint16, in: ::Memory::VariableRAM
+
+    ;; Current end pointer
+    declare :sa1_command_end, as: :uint16, in: ::Memory::VariableRAM
+
+    ;; Delete registers on boot
+    ::Aoba::Event.on :snes_system_initialize_A16 do
+      LDA   #0
+      STA   sa1_command_start.long
+      STA   sa1_command_end.long
+    end
+
+  end
+
+  ;; The song index
+  import __song_index
+  import __asset_instrument_index
+  SongIndex = __song_index
+  InstrumentIndex = __asset_instrument_index
+
+  ;; Initializes the RAM
+  ;; @ignore-thread-safety
+  def initialize_ram
+    CPU.with_bank FIXED_RAM_BANK, from_bank: VARIABLE_RAM_BANK do
+      STZ   fade_timer
+      CPU.set A: 8
+      STZ   current_loaded_song_id
+      STZ   current_played_song_id
+      STZ   autoplay_song_volume
+      LDA   #128
+      STA   fade_volume
+      CPU.set A: 16
+    end
+    
+    GarbageCollector.initialize_ram
+  end
+
+end

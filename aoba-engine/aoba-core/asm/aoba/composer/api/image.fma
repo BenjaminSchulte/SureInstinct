@@ -1,0 +1,41 @@
+module Aoba::Composer::Api
+
+  ;; @param A variant index
+  ;; @param X image address
+  ;; @param Y vram address
+  def load_image_tiles_ex
+    PHA
+    PHY
+    PHX
+
+    ;; Loads a miniblock
+    PHP
+    SEI
+    LDA   thread_id
+    LDX   #Event::LoadImageTilesEx::Configuration.size
+    JSL   Aoba::Memory.allocate_miniblock_long
+    CLI
+    PLP
+    X.is_a! Event::LoadImageTilesEx::Configuration
+
+    PLA
+    STA   X[:image_address]
+    PLA
+    STA   X[:vram_address]
+    PLA
+    STA   X[:variant_index]
+
+    ;; Loads the current stage image
+    PHX
+    LDA   #Aoba::Thread::Event::USEREVENT_ID
+    JSL   Aoba::Thread::Event.allocate_icb_long
+    X.is_a! Event::LoadImageTilesEx::Event
+    LDA   #Event::LoadImageTilesEx::ID
+    STA   X[:event_id]
+    PLA
+    STA   X[:config_address]
+    LDA   thread_id
+    JML   Aoba::Thread.send_event_icb_long
+  end
+
+end

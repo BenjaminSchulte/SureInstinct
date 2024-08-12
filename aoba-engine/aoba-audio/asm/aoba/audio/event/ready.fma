@@ -1,0 +1,10 @@
+module Aoba::Audio::Event::ReadyEvent
+
+  ID = $09
+
+  ;; @ignore-thread-safety
+  def event_handler
+    Aoba::Thread::ReadyEvent.make_event_handler
+  end
+
+end

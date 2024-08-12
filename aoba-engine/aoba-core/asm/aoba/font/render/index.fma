@@ -1,0 +1,6 @@
+require "memory"
+require "line_length"
+require "clear_buffer"
+require "start_char"
+require "render_char"
+require "main"

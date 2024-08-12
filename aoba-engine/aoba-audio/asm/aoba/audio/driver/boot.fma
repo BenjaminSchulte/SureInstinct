@@ -1,0 +1,98 @@
+module Aoba::Audio::Driver
+  module BootSector
+
+    ;; Ready signal from SPC
+    SPC_READY_SIGNAL = $BBAA
+
+    ;; Send transfer address for SPC
+    SPC_SEND_TRANSFER_ADDRESS = $CC
+
+    ;; Waits for SPC to be ready
+    macro wait_for_spc_ready
+    _loop:
+      LDX   CPU.APUIO0
+      CPX   #SPC_READY_SIGNAL
+      BNE   _loop
+    end
+
+    ;; Waits for the SPC
+    macro wait_for_spc
+    _loop:
+      CMP   CPU.APUIO0
+      BNE   _loop
+    end
+  
+    ;; Sends the transfer address
+    macro send_transfer_address
+      LDA   #SPC_SEND_TRANSFER_ADDRESS
+      STA   CPU.APUIO1
+      LDY   #init_offset
+      STY   CPU.APUIO2
+      STA   CPU.APUIO0
+
+      wait_for_spc
+    end
+
+    ;; Transfers the init code
+    macro transfer_init_code
+      LDA   init_block.long
+      XBA
+      LDA   #0
+      LDX   #1
+      BRA   _start
+
+    _send_next:
+      XBA
+      LDA   init_block.long, X
+      INX
+      XBA
+      wait_for_spc
+      INC   A
+
+    _start:
+      CPU.set A: 16
+      STA   CPU.APUIO0
+      CPU.set A: 8
+
+      CPX   #init_size
+      BLT   _send_next
+
+    _done:
+    end
+
+    ;; Starts the init code
+    macro start_init_code
+      wait_for_spc
+
+      INC   A
+      INC   A
+
+      STZ   CPU.APUIO1
+      STY   CPU.APUIO2
+      STA   CPU.APUIO0
+    end
+
+    ;; Uploads the main driver
+    macro upload
+      wait_for_spc_ready
+      send_transfer_address
+      transfer_init_code
+      start_init_code
+      wait_for_spc
+    end
+
+  end
+
+  ;; @ignore-thread-safety
+  upload = create_sa1_ram_routine bank: AUDIO_ROM_BANK do
+    A.pretend_size 8
+    X.pretend_size 16
+
+    CPU.with_bank $00, VARIABLE_RAM_BANK do
+      BootSector.upload
+      Upload.upload
+    end
+    RTS
+  end
+
+end

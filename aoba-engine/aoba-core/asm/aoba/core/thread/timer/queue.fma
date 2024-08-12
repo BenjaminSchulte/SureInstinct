@@ -1,0 +1,185 @@
+module Aoba::Thread::Timer
+
+  ;; @param A Flags
+  ;; @param X TimerInstance
+  ;; @param Y Delay in Frames
+  def queue_icb
+    routine A: 8 do
+      make_thread_safe
+      input A
+
+      declare :duration, as: :uint16
+
+      execute do |duration|
+        X.is_a! TimerInstance
+        Y.is_a! TimerInstance
+
+Debug.only do
+  CPX #$2000
+  BLT _ok_timer
+  Debug.fatal "QUEUED TIMER IS INVALID: {X}"
+  NOP
+  Debug.BRK
+  NOP
+  _ok_timer:
+end
+
+        XBA
+        LDA   X[:flags]
+        BIT   #Flag.QUEUED
+        BNZ   _skip_queue
+
+        XBA
+        ORA   #Flag.QUEUED
+        STA   X[:flags]
+
+        CPU.set A: 16
+        STY   dp(duration)
+
+        TYA
+        STA   X[:interval]
+        CLC
+        ADC   current_frame_low
+        STA   X[:frame]
+
+        PHX
+        Y.is_a! TimerInstance
+        LDY   #active_timers
+      _loop:
+        TYX
+        X.is_a! TimerInstance
+        LDY   X[:next_timer]
+        BZE   _insert_here
+        LDA   Y[:frame]
+        SEC
+        SBC   current_frame_low
+        CMP   dp(duration)
+        BLT   _loop
+
+      _insert_here:
+        X.is_a! TimerInstance
+        PLA
+        STA   X[:next_timer]
+        TAX
+        TYA
+        X.is_a! TimerInstance
+        STA   X[:next_timer]
+
+;Debug.only do
+;STA dp(duration)
+;CPX dp(duration)
+;BNE _ok
+;Debug.fatal "TIMER {X}->next = {A}"
+;NOP
+;Debug.BRK
+;NOP
+;_ok:
+;end
+
+      _skip_queue:
+        CPU.set A: 16
+      end
+    end
+  end
+
+  ;; @param A flags
+  ;; @param X TimerInstance
+  ;; @param Y Delay in Frames
+  def queue_icb_long
+    queue_icb
+    RTL
+  end
+
+  ;; @param A flags
+  ;; @param X TimerInstance
+  ;; @param Y Delay in Frames
+  ;; @ignore-thread-safety
+  def queue_long
+    CPU.with_bank! VARIABLE_RAM_BANK do
+      queue_icb
+    end
+    RTL
+  end
+
+  ;; @param X TimerInstance
+  def unqueue_icb
+    routine A: 8 do
+      make_thread_safe
+
+      declare :timer, as: :uint16
+      
+      execute do |timer|
+        X.is_a! TimerInstance
+        Y.is_a! TimerInstance
+
+        LDA   X[:flags]
+        BIT   #Flag.QUEUED
+        BZE   _skip_unqueue
+
+        EOR   #Flag.QUEUED
+        STA   X[:flags]
+
+        Y.is_a! TimerInstance
+        STX   dp(timer)
+        LDX   #active_timers
+
+      _loop:
+        TXY
+        LDX   Y[:next_timer]
+        
+        BZE   _skip_unqueue
+        CPX   dp(timer)
+        BNE   _loop
+
+      _found_timer:
+        CPU.set A: 16
+        LDA   X[:next_timer]
+        STA   Y[:next_timer]
+
+      _skip_unqueue:
+        CPU.set A: 16
+      end
+    end
+  end
+
+  ;; @param X TimerInstance
+  ;; @ignore-thread-safety
+  def unqueue_long
+    CPU.with_bank! VARIABLE_RAM_BANK do
+      unqueue_icb
+    end
+    RTL
+  end
+
+  ;; @param X TimerInstance
+  def remove_remaining_timer_events_icb
+    routine do
+      make_thread_safe
+
+      declare :timer, as: :uint16
+      declare :thread, as: :uint16
+
+      execute do |timer, thread|
+        X.is_a! TimerInstance
+        STX   dp(timer)
+        LDA   X[:thread_id]
+        get_thread_pointer_from_thread_id
+        STX   dp(thread)
+
+      _loop:
+        LDY   dp(timer)
+        Event.pop_timer_event_in_thread_icb
+        CPY   #0
+        BZE   _finish
+
+        TYX
+        Event.free_icb
+        LDX   dp(thread)
+        BRA   _loop
+
+      _finish:
+      end
+    end
+  end
+
+end

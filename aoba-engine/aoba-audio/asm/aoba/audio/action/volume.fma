@@ -1,0 +1,176 @@
+module Aoba::Audio::Action::Volume
+
+  ;; Calculates the volume
+  macro calculate_faded_volume
+    A.pretend_size 8
+    if ENABLE_SA1
+      Debug.fatal "SA1 update_volume not yet supported"
+      NOP
+      Debug.BRK
+      NOP
+    end
+
+    SEI
+    STA   CPU.WRMPYA.long
+    LDA   fade_volume.long
+    STA   CPU.WRMPYB.long
+    NOP
+    NOP
+    NOP
+    NOP
+
+    CPU.set A: 16
+    LDA   CPU.RDMPY.long
+    CLI
+    ASL   A
+    CPU.set A: 8
+    XBA
+  end
+
+  ;; Sets the volume
+  update_volume = create_sa1_ram_routine bank: AUDIO_ROM_BANK do
+    A.pretend_size 8
+
+    LDA   master_volume.long
+    calculate_faded_volume
+
+    when_ready_SEI VARIABLE_RAM_BANK do
+      STA   CPU.APUIO1.long
+
+      LDA   last_ipc_value
+      AND   #IPC.IPC_TOGGLE_BIT
+      EOR   #IPC.IPC_TOGGLE_BIT | IPC.CMD_SET_MASTER_VOLUME
+      STA   CPU.APUIO0.long
+      STA   last_ipc_value
+    end
+    RTS
+  end
+
+
+  ;; Fades to a specific volume
+  ;; @param AL volume
+  ;; @param AH speed
+  fade_to = create_sa1_ram_routine bank: AUDIO_ROM_BANK do
+    X.pretend_size 16
+    CMP   fade_volume.long
+    BEQ   _finish_fade
+
+    STA   fade_target_volume.long
+    XBA
+    STA   fade_speed.long
+    
+    CPU.set A: 16
+    LDA   fade_timer.long
+    BNZ   _no_create_fade_timer
+    
+    if ENABLE_SA1
+      Debug.fatal "fade_to timer unsupported from SNES"
+    else
+      LDA   thread_id
+      JSL   Thread::Timer.allocate_long
+      TXA
+      STA   fade_timer.long
+    end
+
+  _no_create_fade_timer:
+    CPU.set A: 8
+    LDY   #1
+    LDA   #0
+    JSL   Thread::Timer.queue_long
+    RTS
+
+    ;; ---
+
+  _finish_fade:
+    Debug.BRK
+    NOP
+    NOP
+    NOP
+    RTS
+  end
+
+  on_fade_timer = make_audio_event do 
+    PEA   #FIXED_RAM_BANK | VARIABLE_RAM_BANK << 8
+    PLB
+    LDA   fade_volume
+    CMP   fade_target_volume
+    BEQ   _finish_fade
+    BGE   _fade_down
+
+  _fade_up:
+    CLC
+    ADC   fade_speed
+    STA   fade_volume
+    CMP   fade_target_volume
+    BEQ   _update_and_finish_fade
+    BPL   _update_and_finish_fade
+    
+  _update_and_resume_timer:
+    CPU.with_bank VARIABLE_RAM_BANK, from_bank: FIXED_RAM_BANK do
+      SNES_RAM_JMP update_volume, :JSR, :JSR
+    end
+    LDX   fade_timer
+    if ENABLE_SA1
+      Debug.fatal "timer free not supported yet"
+      PLB
+    else
+      LDA   #0
+      LDY   #1
+      PLB
+      JSL   Thread::Timer.queue_icb_long
+    end
+    RTS
+
+    ;; --
+
+  _fade_down:
+    SEC
+    SBC   fade_speed
+    STA   fade_volume
+    CMP   fade_target_volume
+    BEQ   _update_and_finish_fade
+    BPL   _update_and_resume_timer
+
+  _update_and_finish_fade:
+    LDA   fade_target_volume
+    STA   fade_volume
+    CPU.with_bank VARIABLE_RAM_BANK, from_bank: FIXED_RAM_BANK do
+      SNES_RAM_JMP update_volume, :JSR, :JSR
+    end
+
+  _finish_fade:
+    LDX   fade_timer
+    STZ   fade_timer
+    STZ   fade_timer + 1
+    if ENABLE_SA1
+      Debug.fatal "timer free not supported yet"
+      PLB
+    else
+      PLB
+      JSL   Thread::Timer.free_icb_long
+    end
+
+    LDA   autoplay_song_volume.long
+    BMI   _do_autoplay
+
+  _no_autoplay_enabled:
+    RTS
+
+    ;; ---
+
+  _do_autoplay:
+    SNES_RAM_JMP Aoba::Audio::Action::StopSong.invoke_icb, :JSR, :JSR
+    LDA   autoplay_song_id.long
+    INC   A
+    SNES_RAM_JMP Aoba::Audio::Action::LoadSong.invoke_icb, :JSR, :JSR
+    LDA   #$80
+    STA   fade_volume.long
+    SNES_RAM_JMP update_volume, :JSR, :JSR
+    LDA   autoplay_song_volume.long
+    AND   #$7F
+    TAX
+    SNES_RAM_JMP Aoba::Audio::Action::PlaySong.invoke_icb, :JMP, :JMP
+  end
+
+end
+

@@ -1,0 +1,28 @@
+; ROM configuration
+__mode = :exhirom
+__mode = :sa1 if SNES::ENABLE_SA1
+
+if SNES::ENABLE_SA1
+  @locate_at bank: 0
+  def _sa1_irq
+    JML   Aoba::sa1_irq
+  end
+
+  ::SA1::Interrupt.IRQ = _sa1_irq.to_sym
+end
+
+SNES.configure __mode do
+  game_code Aoba::GAME_CODE
+  game_title Aoba::GAME_TITLE
+  destination Aoba::DESTINATION
+  
+  rom_type true, true, sa1: SNES::ENABLE_SA1
+  if SNES::ENABLE_SA1
+    ram_size $20000 
+  else
+    ram_size $2000
+  end
+
+  on :IRQ, _irq
+  on :IRQBRK, _brk
+end

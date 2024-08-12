@@ -1,0 +1,129 @@
+module Aoba::Audio
+
+  ;; Sets the master volume
+  ;;
+  ;; @param REGA volume
+  Aoba::Script.callback "Audio_Initialize", bank: AUDIO_ROM_BANK do
+
+    CPU.set A: 8
+
+    ;; Uploads the driver
+    LDA   #Aoba::Thread::Event::USEREVENT_ID
+    JSL   Aoba::Thread::Event.allocate_icb_long
+    X.is_a! Aoba::Audio::Event::UploadDriver::Event
+    LDA   #Aoba::Audio::Event::UploadDriver::ID
+    STA   X[:event_id]
+    LDA   Aoba::Audio.thread_id
+    CPU.set A: 16
+    JML   Aoba::Thread::send_event_icb_long
+
+  end
+
+  ;; Sets the master volume
+  ;;
+  ;; @param REGA volume
+  Aoba::Script.callback "Audio_SetMasterVolume", bank: AUDIO_ROM_BANK do
+
+    ;; Allocates and configures the event
+    LDA   #Aoba::Thread::Event::USEREVENT_ID
+    JSL   Aoba::Thread::Event.allocate_icb_long
+    X.is_a! Aoba::Audio::Event::SetMasterVolume::Event
+    CPU.set A: 8
+    LDA   dp(Aoba::Script.register_a)
+    STA   X[:volume]
+    LDA   #Aoba::Audio::Event::SetMasterVolume::ID
+    STA   X[:event_id]
+    LDA   Aoba::Audio.thread_id
+    CPU.set A: 16
+
+    JML   Aoba::Thread::send_event_icb_long
+  end
+
+  ;; Sets up the echo
+  Aoba::Script.callback "Audio_SetupEcho", bank: AUDIO_ROM_BANK do
+
+      ;; Allocates and configures the event
+    LDA   #Aoba::Thread::Event::USEREVENT_ID
+    JSL   Aoba::Thread::Event.allocate_icb_long
+    X.is_a! Aoba::Audio::Event::SetupEcho::Event
+    LDA   dp(Aoba::Script.register_a)
+    STA   X[:delay]
+    CPU.set A: 8
+    LDA   dp(Aoba::Script.register_a) + 2
+    STA   X[:volume]
+    LDA   #Aoba::Audio::Event::SetupEcho::ID
+    STA   X[:event_id]
+    LDA   Aoba::Audio.thread_id
+    CPU.set A: 16
+
+    JML   Aoba::Thread::send_event_icb_long
+  end
+
+  ;; Waits for the audio thread to be ready
+  ;;
+  ;; @param REGA level address
+  Aoba::Script.callback "Audio_WaitForReadyEvent", bank: AUDIO_ROM_BANK do
+    
+    ;; Send the ready event request to the level thread
+    CPU.set A: 8
+    LDA   #Aoba::Thread::Event.USEREVENT_ID
+    JSL   Aoba::Thread::Event.allocate_icb_long
+    X.is_a! Aoba::Thread::ReadyEvent::Event
+    LDA   #Aoba::Audio::Event::ReadyEvent::ID
+    STA   X[:event_id]
+    LDA   dp(Aoba::Script.register_a)
+    STA   X[:response_id]
+    LDA   Audio.thread_id
+    CPU.set A: 16
+    JSL   Aoba::Thread.send_event_icb_long
+
+    ;; Waits for the level to be ready
+    CPU.set A: 8
+    LDA   dp(Aoba::Script.register_a)
+    XBA
+    LDA   Aoba::Audio.thread_id
+    CPU.set A: 16
+    JML   Aoba::Thread.wait_for_ready_icb_long
+  end
+
+  ;; Fades out to a different song
+  ;;
+  ;; @param REGA same as FadeVolume::Event
+  Aoba::Script.callback "Audio_FadeSongToVolume", bank: AUDIO_ROM_BANK do
+
+    ;; Send the ready event request to the level thread
+    CPU.set A: 8
+    LDA   #Aoba::Thread::Event.USEREVENT_ID
+    JSL   Aoba::Thread::Event.allocate_icb_long
+    X.is_a! Aoba::Audio::Event::FadeVolume::Event
+    LDA   #Aoba::Audio::Event::FadeVolume::ID
+    STA   X[:event_id]
+    CPU.set A: 16
+    LDA   dp(Aoba::Script.register_a)
+    STA   X[:target_volume]
+    STZ   X[:autoplay_song_id]
+    LDA   Audio.thread_id
+    JSL   Aoba::Thread.send_event_icb_long
+
+  end
+
+
+  ;; Fades out to a different song
+  ;;
+  ;; @param REGA same as FadeVolume::Event
+  Aoba::Script.callback "Audio_StopSong", bank: AUDIO_ROM_BANK do
+
+    ;; Send the ready event request to the level thread
+    CPU.set A: 8
+    LDA   #Aoba::Thread::Event.USEREVENT_ID
+    JSL   Aoba::Thread::Event.allocate_icb_long
+    X.is_a! Aoba::Audio::Event::StopSong::Event
+    LDA   #Aoba::Audio::Event::StopSong::ID
+    STA   X[:event_id]
+    LDA   Audio.thread_id
+    JSL   Aoba::Thread.send_event_icb_long
+    CPU.set A: 16
+
+  end
+
+end

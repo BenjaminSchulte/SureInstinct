@@ -1,0 +1,222 @@
+module Aoba::Control
+
+  ;; Waits for auto-joypad status
+  macro _wait_for_autojoy
+    CPU.set A: 8
+  _loop:
+    LDA   CPU.HVBJOY.long
+    LSR   A
+    BCS   _loop
+    CPU.set A: 16
+  end
+
+  ;; Maps the SNES keys to the controller keys
+  ;;
+  ;; @param A unmapped keys
+  ;; @param Y gamepad
+  macro _map_keys_from_controller(keys)
+    ;; input: byetUDLRaxlr0000
+    LSR   A
+    LSR   A
+    LSR   A
+    LSR   A
+
+    STA   dp(keys)
+    LDA   #0
+    TYX
+    BRA   _loop_enter
+
+  _key_pressed:
+    ORA   X[:key_r]
+  _loop:
+    INX
+    INX
+  _loop_enter:
+    LSR   dp(keys)
+    BCS   _key_pressed
+    BNZ   _loop
+
+  _end_of_loop:
+  end
+
+  ;; Shared trigger macro used for keydown/keyup
+  macro __trigger_common(id, is, mask)
+    Y.is_a! GamepadPlayer
+
+    LDX   global_listeners
+    BZE   _no_global_listener
+
+  _has_global_listener:
+    X.is_a! Listener
+    LDA   Y[is]
+    AND   X[mask]
+    BNZ   _trigger
+
+  _no_global_listener:
+    LDX   Y[:listener]
+    BZE   _no_listener
+
+  _loop_listener:
+    X.is_a! Listener
+    LDA   Y[is]
+    AND   X[mask]
+    BZE   _next_listener
+
+  _trigger:
+    ;; Allocates an event
+    PHX
+    PHY
+    CPU.set A: 8
+    LDA   #Thread::Event::SYSTEMEVENT_ID
+    JSR   Thread::Event.allocate_icb
+
+    ;; Configures the event
+    X.is_a! ControlEvent
+    PLY
+    LDA   #CONTROL_THREAD_ID
+    STA   X[:sender_thread_id]
+    LDA   #id
+    STA   X[:event_id]
+    LDA   Y[:id]
+    STA   X[:gamepad_id]
+    CPU.set A: 16
+    LDA   Y[is]
+    STA   X[:keys]
+
+    ;; Sends the event
+    PLY
+    Y.is_a! Listener
+    LDA   Y[:thread_id]
+    JMP   Thread.send_event_icb
+
+  _next_listener:
+    X.is_a! Listener
+    LDA   X[:next_listener]
+    TAX
+    BNZ   _loop_listener
+
+  _no_listener:
+  end
+
+  ;; Key has been pressed
+  ;;
+  ;; @param Y gamepad
+  ;; @ignore-thread-safety
+  def _trigger_keydown
+    __trigger_common KEYDOWN_EVENT_ID, :_keydown, :keydown_triggermask
+    ;; __trigger_common invokes RTS
+  end
+
+  ;; Key has been released
+  ;;
+  ;; @param Y gamepad
+  ;; @ignore-thread-safety
+  def _trigger_keyup
+    __trigger_common KEYUP_EVENT_ID, :_keyup, :keyup_triggermask
+    ;; __trigger_common invokes RTS
+  end
+
+  ;; Updates a control
+  ;;
+  ;; @param A mapped keys
+  ;; @param Y gamepad
+  def _update_control
+    Y.is_a! GamepadPlayer
+    STA   Y[:keys]
+    EOR   Y[:old_keys]
+    AND   Y[:keys]
+    STA   Y[:_keydown]
+    BZE   _no_keydown
+
+  _keydown:
+    PHY
+    _trigger_keydown
+    PLY
+    Y.is_a! GamepadPlayer
+
+  _no_keydown:
+    LDA   Y[:keys]
+    EOR   Y[:old_keys]
+    AND   Y[:old_keys]
+    STA   Y[:_keyup]
+    BZE   _no_keyup
+
+  _keyup:
+    PHY
+    _trigger_keyup
+    PLY
+    Y.is_a! GamepadPlayer
+
+  _no_keyup:
+    LDA   Y[:keys]
+    STA   Y[:old_keys]
+    RTS
+  end
+
+  _update_vars = create_shared_routine_variables do
+    declare :keys, as: :uint16
+    declare :tmp2, as: :uint16
+  end
+
+  ;; Updates the controls
+  def update
+    routine from_A: 16, from_XY: 16 do
+      is_thread_safe
+      input A
+
+      use_shared_variables _update_vars
+
+      execute do |keys, tmp2|
+        _wait_for_autojoy
+
+        LDX   #(MAX_GAMEPADS * 2) - 2
+      _loop_controls:
+        LDY   gamepad_map, X
+        BZE   _skip_control
+
+        Y.is_a! GamepadPlayer
+        LDA   CPU.JOY.long, X
+        STA   dp(keys)
+        AND   #$F
+        BZE   _process_gamepad
+        if MOUSE_SUPPORT
+          CMP   #1
+          BEQ   _process_mouse
+        end
+        BRA   _skip_control
+
+      _process_gamepad:
+        LDA   dp(keys)
+        PHX
+
+        BZE   _skip_map_keys
+      _do_map_keys:
+        _map_keys_from_controller keys
+      _skip_map_keys:
+        _update_control
+ 
+        PLX
+        LDA   Y[:flags] - 1
+        BPL   _skip_control
+
+        _disconnect_mouse keys if MOUSE_SUPPORT
+
+      _skip_control:
+        DEX
+        DEX
+        BPL   _loop_controls
+        BRA   _rts
+
+        ;; We've got a mouse connected!
+      _process_mouse:
+        if MOUSE_SUPPORT
+          _update_mouse keys, tmp2
+          BRA   _skip_control
+        end
+
+      _rts:
+      end
+    end
+  end
+
+end

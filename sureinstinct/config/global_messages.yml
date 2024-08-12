@@ -1,0 +1,5 @@
+all_fonts:
+  system_characters:
+    message: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!?$:."
+    compress: false
+    important: true

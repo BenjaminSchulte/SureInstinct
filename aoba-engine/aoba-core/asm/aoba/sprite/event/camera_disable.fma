@@ -1,0 +1,13 @@
+module Aoba::Sprite::Event::CameraDisable
+
+  ;; The event
+  class Event < Base 
+  end
+
+  ;; Disables the sprite camera
+  ;; @ignore-thread-safety
+  ID = List.create "CameraDisable" do
+    JMP   Action::Camera.disable
+  end
+
+end

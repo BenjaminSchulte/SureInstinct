@@ -1,0 +1,175 @@
+module Aoba::Composer::Action::FadeScreen
+
+  ;; The target brightness (negative if not fading)
+  declare :target_brightness, as: :uint8, in: ::Memory::VariableRAM
+
+  ;; The timer used for brightness configuration
+  declare :timer, as: :uint16, in: ::Memory::VariableRAM
+
+
+
+  ;; The temporary RAM
+  scope :TempRAM, in: Aoba::Composer::ActionRAM
+  
+  ;; The fade speed
+  declare :fade_speed, as: :uint8, in: TempRAM
+  
+  ;; The fade speed
+  declare :fade_direction, as: :uint8, in: TempRAM
+
+
+  ;; Required the timer to be allocated
+  macro require_timer_X
+    LDX   timer
+    BNZ   _has_timer
+
+  _allocate_timer:
+    ;CPU.with_bank VARIABLE_RAM_BANK, from_bank: FIXED_RAM_BANK do
+      LDA   thread_id.long
+      JSL   Thread::Timer.allocate_icb_long
+    ;end
+    STX   timer
+  
+  _has_timer:
+  end
+
+
+  ;; Initiates the fading
+  ;;
+  ;; @param A speed
+  def start
+    Thread.assert_thread thread_id
+
+    CPU.set A: 8
+    STA   dp(fade_speed)
+    BIT   dp(x00FF)
+    BNZ   _is_slow_fade
+
+    ;; The speed is zero (i.e. instant fade)
+  _instant_fade:
+    LDA   target_brightness
+    BNZ   _instant_fade_with_value
+    ORA   #$80
+  _instant_fade_with_value:
+    STA   Aoba::Screen.register.INIDISP
+  
+    ;; Fade has been finished
+  _fade_finished:
+    SEC
+    ROR   target_brightness
+    CPU.set A: 16
+    Event::WaitForFadeScreen.trigger_all
+    RTS
+
+    A.pretend_size 8
+
+    ;; The fade is required to be done slowly
+  _is_slow_fade:
+    LDA   Aoba::Screen.register.INIDISP
+    AND   #$7F
+    STA   dp(fade_direction)
+    SEC
+    SBC   target_brightness
+    BZE   _fade_finished
+
+    ;; Tests whether the fade is only a single step fade
+    BPL   _is_negative_fade
+
+  _is_positive_fade:
+    INC   A
+    BZE   _instant_fade
+    INC   dp(fade_direction)
+    BRA   _start_fade
+
+  _is_negative_fade:
+    DEC   A
+    BZE   _instant_fade
+    DEC   dp(fade_direction)
+
+    ;; Start fade using timer
+  _start_fade:
+    LDA   dp(fade_direction)
+    STA   Aoba::Screen.register.INIDISP
+
+    require_timer_X
+
+    CPU.set A: 16
+    LDA   dp(fade_speed)
+    AND   dp(x00FF)
+    TAY
+    TDC ; A=0
+    JSL   Aoba::Thread::Timer.queue_long
+
+  end
+
+  ;; Resumes the fade effect
+  def trigger
+    Thread.assert_thread thread_id
+    CPU.set A: 8
+
+    LDA   target_brightness
+    BMI   _finish_fade
+
+    LDA   Aoba::Screen.register.INIDISP
+    AND   #$7F
+    CMP   target_brightness
+    BEQ   _finish_fade
+
+  _resume_fade:
+    BGE   _fade_dark
+
+  _fade_bright:
+    INC   A
+    STA   Aoba::Screen.register.INIDISP
+    CMP   target_brightness
+    BEQ   _finish_fade
+    BRA   _resume_next_frame
+
+  _fade_dark:
+    DEC   A
+    BNZ   _fade_dark_not_zero
+
+  _fade_dark_zero:
+    ORA   #$80
+    STA   Aoba::Screen.register.INIDISP
+    BRA   _finish_fade
+
+  _fade_dark_not_zero:
+    STA   Aoba::Screen.register.INIDISP
+    CMP   target_brightness
+    BNE   _resume_next_frame
+
+  _finish_fade:
+    SEC
+    ROR   target_brightness
+
+    CPU.set A: 16
+    Event::WaitForFadeScreen.trigger_all
+    RTS
+    
+  _resume_next_frame:
+    LDX   timer
+    X.is_a! Aoba::Thread::Timer::TimerInstance
+    LDA   X[:interval]
+    CPU.set A: 16, XY: 16
+    AND   dp(x00FF)
+    TAY
+    TDC
+    JSL   Aoba::Thread::Timer.queue_long
+  end
+
+  ;; Timer test
+  TimerTest.on timer.long, trigger
+
+  ;; Initial setup
+  Aoba::Event.on :composer_initialize_ram_8 do
+    STZ   target_brightness
+    DEC   target_brightness
+  end
+
+  ;; Initial setup
+  Aoba::Event.on :composer_initialize_ram_16 do
+    STZ   timer
+  end
+
+end

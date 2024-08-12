@@ -1,0 +1,36 @@
+module Aoba::Effect
+
+  class TimerHandler < Aoba::Thread::TimerHandler
+    ;; Update callback
+    declare :update_callback, as: :uint16
+
+    ;; Miniblock memory
+    declare :memory, as: :uint16
+  end
+
+  TimerHandlerList = Aoba::Thread::TimerHandlerList.new(EFFECT_ROM_BANK, RAM, handler_class: TimerHandler)
+  TimerHandlerList.event.on :trigger do |rts|
+    STY   dp(current_effect_timer)
+    LDA   Y[:update_callback]
+    PEA   #rts - 1
+    PHA
+    RTS
+  end
+end
+
+module Aoba
+
+  EffectThread = Aoba::Thread::Builder.create "Effect" do
+    locate_at bank: EFFECT_ROM_BANK
+    priority EFFECT_PRIORITY
+
+    use_dp_ram Aoba::Effect.RAM
+    use_temporary Aoba::Effect._calc0
+    use Aoba::Effect::TimerHandlerList
+
+    initialize_ram do
+      Aoba::Effect.initialize_vblank_update
+    end
+  end
+
+end

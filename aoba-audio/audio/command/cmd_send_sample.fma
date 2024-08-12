@@ -1,0 +1,109 @@
+module Command::SendSample
+
+  ;; Temporary RAM
+  scope :TempRAM, in: ::IPC::Transfer.SharedTransferRAM
+
+  declare :sample_id, as: :uint8, in: TempRAM
+
+  ;; Processes the reset command
+  def process
+    ; Is this sample already uploaded?
+    MOV   X, dp(SPC.PORT1)
+    MOV   A, addr(Sample.snes_sample_id_map, X)
+    MOV   dp(SPC.PORT1), A
+    BMI   _is_new_sample
+
+  _is_existing_sample:
+    ; Cancel
+    MOV   dp(SPC.PORT0), dp(IPC.last_ipc_value)
+    RET
+
+  _is_new_sample:
+    ; Store the current sample
+    MOV   A, dp(Sample.next_sample_id)
+    MOV   Y, A
+    MOV   addr(Sample.snes_sample_id_map, X), A
+    MOV   dp(sample_id), A
+    MOV   A, X
+    MOV   addr(Sample.sample_id_snes_map, Y), A
+
+    ; Sample ID -> Sample directory offset
+    MOV   A, dp(sample_id)
+    ASL   A
+    ASL   A
+    MOV   X, A
+
+    ; Read the sample offset
+    MOVW  YA, dp(Sample.next_sample_offset)
+    MOVW  dp(IPC::Transfer.transfer_target_address), YA
+    MOVW  dp(SPC.PORT2), YA
+    MOV   dp(SPC.PORT0), dp(IPC.last_ipc_value)
+
+    ; Write start address to sample directory
+    MOV   addr(Sample.sample_directory, X), A
+    MOV   A, Y
+    MOV   addr(Sample.sample_directory + 1, X), A
+
+    ; Wait SNES to answer with sample loop offset
+    IPC.wait_for_ack
+
+    ; Store loop address
+    MOVW  YA, dp(SPC.PORT2)
+    BNZ   _looped
+    MOV   Y, #Sample.mute_sample_data.to_sym >> 8
+    MOV   A, #Sample.mute_sample_data
+  _looped:
+    MOV   addr(Sample.sample_directory + 2, X), A
+    MOV   A, Y
+    MOV   addr(Sample.sample_directory + 3, X), A
+
+    ; Store sample volume
+    MOV   A, dp(SPC.PORT1)
+    MOV   dp(SPC.PORT0), dp(IPC.last_ipc_value)
+    MOV   X, dp(sample_id)
+    MOV   addr(Sample.volumes, X), A
+
+    ; Wait for sample pitch
+    IPC.wait_for_ack
+
+    ; Store pitch
+    MOV   A, dp(SPC.PORT2)
+    MOV   addr(Sample.sample_pitch_low_byte, X), A
+    MOV   A, dp(SPC.PORT3)
+    MOV   addr(Sample.sample_pitch_high_byte, X), A
+
+    ; Store adsr
+    MOV   A, dp(SPC.PORT1)
+    MOV   dp(SPC.PORT0), dp(IPC.last_ipc_value)
+    MOV   addr(Sample.sample_adsr_low_byte, X), A
+
+    ; Wait SNES to answer with size of data to copy
+    IPC.wait_for_ack
+
+    ; Store adsr
+    MOV   A, dp(SPC.PORT1)
+    MOV   addr(Sample.sample_adsr_high_byte, X), A
+
+    ; Store size
+    MOVW  YA, dp(SPC.PORT2)
+    MOV   dp(SPC.PORT0), dp(IPC.last_ipc_value)
+    MOVW  dp(IPC::Transfer.transfer_data_size), YA
+    MOV   addr(Sample.sample_size_low_byte, X), A
+    MOV   A, Y
+    MOV   addr(Sample.sample_size_high_byte, X), A
+
+    ; Update sample size
+    MOVW  YA, dp(Sample.next_sample_offset)
+    ADDW  YA, dp(IPC::Transfer.transfer_data_size)
+    ADDW  YA, dp(IPC::Transfer.transfer_data_size)
+    ADDW  YA, dp(IPC::Transfer.transfer_data_size)
+    MOVW  dp(Sample.next_sample_offset), YA
+
+    ; Some afterwork
+    INC   dp(Sample.next_sample_id)
+
+    ; Transfers the data itself
+    JMP   IPC::Transfer.transfer
+  end
+
+end

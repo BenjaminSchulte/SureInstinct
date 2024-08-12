@@ -1,0 +1,73 @@
+module AssetConfig
+
+  module TileList
+    FLOOR = 0
+    ABYSS = 1
+    BROKEN3 = 2
+    BROKEN2 = 3
+    BROKEN1 = 4
+    SOLDOUT1 = 5
+    SOLDOUT2 = 6
+    LASER1H = 7
+    LASER1V = 8
+    BRIDGE = 9
+    BROKENWALL_2H = 10
+    BROKENWALL_1H = 11
+    BROKENWALL_0H = 12
+    BROKENWALL_2V = 13
+    BROKENWALL_1V = 14
+    BROKENWALL_0V = 15
+    ONESIDEWALL_HU = 16
+    ONESIDEWALL_HD = 17
+    ONESIDEWALL_VU = 18
+    ONESIDEWALL_VD = 19
+  end
+
+  static_camera = Aoba::Camera::Basic.create do
+  end
+end
+
+module Aoba::Sprite
+
+  class Instance
+    use Movable
+    use Renderable
+    use Controlable
+    use Collidable
+    use Automatable
+    use Leavable
+
+    ;; should be last
+    use Slot::SlotOwner
+
+    declare :current_tile_x, as: :uint16
+    declare :current_tile_y, as: :uint16
+    declare :sprite_layer, as: :uint16
+    declare :object_userdata1, as: :uint16
+    declare :object_userdata2, as: :uint16
+
+    declare :ball_flags, as: :uint8
+
+    declare :last_tile_x, as: :uint16
+    declare :last_tile_y, as: :uint16
+
+    declare :next_bomb, as: :uint16
+    declare :next_map_sprite, as: :uint16
+  end
+
+  bomb_list = LinkedList.create(Instance, :next_bomb)
+  map_sprite_list = LinkedList.create(Instance, :next_map_sprite)
+
+  Instance.event.on :reset8 do
+    STZ   X[:ball_flags]
+  end
+  Instance.event.on :reset16 do
+    STZ   X[:current_tile_x]
+    STZ   X[:current_tile_y]
+    STZ   X[:sprite_layer]
+  end
+  Instance.event.on :update_after_transaction do
+    Game::Ball::Bomb.count_down_bombs
+  end
+
+end

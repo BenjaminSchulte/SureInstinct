@@ -1,0 +1,422 @@
+module Aoba::DebugScreen
+
+  locate_at bank: SYSTEM_ROM_BANK
+
+  LETTER_INDEX = " ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!?$:."
+ 
+  declare :old_stack_address, as: :uint16, in: ::Memory.FixedRAM
+  declare :error_message, as: :uint16, in: ::Memory.FixedRAM
+  declare :vram_address, as: :uint16, in: ::Memory.FixedRAM
+  __next_dbg_msg_id = 1
+
+  macro __write_color(r, g, b)
+    clr = r | (g << 5) | (b << 10)
+    LDA   #clr
+    STA   PPU.CGDATA
+    LDA   #clr >> 8
+    STA   PPU.CGDATA
+  end
+
+  macro __write_palette
+    STZ   PPU.CGADD
+    __write_color 2, 8, $10
+    __write_color 8, $10, $14
+    __write_color $1D, $1D, $1F
+    __write_color $1F, $1F, $1F
+  end
+
+  macro __clear_screen
+    LDX   #32 * 32
+    LDY   #$400
+    STY   PPU.VMADD
+
+  _loop:
+    STZ   PPU.VMDATA
+    DEX
+    BNZ   _loop
+  end
+
+  macro __move_cursor(x, y)
+    LDY   #$400 + x + y * 32
+    JSL   set_cursor_long
+  end
+
+  def set_cursor_long
+    PHP
+    CPU.set A: 16
+    TYA
+    STA   vram_address.long
+    STY   PPU.VMADD
+    PLP
+    RTL
+  end
+
+  ;; @ignore-thread-safety
+  def __write_text_call
+    CPU.set A: 8
+  _loop_write_text:
+    LDA   $C0.as_bank.long, X
+    BMI   _end_of_loop
+    STA   PPU.VMDATA
+    CPU.set A: 16
+    LDA   vram_address.long
+    INC   A
+    STA   vram_address.long
+    CPU.set A: 8
+    INX
+    BRA   _loop_write_text
+
+  _end_of_loop:
+    CPU.set A: 16
+  end
+
+  ;; @ignore-thread-safety
+  def __write_text_ram_call
+    CPU.set A: 8
+  _loop_write_text:
+    LDA   $7E.as_bank.long, X
+    BMI   _end_of_loop
+    STA   PPU.VMDATA
+    CPU.set A: 16
+    LDA   vram_address.long
+    INC   A
+    STA   vram_address.long
+    CPU.set A: 8
+    INX
+    BRA   _loop_write_text
+
+  _end_of_loop:
+    CPU.set A: 16
+  end
+
+  macro __create_text_block(text)
+    block = nil
+    Compiler.with_global_context nil do
+      block = DataBlock.new "__text_#{__next_dbg_msg_id}" do
+        text.bytes.each do |chr|
+          db   LETTER_INDEX.bytes.index(chr)
+        end
+        db   $FF
+      end
+      block.override_located_at bank: $C0
+    end
+    __next_dbg_msg_id += 1
+    return block.to_sym
+  end
+
+  ;; @ignore-thread-safety
+  def __to_digit
+    AND   #$F
+    CMP   #$A
+    BGE   _is_letter
+  _is_digit:
+    CLC
+    ADC   #53
+    RTS
+
+  _is_letter:
+    SEC
+    SBC   #9
+  end
+  
+  ;; @ignore-thread-safety
+  def __write_number
+    A.pretend_size 16
+
+    ; A = number
+    ; X = num digits
+    PEA   #$7E
+    PLB
+
+    STA   dp(2)
+    LDA   #$FFFF
+    STA   $FFF0, X
+    DEX
+    LDA   dp(2)
+  _loop:
+    CPU.set A: 8
+    __to_digit
+    STA   $FFF0, X
+    CPU.set A: 16
+    LDA   dp(2)
+    LSR   A
+    LSR   A
+    LSR   A
+    LSR   A
+    STA   dp(2)
+    DEX
+    BPL   _loop
+    LDX   #$FFF0
+    PLB
+    __write_text_ram_call
+  end
+
+  macro __write_text(text)
+    LDX   #__create_text_block(text)
+    __write_text_call
+  end
+
+  macro __setup_ppu_registers
+    CPU.set A: 8
+    LDA   #$0
+    STA   PPU.BGMODE
+    LDA   #$4
+    STA   PPU.BGSC[0]
+    LDA   #0
+    STA   PPU.BG12NBA
+    LDA   #$F
+    STA   PPU.INIDISP
+    CPU.set A: 16
+  end
+
+  def __upload_font
+    ;; Write empty tile to VRAM
+    LDA   #$80
+    STA   PPU.VMAIN
+    STZ   PPU.VMADD
+    LDY   #8
+    CPU.set A: 16
+  _write_empty_tile:
+    STZ   PPU.VMDATA
+    DEY
+    BNZ   _write_empty_tile
+
+    ;; Upload font
+    CPU.set A: 8
+    STZ   PPU.VMAIN
+    LDA   #SystemText.system_characters.bank
+    STA   dp(2)
+    LDA   #MonospaceFont.system.bank
+    PHA
+    PLB
+    CPU.set A: 16
+    LDA   #SystemText.system_characters
+    STA   dp(0)
+    LDY   #0
+    LDA   #MonospaceFont.system
+    STA   dp(3)
+
+    CPU.set A: 8
+  _loop_text:
+    LDA   0.indirect.long, Y
+    BMI   _end_of_loop
+
+    CPU.set A: 16
+    AND   #$FF
+    ASL
+    CLC
+    ADC   dp(3)
+    TAX
+    LDA   0, X
+    TAX
+    PHY
+    LDY   #8
+  _loop_char:
+    LDA   0, X
+    INX
+    INX
+    STA   PPU.VMDATA.long
+    DEY
+    BNZ   _loop_char
+    PLY
+    INY
+    BRA   _loop_text
+
+  _end_of_loop:
+    CPU.set A: 8
+    LDA   #0
+    PHA
+    PLB
+    CPU.set A: 16
+  end
+
+  def enter
+    PHP
+    SEI
+    CPU.set A: 16, XY: 16
+    PHA
+    PHX
+    TSC
+    STA   old_stack_address.long
+    TAX
+    CLC
+    EOR   #$800
+    TCS
+    ADC   #$100
+    PHX
+    PHD
+    TCD
+    PHY
+    PHB
+
+    CPU.set A: 8
+    LDA   #0
+    PHA
+    PLB
+    STA   CPU.HDMAEN.long
+
+    SNES.initialize
+
+    __write_palette
+    __upload_font
+    __clear_screen
+
+    __move_cursor 1, 1
+    __write_text "Oh no! The game crashed!"
+
+    __move_cursor 1, 3
+    LDA   error_message.long
+    TAX
+    BZE   _no_error_message
+    __write_text_call
+  _no_error_message:
+
+    __move_cursor 1, 7
+    __write_text "A $"
+    LDA   6, S
+    STA   dp(0)
+    TAX
+    LDA   3, X ;A
+    LDX   #4
+    __write_number
+
+    __move_cursor 1, 8
+    __write_text "X $"
+    LDX   dp(0)
+    LDA   1, X
+    LDX   #4
+    __write_number
+    
+    __move_cursor 1, 10
+    __write_text "TID $"
+    LDA   Memory.active_thread_id.long
+    LDX   #2
+    __write_number
+
+    __move_cursor 11, 7
+    __write_text "Y $"
+    LDA   2, S
+    LDX   #4
+    __write_number
+
+    __move_cursor 11, 8
+    __write_text "D $"
+    LDA   4, S
+    LDX   #4
+    __write_number
+
+    __move_cursor 11, 10
+    __write_text "P $"
+    LDX   dp(0)
+    LDA   5, X
+    LDX   #2
+    __write_number
+
+    __move_cursor 21, 7
+    __write_text "S  $"
+    A.pretend_size 16
+    LDA   6, S
+    CLC
+    ADC   #9
+    STA   dp(4)
+    LDX   #4
+    __write_number
+
+    __move_cursor 21, 8
+    __write_text "DB $"
+    LDA   1, S
+    LDX   #2
+    __write_number
+
+    __move_cursor 0, 25
+    __write_text GIT_COMMIT_HASH
+
+    LDA   dp(4)
+    AND   #$FFF0
+    SEC
+    SBC   #$20
+    STA   dp(4)
+    STA   dp(8)
+    LDY   #$400 + 1 + 13 * 32
+    STY   dp(6)
+    LDY   #10
+    STY   dp(10)
+  _write_address_loop:
+    LDA   dp(6)
+    STA   PPU.VMADD
+    CLC
+    ADC   #32
+    STA   dp(6)
+    LDA   dp(8)
+    LDX   #4
+    __write_number
+    LDA   dp(8)
+    CLC
+    ADC   #8
+    STA   dp(8)
+    DEC   dp(10)
+    BNZ   _write_address_loop
+
+    LDY   #$400 + 7 + 13 * 32
+    STY   dp(6)
+    LDY   #10
+    STY   dp(12)
+    LDX   dp(4)
+
+  _write_data_loop:
+    LDY   dp(6)
+    STY   PPU.VMADD
+    LDY   #8
+    STY   dp(10)
+  _write_data_inner_loop:
+    LDA   $7E.as_bank.long, X
+    LDX   #2
+    __write_number
+    CPU.set A: 8
+    STZ   PPU.VMDATA
+    CPU.set A: 16
+    INC   dp(4)
+    LDX   dp(4)
+    DEC   dp(10)
+    BNZ   _write_data_inner_loop
+
+    LDA   dp(6)
+    CLC
+    ADC   #32
+    STA   dp(6)
+
+    DEC   dp(12)
+    BNZ   _write_data_loop
+
+
+
+    __setup_ppu_registers
+
+  _die:
+    WAI
+    BRA   _die
+
+  end
+
+end
+
+module Aoba
+
+  macro fatal_error(reason)
+    __old_A = A.size
+    SEI
+    PHP
+    CPU.set A: 16
+    PHA
+    LDA   #DebugScreen.__create_text_block(reason)
+    STA   DebugScreen.error_message.long
+    PLA
+    PLP
+    BRK
+  _die:
+    WAI
+    BRA   _die
+    A.pretend_size __old_A
+  end
+
+end

@@ -1,0 +1,8 @@
+module Aoba::Control
+  MOUSE_SUPPORT = true
+end
+module Aoba::Sprite
+  CREATURE_HEADER_ROM_BANK = $C4
+  SPRITE_MAX_VISIBLE_POSITION_X = 128 * 16
+  SPRITE_MAX_VISIBLE_POSITION_Y = 128 * 16
+end

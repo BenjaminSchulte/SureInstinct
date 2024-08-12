@@ -1,0 +1,85 @@
+module Aoba::Audio
+  module IPC
+    ;; The bit which toggles whenever a new command comes in
+    IPC_TOGGLE_BIT = $40
+
+    ;; Stops the song and resets the sample buffer
+    CMD_RESET = $01
+
+    ;; Sends a new sample
+    CMD_SEND_SAMPLE = $02
+
+    ;; Uploads the sfx database
+    CMD_UPLOAD_SFX_DATABASE = $03
+
+    ;; Sets the master volume
+    CMD_SET_MASTER_VOLUME = $04
+
+    ;; Stops the song playback
+    CMD_STOP_PLAYBACK = $05
+
+    ;; Plays a SFX
+    CMD_PLAY_SFX = $06
+
+    ;; Sets the SFX volume
+    CMD_SET_SFX_VOLUME = $07
+
+    ;; Uploads the song
+    CMD_UPLOAD_SONG = $08
+
+    ;; Plays the song
+    CMD_PLAY_SONG = $09
+
+    ;; Set ups the echo
+    CMD_SETUP_ECHO = $0A
+
+    ;; Start a new stream
+    CMD_START_STREAM = $0B
+
+    ;; Stops the stream
+    CMD_STOP_STREAM = $0C
+
+    ;; Unload sample
+    CMD_UNLOAD_SAMPLE = $0D
+
+    ;; Defrag samples
+    CMD_DEFRAG_SAMPLES = $0E
+
+    ;; Defrag samples
+    CMD_SET_ECHO_VOLUME = $0F
+  end
+
+  ;; Maximum number of commands send to SNES
+  MAX_SA1_SNES_COMMANDS = 4
+
+  ;; Maximum amount of instruments
+  MAX_INSTRUMENTS = 256
+
+  ;; The stream data bank
+  STREAM_DATA_BANK = $C4
+
+  ;; The instrument data bank
+  INSTRUMENT_DATA_BANK = $C4
+
+  ;; The instrument header
+  class InstrumentRomHeader
+    ;; The loop address
+    declare :loop_address, as: :uint16
+
+    ;; The instrument volume
+    declare :volume, as: :uint8
+
+    ;; The loop address
+    declare :pitch, as: :uint16
+
+    ;; The instrument volume
+    declare :adsr, as: :uint16
+
+    ;; The data size / 3
+    declare :size, as: :uint16
+
+    ;; Pointer to the sample data
+    declare :sample_address, as: :uint24
+  end
+
+end

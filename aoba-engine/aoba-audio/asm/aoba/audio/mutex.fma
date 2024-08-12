@@ -1,0 +1,48 @@
+module Aoba::Audio::Mutex
+
+  ;; Stream flags
+  declare :state, as: :uint8, in: ::Memory::VariableRAM
+
+  ;; Locks the mutex
+  def lock_icb
+    PHP
+    CPU.set A: 8
+    SEI
+  _loop:
+    LDA   state
+    BZE   _ok
+    LDY   #1
+    JSL   Thread.delay_long
+    BRA   _loop
+  _ok:
+    INC   state
+    CLI
+    PLP
+  end
+
+  def lock
+    CPU.with_bank! VARIABLE_RAM_BANK do
+      lock_icb
+    end
+  end
+
+  ;; Unlocks the mutex
+  def unlock_icb
+    PHP
+    CPU.set A: 8
+    DEC   state
+    PLP
+  end
+
+  def unlock
+    CPU.with_bank! VARIABLE_RAM_BANK do
+      unlock_icb
+    end
+  end
+
+  ;; Clear stream flags on initialize
+  Aoba::Event.on :system_initialize_A8_VARRAM do
+    STZ   state
+  end
+
+end

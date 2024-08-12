@@ -1,0 +1,152 @@
+module Game::Level::Sprite::Fan
+  locate_at bank: Aoba::SPRITE_ROM_BANK
+
+  _axis_x = Aoba::Sprite._calc0
+  _axis_y = Aoba::Sprite._calc0 + 2
+  _distance = Aoba::Sprite._calc1
+
+  macro _speed_lookup_for_distance(float)
+    dw   -1 * (4 / 4) * float * FAN_POWER
+    dw   -1 * (3 / 4) * float * FAN_POWER
+    dw   -1 * (2 / 4) * float * FAN_POWER
+    dw   -1 * (1 / 4) * float * FAN_POWER
+    dw   1 * (1 / 4) * float * FAN_POWER
+    dw   1 * (2 / 4) * float * FAN_POWER
+    dw   1 * (3 / 4) * float * FAN_POWER
+    dw   1 * (4 / 4) * float * FAN_POWER
+  end
+
+  datablock _speed_lookup
+    _speed_lookup_for_distance 8 / 12
+    _speed_lookup_for_distance 7 / 12
+    _speed_lookup_for_distance 6 / 12
+    _speed_lookup_for_distance 4 / 12
+    _speed_lookup_for_distance 3 / 12
+    _speed_lookup_for_distance 3 / 12
+  end
+
+  def _angle_to_speed
+    PHX
+    CLC
+    ADC   #$100
+    CMP   #$200
+    BNE   _skip_limit_top
+    LDA   #$1FF
+  _skip_limit_top:
+    ASL
+    ASL
+    ASL
+    XBA
+    AND   #7 << 1
+    STA   dp(Aoba::Sprite._calc0)
+    LDA   dp(_distance)
+    AND   #$F0
+    ORA   dp(Aoba::Sprite._calc0)
+    TAX
+    LDA   _speed_lookup.long, X
+    STZ   dp(Aoba::Sprite._calc0)
+    STZ   dp(Aoba::Sprite._calc0) + 2
+    BPL   _skip_negative
+    DEC   dp(Aoba::Sprite._calc0) + 2
+  _skip_negative:
+    STA   dp(Aoba::Sprite._calc0) + 1
+    PLX
+  end
+
+  def move
+    LDA   global_ingame_flags
+    AND   #GlobalIngameFlag.CONTROLS_DISABLED | GlobalIngameFlag.GAME_PAUSED | GlobalIngameFlag.TIME_PAUSED
+    ORA   dead_wait_time
+    BNZ   _rts
+
+    Y.is_a! Aoba::Sprite::Instance
+    X.is_a! Aoba::Sprite::Instance
+
+    LDY   Game::Ball::Movement.player
+    BNZ   _resume
+  _rts:
+    RTS
+
+  _resume:
+    LDA   AssetConfig::Ingame.tilemap_storage.tiles[:current].long
+    CMP   X[:sprite_layer]
+    BNE   _rts
+    LDA   X[:x]
+    CLC
+    ADC   #8
+    SEC
+    SBC   Y[:x]
+    STA   dp(_axis_x)
+    CMP   #-FAN_MIN_DISTANCE
+    BMI   _rts
+    CMP   #FAN_MIN_DISTANCE
+    BPL   _rts
+
+    LDA   X[:y]
+    CLC
+    ADC   #8
+    SEC
+    SBC   Y[:y]
+    STA   dp(_axis_y)
+    CMP   #-FAN_MIN_DISTANCE
+    BMI   _rts
+    CMP   #FAN_MIN_DISTANCE
+    BPL   _rts
+
+    LDY   dp(_axis_y)
+    LDX   dp(_axis_x)
+    JSL   Aoba::Math.quick_distance_near_long
+    CMP   #FAN_MIN_DISTANCE
+    BGE   _rts
+    STA   dp(_distance)
+
+    LDY   dp(_axis_y)
+    LDX   dp(_axis_x)
+    JSL   Aoba::Math.xy_to_direction_long
+    LDY   Game::Ball::Movement.player
+
+    AND   #$FF
+    ASL   A
+    TAX
+    LDA   Aoba::Math.sin_table.long, X
+    _angle_to_speed
+    LDA   Y[:speed_y_decimal]
+    CLC
+    ADC   dp(Aoba::Sprite._calc0)
+    STA   Y[:speed_y_decimal]
+    LDA   Y[:speed_y]
+    ADC   dp(Aoba::Sprite._calc0) + 2
+    STA   Y[:speed_y]
+
+    LDA   Aoba::Math.cos_table.long, X
+    EOR   #$FFFF
+    INC   A
+    _angle_to_speed
+    LDA   Y[:speed_x_decimal]
+    CLC
+    ADC   dp(Aoba::Sprite._calc0)
+    STA   Y[:speed_x_decimal]
+    LDA   Y[:speed_x]
+    ADC   dp(Aoba::Sprite._calc0) + 2
+    STA   Y[:speed_x]
+
+    LDX   dp(Aoba::Sprite.current_sprite)
+  end
+end
+
+
+module Game::Level::SpriteGenerator
+  def generate_fan
+    LDX   #Assets::Sprite::Item::ID
+    LDY   #Assets::Sprite::Item::PaletteID
+    generate_map_sprite
+    X.is_a! Aoba::Sprite::Instance
+    LDA   X[:renderable_flags]
+    AND   #$CFCF
+    ORA   #$0100
+    STA   X[:renderable_flags]
+    LDA   #Game::Level::Sprite::Fan.move.to_sym + 1
+    STA   X[:custom_move_routine]
+    JSL   Aoba::Sprite::Api.queue_sprite_icb_long
+  end
+end

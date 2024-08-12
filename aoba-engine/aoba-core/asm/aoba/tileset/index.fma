@@ -1,0 +1,19 @@
+module Aoba
+
+  ;; The ROM bank
+  TILESET_ROM_BANK ||= $C1
+
+end
+
+require "configuration"
+require "memory"
+
+require "format"
+require "storage"
+require "loader"
+require "vram"
+
+require "action"
+require "event"
+require "thread"
+

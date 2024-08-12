@@ -1,0 +1,80 @@
+module Aoba
+
+  __next_engine_object_id = 0
+
+  class EngineObjectInterface
+    macro __initialize_engine_object_interface
+      @engine_object_id = __next_engine_object_id
+      __next_engine_object_id += 1
+    end
+
+    macro configure_for_scene(scene)
+    end
+
+    macro parent_objects
+      return []
+    end
+
+    macro all_parent_objects
+      _result = []
+      _queue = []
+
+      parent_objects.each do |parent|
+        unless parent.nil?
+          _queue << parent
+          _queue = _queue + parent.all_parent_objects
+        end
+      end
+
+      _ids = []
+      _queue.each do |item|
+        unless _ids.include?(item.engine_object_id)
+          _result << item 
+          _ids << item.engine_object_id
+        end
+      end
+
+      return _result
+    end
+  end
+
+  class EngineObject
+    include EngineObjectInterface
+
+    macro initialize
+      __initialize_engine_object_interface
+    end
+  end
+
+  class StaticRoutineEngineObject < StaticRoutineClass
+    include EngineObjectInterface
+
+    macro initialize
+      super
+      __initialize_engine_object_interface
+    end
+  end
+
+  class EngineObjectInstance
+    macro initialize(object)
+      @linked_engine_object_instance = object
+    end
+
+    macro configure_for_scene(scene)
+      @linked_engine_object_instance.configure_for_scene scene
+    end
+
+    macro engine_object_id
+      return @linked_engine_object_instance.engine_object_id
+    end
+
+    macro parent_objects
+      return @linked_engine_object_instance.parent_objects
+    end
+
+    macro all_parent_objects
+      return @linked_engine_object_instance.all_parent_objects
+    end
+  end
+
+end

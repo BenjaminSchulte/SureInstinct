@@ -1,0 +1,189 @@
+module Aoba::Control
+
+  ;; Allocates a listener
+  ;;
+  ;; @returns Y the listener
+  def allocate_listener_icb
+    routine do
+      make_thread_safe
+
+      execute do
+        LDY   free_listeners
+        Y.is_a! Listener
+        LDA   Y[:next_listener]
+        STA   free_listeners
+        LDA   #0
+        STA   Y[:listener_flags]
+        STA   Y[:next_listener]
+      end
+    end
+  end
+
+  ;; Allocates a listener
+  def allocate_listener_icb_long
+    allocate_listener_icb
+    RTL
+  end
+
+  ;; Allocates a listener
+  ;;
+  ;; @param Y the listener
+  def free_listener_icb
+    routine do
+      make_thread_safe
+
+      execute do
+        Y.is_a! Listener
+        LDA   free_listeners
+        STA   Y[:next_listener]
+        STY   free_listeners
+      end
+    end
+  end
+
+  ;; frees a listener
+  ;; @param Y the listener
+  def free_listener_icb_long
+    free_listener_icb
+    RTL
+  end
+
+  ;; @param X gamepad
+  ;; @param Y listener
+  def detach_and_free_listener_icb
+    routine do
+      make_thread_safe
+
+      execute do
+        X.is_a! GamepadPlayer
+        Y.is_a! Listener
+        TYA
+
+      _loop:
+        CMP   X[:listener]
+        BEQ   _detach
+        LDY   X[:listener]
+        TYX
+        BNZ   _loop
+        Debug.warn "Tried to remove listener {A} from a gamepad which is not attached."
+        BRA   _rts
+
+      _detach:
+        TAY
+        Y.is_a! Listener
+        X.is_a! GamepadPlayer
+        LDA   Y[:next_listener]
+        STA   X[:listener]
+
+      _rts:
+      end
+    end
+    JMP   free_listener_icb
+  end
+
+  def detach_and_free_listener_icb_long
+    detach_and_free_listener_icb
+    RTL
+  end
+
+  ;; Attaches a listener to a gamepad
+  ;;
+  ;; @param X gamepad
+  ;; @param Y listener
+  def attach_listener_to_gamepad_icb
+    routine do
+      make_thread_safe
+
+      execute do
+        X.is_a! GamepadPlayer
+        Y.is_a! Listener
+
+        LDA   X[:listener]
+        STA   Y[:next_listener]
+        TYA
+        STA   X[:listener]
+      end
+    end
+  end
+
+  ;; Attaches a global listener
+  ;;
+  ;; @param Y listener
+  def attach_global_listener_icb_long
+    routine do
+      make_thread_safe
+
+      execute do
+        Y.is_a! Listener
+
+        LDA   global_listeners
+        STA   Y[:next_listener]
+        TYA
+        STA   global_listeners
+      end
+    end
+    RTL
+  end
+
+  ;; Attaches a new listener to the gamepad
+  ;;
+  ;; @param A the thread ID
+  ;; @param X the gamepad
+  ;; @param Y the event bitmap
+  def attach_new_listener_icb_long
+    routine do
+      is_thread_safe
+      input A
+
+      declare :thread_id, as: :uint16
+      declare :event_bitmask, as: :uint16
+
+      execute do |thread_id, event_bitmask|
+        STA   dp(thread_id)
+        STY   dp(event_bitmask)
+
+        allocate_listener_icb
+
+        Y.is_a! Listener
+        LDA   dp(thread_id)
+        STA   Y[:thread_id]
+        LDA   dp(event_bitmask)
+        STA   Y[:keydown_triggermask]
+        STA   Y[:keyup_triggermask]
+
+        X.is_a! GamepadPlayer
+        attach_listener_to_gamepad_icb
+      end
+    end
+    RTL
+  end
+
+  ;; Removes a global listener
+  ;;
+  ;; @param Y listener
+  def remove_global_listener_icb_long
+    routine do
+      make_thread_safe
+
+      execute do
+        Y.is_a! Listener
+
+        CPY   global_listeners
+        BNE   _is_not_front
+
+      _is_first:
+        LDA   Y[:next_listener]
+        STA   global_listeners
+        LDA   #0
+        STA   Y[:next_listener]
+        BRA   _end
+
+      _is_not_front:
+        fatal_error "todo remove global listener not front"
+
+      _end:
+      end
+    end
+    RTL
+  end
+end

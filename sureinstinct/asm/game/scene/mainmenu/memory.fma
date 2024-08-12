@@ -1,0 +1,13 @@
+module Game::Scene::MainMenu
+
+  scope :SceneVariableRAM, in: nil, for: SNES::MemoryMap::RAM
+  
+  scope :SceneFixedRAM, in: nil, for: SNES::MemoryMap::RAM
+
+
+  declare :after_scene_script, as: :uint16, in: ::Memory::VariableRAM
+  declare :after_scene_script_bank, as: :uint8, in: ::Memory::VariableRAM
+
+  declare :effect_active, as: :uint16, in: SceneVariableRAM
+
+end

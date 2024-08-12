@@ -1,0 +1,60 @@
+module Aoba::Sprite
+  
+  class SpriteThreadBuilder
+    macro initialize(config)
+      @config = config
+    end
+
+    macro walk_animation(id)
+      @config.walk_animation_id = id
+    end
+
+    macro idle_animation(id)
+      @config.idle_animation_id = id
+    end
+
+    macro use(other)
+      other.include_to_sprite_thread @config
+    end
+
+    macro on(id, &block)
+      @config.event.on id, &block
+    end
+  end
+
+  class SpriteThread < EngineObject
+    macro initialize
+      super
+      @walk_animation_id = nil
+      @idle_animation_id = nil
+      @collision = nil
+      @move_events = nil
+      @tile_events = nil
+      @camera = nil
+      @level_loader = nil
+      @tilemap_scroll_renderer = nil
+      @event = Aoba::Event::Emitter.new
+    end
+
+    macro _configure_vram(scene, vram)
+      scene.event.on :load8_fixed do
+        LDA   #vram.address >> 14
+        STA   Composer.vram_sprite
+      end
+    end
+
+    macro include_as_scene_object(scene, as, vram)
+      vram_obj = scene.vram_layout.objects[vram]
+      _configure_vram scene, vram_obj
+      SceneObject.new(self).include_to_scene_mode(scene, as)
+    end
+    
+    macro self.create(&block)
+      Sprite.config = SpriteThread.new
+      builder = SpriteThreadBuilder.new(Sprite.config)
+      block.call with_context builder
+      return Sprite.config
+    end
+  end
+
+end

@@ -1,0 +1,27 @@
+module Aoba::Audio::Event::StopPlayback
+
+  ;; The event ID
+  ID = $0D
+
+  ;; The event
+  class Event < Base
+  end
+
+  ;; Stops playback
+  macro _stop
+    when_ready_SEI bank: VARIABLE_RAM_BANK do
+      LDA   last_ipc_value
+      AND   #IPC.IPC_TOGGLE_BIT
+      EOR   #IPC.IPC_TOGGLE_BIT | IPC.CMD_STOP_PLAYBACK
+      STA   CPU.APUIO0.long
+      STA   last_ipc_value
+    end
+  end
+
+  ;; Loads the tileset
+  ;; @ignore-thread-safety
+  event_handler = make_audio_event do 
+    _stop
+  end
+
+end

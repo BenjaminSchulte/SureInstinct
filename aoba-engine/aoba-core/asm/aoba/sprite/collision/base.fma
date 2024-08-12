@@ -1,0 +1,114 @@
+module Aoba::Sprite::Collision
+
+  class Base < StaticRoutineClass
+    locate_at bank: SPRITE_ROM_BANK
+    register A: 16, XY: 16
+    
+    macro initialize
+      @tilemap_storage = nil
+
+      @event = Aoba::Event::Emitter.new
+          
+      @TempRAM = MemoryScope.new("TempRAM", in: Action::Move::SharedTempRAM)
+
+      ;; The current tile collision target
+      @collision_pos_x = MemoryVariable.new("collision_pos_x", as: :uint16, in: @TempRAM)
+
+      ;; The current tile collision target
+      @collision_pos_y = MemoryVariable.new("collision_pos_y", as: :uint16, in: @TempRAM)
+
+      ;; The current tile collision target
+      @collision_tiles_x = MemoryVariable.new("collision_tiles_x", as: :uint16, in: @TempRAM)
+
+      ;; The current tile collision target
+      @collision_tiles_y = MemoryVariable.new("collision_tiles_y", as: :uint16, in: @TempRAM)
+
+      ;; The current tile collision target
+      @collision_index = MemoryVariable.new("collision_index", as: :uint16, in: @TempRAM)
+
+      ;; The current tile collision target
+      @collision_tile = MemoryVariable.new("collision_tile", as: :uint16, in: @TempRAM)
+
+      ;; The current tile collision target
+      @collision_tile_data = MemoryVariable.new("collision_tile_data", as: :uint16, in: @TempRAM)
+    end
+
+    macro finalize
+      setup_static_routines
+    end
+
+    macro include_to_sprite_thread(thread)
+      thread.collision = self
+    end
+
+    ;; Calculates the tile index within the storage
+    ;; @param A relative X position
+    ;; @param Y relative Y position
+    macro __calculate_tile_index_from_storage(_out_of_map)
+      if @tilemap_storage.nil?
+        STZ   dp(@collision_pos_x)
+        STZ   dp(@collision_pos_y)
+        STZ   dp(@collision_index)
+        STZ   dp(@collision_tiles_x)
+        STZ   dp(@collision_tiles_y)
+        return
+      end
+
+      CLC
+      ADC   dp(Action::Move.pos_x)
+      BMI   _out_of_map
+      CMP   @tilemap_storage.width_in_pixel.long
+      BGE   _out_of_map
+      STA   dp(@collision_pos_x)
+      AND   #$FFF8
+      STA   dp(@collision_tiles_x)
+
+      @tilemap_storage.x_to_storage_pointer
+      STA   dp(@collision_index)
+
+      TYA
+      CLC
+      ADC   dp(Action::Move.pos_y)
+      BMI   _out_of_map
+      CMP   @tilemap_storage.height_in_pixel.long
+      BGE   _out_of_map
+      STA   dp(@collision_pos_y)
+      AND   #$FFF8
+      STA   dp(@collision_tiles_y)
+      @tilemap_storage.y_to_storage_pointer
+      ;ASL   A
+      ;ASL   A
+      ;ASL   A
+      ;AND   #$1F80
+      ORA   dp(@collision_index)
+      STA   dp(@collision_index)
+    end
+
+    ;; @param A relative X pixel
+    ;; @param Y relative Y pixel
+    macro read_relative_tile_data
+      raise "read_relative_tile_data not implemented"
+    end
+
+    ;; @param A relative X pixel
+    ;; @param Y relative Y pixel
+    macro read_current_tile_data
+      LDA   #0
+      TAY
+      read_relative_tile_data
+    end
+
+    macro test_collision
+      raise "test_collision is not implemented"
+    end
+
+    macro cache_collision
+      raise "cache_collision is not implemented"
+    end
+
+    macro on_tile_changed
+      JSR   Aoba::Sprite::Action::Move::TileEvent.on_tile_event
+    end
+  end
+
+end

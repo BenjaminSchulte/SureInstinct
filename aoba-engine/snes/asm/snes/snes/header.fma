@@ -1,0 +1,328 @@
+module SNES::Header
+  ;; The maker code
+  MAKER_CODE = $00
+
+  ;; The game code
+  GAME_CODE = ""
+
+  ;; The title of the game
+  GAME_TITLE = "UNTITLED ROM"
+
+  ;; The version of the game
+  VERSION = 0
+
+  ;; The destination code of the game
+  DESTINATION_CODE = 0
+
+  ;; ROM mapping
+  MAP_MODE = 0
+
+  ;; ROM type
+  ROM_TYPE = 0
+
+  ;; SRAM size
+  SRAM_SIZE = 0
+
+  ;; The expansion RAM size
+  EXPANSION_RAM_SIZE = 0
+
+  ;; Sets the game code
+  ;;
+  ;; @param code string - the code of the game (max. 4 characters)
+  macro game_code(code)
+    GAME_CODE = code
+  end
+
+  ;; Sets the ram size
+  ;;
+  ;; @param size number - the RAM size
+  macro ram_size(size)
+    case size
+      when 0
+        EXPANSION_RAM_SIZE = 0
+      when $800
+        EXPANSION_RAM_SIZE = 1
+      when $1000
+        EXPANSION_RAM_SIZE = 2
+      when $2000
+        EXPANSION_RAM_SIZE = 3
+      when $4000
+        EXPANSION_RAM_SIZE = 4
+      when $8000
+        EXPANSION_RAM_SIZE = 5
+      when $10000
+        EXPANSION_RAM_SIZE = 6
+      when $20000
+        EXPANSION_RAM_SIZE = 7
+    else
+      raise "Unsupported SRAM size #{size}"
+    end
+
+  end
+
+  ;; Sets the game title
+  ;;
+  ;; @param title string - the title of the game
+  macro game_title(title)
+    GAME_TITLE = title
+  end
+
+  ;; Sets the version
+  ;;
+  ;; @param version number - the version of the game
+  macro version(version)
+    VERSION = version
+  end
+
+  ;; Sets the maker code
+  ;;
+  ;; @param code number - the maker code
+  macro maker_code(code)
+    MAKER_CODE = code
+  end
+
+  ;; Sets the map mode
+  ;;
+  ;; @param code number - the map mode
+  macro map_mode(code)
+    MAP_MODE = code
+  end
+
+  ;; Sets the rom type
+  ;;
+  ;; @param ram=false boolean - whether an extenal RAM is provided
+  ;; @param battery=false boolean - whether a battery is provided
+  macro rom_type(ram=false, battery=false, sa1=false)
+    has_chip = sa1
+    value = $00
+
+    if has_chip
+      value |= $30 if sa1
+      if battery && ram
+        value |= $05
+      elsif battery
+        value |= $06
+      elsif ram
+        value |= $04
+      else
+        value |= $03
+      end
+    else
+      if battery && ram
+        value |= $02
+      elsif ram
+        value |= $01
+      end
+    end
+
+    ROM_TYPE = value
+  end
+
+  ;; Sets the destination code
+  ;;
+  ;; The destination can be any of the following:
+  ;; * japan
+  ;; * north_america
+  ;; * all_of_europe
+  ;; * scandinavia
+  ;; * france
+  ;; * netherlands
+  ;; * spain
+  ;; * germany
+  ;; * italy
+  ;; * china
+  ;; * korea
+  ;; * common
+  ;; * canada
+  ;; * brazil
+  ;; * australia
+  ;; * X
+  ;; * Y
+  ;; * Z
+  ;;
+  ;; @param code string - the destination name
+  macro destination(code)
+    case code
+    when :japan
+      DESTINATION_CODE = 0
+    when :north_america
+      DESTINATION_CODE = 1
+    when :all_of_europe
+      DESTINATION_CODE = 2
+    when :scandinavia
+      DESTINATION_CODE = 3
+    when :france
+      DESTINATION_CODE = 6
+    when :netherlands
+      DESTINATION_CODE = 7
+    when :spain
+      DESTINATION_CODE = 8
+    when :germany
+      DESTINATION_CODE = 9
+    when :italy
+      DESTINATION_CODE = $A
+    when :china
+      DESTINATION_CODE = $B
+    when :korea
+      DESTINATION_CODE = $D
+    when :common
+      DESTINATION_CODE = $E
+    when :canada
+      DESTINATION_CODE = $F
+    when :brazil
+      DESTINATION_CODE = $10
+    when :australia
+      DESTINATION_CODE = $11
+    when :X
+      DESTINATION_CODE = $12
+    when :Y
+      DESTINATION_CODE = $13
+    when :Z
+      DESTINATION_CODE = $14
+    else
+      raise "Unknown destination: #{code}"
+    end
+  end
+
+  ;; Returns the architecture to use
+  ;;
+  ;; @returns string - :pal or :ntsc
+  macro architecture
+    case DESTINATION_CODE
+    when 2
+      :pal
+    when 6
+      :pal
+    when 8
+      :pal
+    when 9
+      :pal
+    when $A
+      :pal
+    else
+      :ntsc
+    end
+  end
+
+  ;; Interrupt vector for CPU
+  module Interrupt
+    IRQBRK = nil
+    NMI = nil
+    IRQ = nil
+    COP = nil
+  end
+
+  ;; Interrupt vector for emulated version of CPU
+  module EmulatorInterrupt
+    NMI = nil
+    RESET = nil
+    IRQBRK = nil
+    COP = nil
+  end
+
+  ;; Allows to set interrupts easily
+  macro on(name, callback)
+    Interrupt[name] = callback
+  end
+
+  ;; Allows to set interrupts easily
+  macro on_emulated(name, callback)
+    EmulatorInterrupt[name] = callback
+  end
+
+  ;; Configures the memory map
+  macro memory_map
+    yield with_context MemoryMap
+  end
+
+  ;; Creates the header
+  macro create
+
+    ;; The entrypoint for the application
+    ;; @ignore-thread-safety
+    @locate_at bank: 0
+    @register A: 8, XY: 8
+    def main
+      SEI
+      CLC
+      XCE
+
+      REP   #$18
+
+      ;; High-Speed mode not supported in SA1
+      unless ::SNES::ENABLE_SA1
+        LDA   #1
+        STA   CPU.MEMSEL.long
+      end
+
+      JML   ::main
+    end
+
+    ;; Empty interrupt pointer
+    ;; @ignore-thread-safety
+    @locate_at bank: 0
+    def _no_interrupt
+      RTI
+    end
+
+    ;; Write the interrupt
+    macro _write_interrupt(irq, fallback=_no_interrupt)
+      if irq.nil?
+        dw   fallback
+      else
+        dw   irq
+      end
+    end
+
+    ;; Creates the memory block
+    @locate_at bank: MemoryMap.HEADER_BANK, address: MemoryMap.HEADER_ADDRESS
+    datablock _rom_header
+      ; ROM Registration
+      dw   MAKER_CODE                        ; maker code
+      db   GAME_CODE, length: 4, fill: $20   ; game code
+      db   0, length: 7                      ; fixed
+      db   0                                 ; expansion ROM size
+      db   0                                 ; special version
+      db   0                                 ; cartridge type
+
+      ; ROM Specifications
+      db Header.GAME_TITLE, length: 21, fill: $20 ; game title
+      db Header.MAP_MODE                          ; map mode
+      db Header.ROM_TYPE                          ; rom type
+      db 9 ; ROM size is auto generated later     ; rom size
+      db Header.EXPANSION_RAM_SIZE                ; sram size
+      db Header.DESTINATION_CODE                  ; destination code
+      db $33                                      ; fixed
+      db Header.VERSION                           ; version
+
+      ; Checksum will be generated later by SNES plugin
+      dw $0
+      dw $ffff
+
+      ; Interrupts
+      dw 0
+      dw 0
+      _write_interrupt Interrupt.COP
+      _write_interrupt Interrupt.IRQBRK
+      dw 0
+      _write_interrupt Interrupt.NMI
+      dw 0
+      _write_interrupt Interrupt.IRQ
+
+      ; Emulated interrupts 
+      dw 0
+      dw 0
+      _write_interrupt EmulatorInterrupt.COP
+      dw 0
+      dw 0
+      _write_interrupt EmulatorInterrupt.NMI
+      _write_interrupt EmulatorInterrupt.RESET, main
+      _write_interrupt EmulatorInterrupt.IRQBRK
+    end
+
+    ;; Ensures that the rom header must be compiled
+    _rom_header
+
+  end
+
+end

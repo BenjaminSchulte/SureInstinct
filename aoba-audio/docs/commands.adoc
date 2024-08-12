@@ -1,0 +1,264 @@
+= Aoba audio engine
+
+This document explains the commands which can be used by the IPC.
+
+== Sending commands
+
+To send a new command, the Port 0 has to be modified. Whenever a new value is
+sent on Port 0, the lower 6 bits of the value are being interpreted as a command.
+
+To send a command twice, you can alter the 6th bit of the command freely, because
+it is not used for any purpose than this.
+
+Command byte format:
+
+|===
+| Bits | Description
+
+| `0-cccccc` | The command ID to invoke
+| `1-------` | Streaming commands
+| `-b------` | Can be altered freely to force a change in this byte
+|===
+
+== Commands
+
+This list explains all commands the APU supports:
+
+If the SNES is requested to send `??`, you can send any value except the previous
+one. It is preferred to send positive values. The APU will mimic the value if it
+sends back a `??`.
+
+Ports declared as `--` can have any value stored.
+
+=== 01: Reset
+
+The *RESET* command allows to reset the state of the APU to a safe state without
+any playback, stream or samples loaded.
+
+[cols="1,1,1,1,1,100%"]
+|===
+| Sender | P0 | P1 | P2 | P3 | Description
+
+| > SNES | `01` | `--` | `--` | `--` | Send RESET command
+| < APU | `01` | `--` | `--` | `--` | ACK
+|===
+
+
+=== 02: Send sample
+
+Allows to upload a new sample to the audio engine. The data upload is only
+proceed if the sample is not yet uploaded.
+
+[cols="1,1,1,1,1,100%"]
+|===
+| Sender | P0 | P1 | P2 | P3 | Description
+
+| > SNES | `02` | `id` | `--` | `--` | Send the *id* of the SAMPLE requested to upload
+| < APU | `02` | `nn` | `oo` | `oo` | *nn* is negative, if this sample is new,
+                                      otherwise it will mimic the *id* value.
+                                      *oooo* represents the target offset in the
+                                      APU RAM where the sample will be stored. The
+                                      *oooo* value is only sent if *nn* is positive.
+
+6+| if *nn* is positive, the command ends here, otherwise continue:
+
+| > SNES | `??` | `vv` | `oo` | `oo` | *oooo* Represents the absolute loop position
+                                       in the APU RAM (starts at `$6000`). *vv* is
+                                       the sample volume.
+| < APU | `??` | `--` | `--` | `--` | ACK
+
+| > SNES | `??` | `aa` | `pp` | `pp` | *pppp* is the default pitch value for the sample.
+                                       *aa* is the low byte of the samples ADSR
+| < APU | `??` | `--` | `--` | `--` | ACK
+
+| > SNES | `??` | `aa` | `ss` | `ss` | *ssss* represents the size of the data to transfer
+                                       divided by three. *aa* is the high byte of the samples ADSR
+| < APU | `??` | `--` | `--` | `--` | ACK
+
+6+| repeat the following commands until all data has been transmitted
+| > SNES | `??` | `d2` | `d0` | `d1` | *d0..d2* Data to be transmitted
+| < APU | `??` | `--` | `--` | `--` | ACK
+|===
+
+
+=== 03: Send SFX database
+
+Uploads a new SFX database to the RAM.
+
+[cols="1,1,1,1,1,100%"]
+|===
+| Sender | P0 | P1 | P2 | P3 | Description
+
+| > SNES | `03` | `--` | `ss` | `ss` | *ssss* represents the size of the SFX database
+                                       to be uploaded, divided by three.
+| < APU | `03` | `--` | `--` | `--` | ACK
+
+6+| repeat the following commands until all data has been transmitted
+| > SNES | `??` | `d2` | `d0` | `d1` | *d0..d2* Data to be transmitted
+| < APU | `??` | `--` | `--` | `--` | ACK
+|===
+
+
+=== 04: Set master volume
+
+Sets the master volume of the application
+
+[cols="1,1,1,1,1,100%"]
+|===
+| Sender | P0 | P1 | P2 | P3 | Description
+
+| > SNES | `04` | `vv` | `--` | `--` | *vv* is the volume, where `7F` is 100%
+| < APU | `04` | `--` | `--` | `--` | ACK
+|===
+
+
+=== 05: Stop playback
+
+Stops the current playback. Should also be invoked when initializing a new song.
+
+[cols="1,1,1,1,1,100%"]
+|===
+| Sender | P0 | P1 | P2 | P3 | Description
+
+| > SNES | `05` | `--` | `--` | `--` | Send command
+| < APU | `05` | `--` | `--` | `--` | ACK
+|===
+
+
+=== 06: Play SFX
+
+Plays a sound effect from the SFX database.
+
+[cols="1,1,1,1,1,100%"]
+|===
+| Sender | P0 | P1 | P2 | P3 | Description
+
+| > SNES | `06` | `id` | `pp` | `--` | Plays the SFX with id *id*. *pp* defines
+                                       the panning from `00` (left) to `FF` (right)
+| < APU | `06` | `--` | `--` | `--` | ACK
+|===
+
+
+=== 07: Set SFX volume
+
+Sets the SFX volume of the application
+
+[cols="1,1,1,1,1,100%"]
+|===
+| Sender | P0 | P1 | P2 | P3 | Description
+
+| > SNES | `07` | `vv` | `--` | `--` | *vv* is the volume, where `7F` is 100%
+| < APU | `07` | `--` | `--` | `--` | ACK
+|===
+
+
+=== 08: Upload song
+
+Uploads a song to the application
+
+[cols="1,1,1,1,1,100%"]
+|===
+| Sender | P0 | P1 | P2 | P3 | Description
+
+| > SNES | `08` | `--` | `ss` | `ss` | *ssss* represents the size of the song
+                                       to be uploaded, divided by three.
+| < APU | `08` | `--` | `--` | `--` | ACK
+
+6+| repeat the following commands until all data has been transmitted
+| > SNES | `??` | `d2` | `d0` | `d1` | *d0..d2* Data to be transmitted
+| < APU | `??` | `--` | `--` | `--` | ACK
+|===
+
+
+=== 09: Play song
+
+Plays the uploaded song
+
+[cols="1,1,1,1,1,100%"]
+|===
+| Sender | P0 | P1 | P2 | P3 | Description
+
+| > SNES | `09` | `vv` | `--` | `--` | Plays the currently uploaded song with volume *vv*.
+| < APU | `09` | `--` | `--` | `--` | ACK
+|===
+
+
+=== 0A: Setup echo buffer
+
+Reconfigures the echo buffer
+
+[cols="1,1,1,1,1,100%"]
+|===
+| Sender | P0 | P1 | P2 | P3 | Description
+
+| > SNES | `0A` | `-d` | `ff` | `vv` | *d* configures the delay, *ff* the feedback and *vv* the volume
+| < APU | `0A` | `--` | `--` | `--` | ACK
+|===
+
+
+=== 0B: Start new stream
+
+Starts a new stream
+
+[cols="1,1,1,1,1,100%"]
+|===
+| Sender | P0 | P1 | P2 | P3 | Description
+
+| > SNES | `0B` | `bb` | `pp` | `pp` | *bb* defines the number of 9 byte blocks which
+                                       will be transmitted every frame. *pppp* defines
+                                       the pitch used for playback.
+| < APU | `0B` | `--` | `--` | `--` | ACK
+|===
+
+
+=== 0C: Stop stream
+
+Stops the stream
+
+[cols="1,1,1,1,1,100%"]
+|===
+| Sender | P0 | P1 | P2 | P3 | Description
+
+| > SNES | `0C` | `--` | `--` | `--` | Sends the command
+| < APU | `0C` | `--` | `--` | `--` | ACK
+|===
+
+
+=== 0D: Unload sample
+
+Unloads a sample from the RAM (You have to defrag the RAM afterwards)
+
+[cols="1,1,1,1,1,100%"]
+|===
+| Sender | P0 | P1 | P2 | P3 | Description
+
+| > SNES | `0D` | `id` | `--` | `--` | ID of the sample to unload
+| < APU | `0D` | `--` | `--` | `--` | ACK
+|===
+
+
+=== 0E: Defragment sample RAM
+
+Fills up unused spaces in the APU sample RAM. This should be called
+after samples have been unloaded.
+
+[cols="1,1,1,1,1,100%"]
+|===
+| Sender | P0 | P1 | P2 | P3 | Description
+
+| > SNES | `0E` | `--` | `--` | `--` | Sends the command
+| < APU | `0E` | `--` | `--` | `--` | ACK
+|===
+
+
+=== 0F: Set echo volume
+
+Sets the echo volume of the application
+
+[cols="1,1,1,1,1,100%"]
+|===
+| Sender | P0 | P1 | P2 | P3 | Description
+
+| > SNES | `04` | `vv` | `--` | `--` | *vv* is the volume, where `7F` is 100%
+| < APU | `04` | `--` | `--` | `--` | ACK
+|===

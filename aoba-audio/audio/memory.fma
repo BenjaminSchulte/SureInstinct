@@ -1,0 +1,30 @@
+module DSP
+  ;; The DSP flag register
+  declare :flags, as: :uint8, in: Memory.Page0
+
+  ;; The master volume
+  declare :master_volume, as: :uint8, in: Memory.Page0
+
+  ;; General echo delay
+  declare :echo_delay, as: :uint8, in: ::Memory.Page0
+
+  ;; General echo feedback
+  declare :echo_feedback, as: :uint8, in: ::Memory.Page0
+
+  ;; General echo volume
+  declare :echo_configured_volume, as: :uint8, in: ::Memory.Page0
+
+  ;; General echo volume
+  declare :echo_volume, as: :uint8, in: ::Memory.Page0
+
+  ;; Offset of the echo buffer
+  declare :echo_buffer_offset, as: :uint8, in: ::Memory.Page0
+
+  ;; The old echo delay
+  declare :old_echo_delay, as: :uint8, in: ::Memory.Page0
+end
+
+module SPC
+  ;; The current flags
+  declare :control, as: :uint8, in: Memory.Page0
+end

@@ -1,0 +1,37 @@
+module Aoba::Compression::TilemapTiles
+
+  locate_at bank: COMPRESSION_TILEMAPTILES_ROM_BANK
+
+  ;; Object in DirectPage used as state
+  class State
+
+    ;; The source address
+    declare :source_address,         as: :uint24
+
+    ;; The source address
+    declare :current_row_index,      as: :uint16
+
+    ;; The target address
+    declare :target_address,         as: :uint24
+
+    ;; The number of rows
+    declare :num_rows,               as: :uint16
+
+    ;; The number of cols
+    declare :num_cols,               as: :uint16
+
+    ;; The number of cols
+    declare :map_width,              as: :uint16
+
+    ;; Maximum map width
+    declare :max_map_width_2x,       as: :uint16
+
+    ;; Number of bytes to copy
+    declare :copy_count,             as: :uint16
+
+    ;; Copy offset
+    declare :copy_offset,            as: :uint16
+
+  end
+
+end

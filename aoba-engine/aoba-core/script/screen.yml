@@ -1,0 +1,24 @@
+functions:
+  Screen.Fade:
+    external: __aobascript_Composer_FadeScreen
+    parameters:
+      speed: {type: number, min: 0, max: 15}
+      brightness: {type: number, min: 0, max: 15}
+    registers:
+      A: {size: 16, value: {type: math, op: or, left: {type: parameter, id: brightness}, right: {type: math, op: asl, left: {type: parameter, id: speed}, right: 8}}}
+
+editor:
+  groups:
+    Screen: {name: Screen}
+  functions:
+    Screen.Fade:
+      name: Fade
+      group: Screen
+      sort_index: 100
+      parameters:
+        - {id: speed, name: Speed, widget: {type: slider, min_note: Fast, max_note: Slow}}
+        - {id: brightness, name: Brightness, widget: {type: slider, min_note: Dark, max_note: Fast}}
+  # TODO: Editor properties shoulbe be able to be overwritten
+
+globals:
+  - Screen.Fade

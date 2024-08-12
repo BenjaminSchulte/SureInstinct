@@ -1,0 +1,11 @@
+module Command::SetSfxVolume
+
+  ;; Sets the master volume
+  def process
+    MOV   A, dp(SPC.PORT1)
+    MOV   dp(SPC.PORT0), dp(IPC.last_ipc_value)
+
+    MOV   dp(SFX.volume), A
+  end
+
+end

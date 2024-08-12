@@ -1,0 +1,21 @@
+module Aoba::Audio::Event::UploadDriver
+
+  ;; The event ID
+  ID = $0C
+
+  ;; The event
+  class Event < Base
+  end
+
+  ;; Loads the tileset
+  ;; @ignore-thread-safety
+  event_handler = make_audio_event do 
+    Y.is_a! Event
+
+    SNES_RAM_JMP Driver.upload, :JSR, :JSR
+    
+    Audio::Event::Reset._reset
+    Audio::Event::StopPlayback._stop
+  end
+
+end

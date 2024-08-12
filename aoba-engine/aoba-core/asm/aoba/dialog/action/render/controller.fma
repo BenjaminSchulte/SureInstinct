@@ -1,0 +1,115 @@
+module Aoba::Dialog::Action::Render
+
+  ;; Renders the next row
+  ;; @ignore-thread-safety
+  def _render_next_row
+    __trigger_text_rendering
+
+    CPU.set A: 8
+    LDA   dp(render_delay)
+    CPU.set A: 16
+    BZE   _instant_render
+
+  _slow_render:
+    JMP   _render_slow_row
+
+  _instant_render:
+    Debug.BRK
+    ;_render_instant
+    NOP
+    NOP
+    NOP
+  end
+
+  ;; Prepares the RAM
+  macro __prepare_render_message_ram
+    ;; Prepares the RAM
+    STZ   dp(current_tiles_y)
+  
+    ;; Stores the speed in dp
+    LDX   dp(Aoba::Script.script_data)
+    X.is_a! Aoba::Script::ScriptData
+    LDA   X[:current_dialog]
+    TAX
+    STX   dp(current_dialog)
+
+    Window.clear_tilemap_buffer
+
+    LDX   dp(current_dialog)
+    X.is_a! Aoba::Dialog::Hdma::Configuration
+    CPU.set A: 8
+    LDA   X[:speed]
+    STA   dp(render_delay)
+    STZ   X[:font_state] + Font::Render::State.offset_of(:current_option_offset)
+
+  end
+
+  ;; Renders the message
+  ;; @ignore-thread-safety
+  def render_message_icb_long
+    __prepare_render_message_ram
+    BRA   _start
+
+  _loop:
+    ; CPU.set A: 8
+    ;; Tests whether there is more data to read
+    LDX   dp(current_dialog)
+    X.is_a! Aoba::Dialog::Hdma::Configuration
+    LDA   X[:font_state] + Font::Render::State.offset_of(:state)
+    ASL   A
+    BMI   _end_of_data
+
+  _start:
+    CPU.set A: 16
+    ;; Renders the next row
+    _render_next_row
+
+    ;; Check whether we have more data to read from?
+    LDX   dp(current_dialog)
+    X.is_a! Aoba::Dialog::Hdma::Configuration
+    CPU.set A: 8
+
+    ;; The row has ended but there is more data to read from
+  _end_of_row:
+    LDA   dp(current_tilemap_y)
+    INC   A
+    STA   dp(current_tilemap_y)
+    CMP   X[:num_rows]
+    BGE   _end_of_page
+    LDA   X[:font_state] + Font::Render::State.offset_of(:state)
+    BIT   #Aoba::Font::Render::Status::END_OF_PAGE
+    BZE   _resume_with_next_line
+
+    ;; Waits for the confirm button and scrolls up afterwards
+  _end_of_page:
+    LDA   X[:font_state] + Font::Render::State.offset_of(:state)
+    BIT   #Aoba::Font::Render::Status::END_OF_INPUT
+    BNZ   _end_of_data
+
+    _wait_for_confirm
+
+    CPU.set A: 16
+    Window.clear_tilemap_buffer
+    CPU.set A: 8
+    STZ   dp(current_tilemap_y)
+    STZ   dp(current_tiles_y)
+    STZ   X[:font_state] + Font::Render::State.offset_of(:current_option_offset)
+    BRA   _loop
+
+    ;; We render the next line
+  _resume_with_next_line:
+    LDA   dp(current_tiles_y)
+    INC   A
+    CMP   X[:num_rows]
+    BNE   _skip_reset_tiles_y_to_zero
+    LDA   #0
+  _skip_reset_tiles_y_to_zero:
+    STA   dp(current_tiles_y)
+    BRA   _loop
+
+  _end_of_data:
+    CPU.set A: 16
+    RTL
+  end
+
+end

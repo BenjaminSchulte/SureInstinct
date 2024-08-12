@@ -1,0 +1,229 @@
+module Game::Ball::ItemPurchase
+  locate_at bank: Aoba::SPRITE_ROM_BANK
+
+  datablock prices
+    dw   0
+    dw   100
+    dw   200
+    dw   300
+    dw   500
+    dw   900
+    dw   1000
+  end
+
+  def _nop
+    Debug.log "NOT IMPLEMENTED"
+  end
+
+  def _parachute
+    INC   Level.num_parachute
+    __update_modified_attributes Level::ModifiedAttribute.PARACHUTE
+  end
+
+  def _bomb
+    INC   Level.num_bomb
+    __update_modified_attributes Level::ModifiedAttribute.BOMB
+  end
+
+  def _bridge
+    INC   Level.num_bridge
+    __update_modified_attributes Level::ModifiedAttribute.BRIDGE
+  end
+
+  def _speedball
+    LDA   #BALL_SPEEDUP_DURATION - 1
+    MAX_SPEEDUP_ITEMS.times do |i|
+      LDX   Level.ball_speedup_timer[i]
+      BNZ   _next
+    _set:
+      STA   Level.ball_speedup_timer[i]
+      BRA   _speedup
+
+    _next:
+      SEC
+      SBC   Level.ball_speedup_timer[i]
+      BPL   _plus
+      LDA   #0
+      BRA   _set
+
+    _plus:
+    end
+    RTS
+
+  _speedup:
+    LDA   Level.max_ball_speed
+    CLC
+    ADC   #BALL_SPEEDUP
+    STA   Level.max_ball_speed
+    LDA   Level.negative_max_ball_speed
+    SEC
+    SBC   #BALL_SPEEDUP
+    STA   Level.negative_max_ball_speed
+  end
+
+  def _iceball
+    SEI
+    LDA   #50
+    STA   Movement.ball_rotation_base_frame
+    LDA   #ICE_BALL_AXIS_ROTATION_SPRITES
+    STA   Movement.ball_rotation_axis_max
+    CLI
+    LDX   dp(Aoba::Sprite.current_sprite)
+    X.is_a! Aoba::Sprite::Instance
+    CPU.set A: 8
+    LDA   X[:ball_flags]
+    AND   #$FF ^ BallFlag.BALL_ACTIVE_MASK
+    ORA   #BallFlag.ICEBALL_ACTIVE
+    STA   X[:ball_flags]
+    LDA   #Assets::Sprite::Ball::IcePaletteID + 1
+    STA   X[:new_palette_index]
+    CPU.set A: 16
+    LDA   #MAX_BALL_TIME
+    STA   Level.ball_power
+    __update_modified_attributes Level::ModifiedAttribute.ITEM_TIME
+  end
+
+  def _metalball
+    SEI
+    LDA   #100
+    STA   Movement.ball_rotation_base_frame
+    LDA   #METAL_BALL_AXIS_ROTATION_SPRITES
+    STA   Movement.ball_rotation_axis_max
+    CLI
+    LDX   dp(Aoba::Sprite.current_sprite)
+    X.is_a! Aoba::Sprite::Instance
+    CPU.set A: 8
+    LDA   X[:ball_flags]
+    AND   #$FF ^ BallFlag.BALL_ACTIVE_MASK
+    ORA   #BallFlag.METALBALL_ACTIVE
+    STA   X[:ball_flags]
+    LDA   #Assets::Sprite::Ball::MetalPaletteID + 1
+    STA   X[:new_palette_index]
+    CPU.set A: 16
+    LDA   #MAX_BALL_TIME
+    STA   Level.ball_power
+    __update_modified_attributes Level::ModifiedAttribute.ITEM_TIME
+  end
+
+  datablock purchase_handler
+    dw   _bomb ;bomb
+    dw   _parachute ;parachute
+    dw   _bridge ;bridge
+    dw   _speedball ;speed
+    dw   _iceball
+    dw   _metalball
+  end
+
+  
+  def buy_item
+    LDX   Level.current_steal_item
+    JSR   purchase_handler.indirect, X
+
+    LDA   #Assets::Sfx::ItemBuy
+    JSL   Game::Level.play_sfx_long
+
+    LDA   #AssetConfig::TileList::SOLDOUT1
+    STA   dp(TileEvent::Change.front_tile)
+
+    LDA   AssetConfig::Ingame.tilemap_storage.tiles[:current].long
+    STA   dp(TileEvent::Change.layer)
+
+    LDA   Level.current_steal_item_index
+    TileEvent::Change.set_tile_by_index
+
+    LDA   #AssetConfig::TileList::SOLDOUT2
+    STA   dp(TileEvent::Change.front_tile)
+    INC   dp(TileEvent::Change.x_position)
+    LDA   dp(TileEvent::Change.layer)
+    JMP   TileEvent::Change.set_tile
+  end
+  
+  def purchase
+    ;; Stores price and item
+    TYA
+    AND   #$F
+    ASL   A
+    STA   Level.current_steal_item
+    TXA
+    AND   #$F
+    ASL   A
+    TAX
+    LDA   prices.long, X
+    STA   Level.current_steal_price
+
+    ;; Tests if we have enough money
+    CMP   Level.num_coins
+    BEQ   _buy
+    BGE   _steal
+
+  _buy:
+    LDA   Level.num_coins
+    SEC
+    SBC   Level.current_steal_price
+    STA   Level.num_coins
+    __update_modified_attributes Level::ModifiedAttribute.COINS
+    JMP   buy_item
+
+  _steal:
+    LDA   #ITEM_STEAL_TIMER
+    STA   Level.current_steal_timer
+    LDX   dp(Aoba::Sprite.current_sprite)
+    X.is_a! Aoba::Sprite::Instance
+    LDA   X[:on_move_event]
+    AND   #$FF00
+    ORA   #$80
+    STA   X[:on_move_event]
+    RTS
+  end
+
+  ;; Enters the pricetag
+  macro enter_pricetag
+    LDA   dp(AssetConfig::Ingame::sprite_collision.collision_tile_data)
+    AND   #$FF
+    PHA
+    LDA   dp(AssetConfig::Ingame::sprite_collision.collision_index)
+    STA   Level.current_steal_item_index
+    CLC
+    ADC   AssetConfig::Ingame.tilemap_storage.tiles[:current].long
+    TAX
+    LDA   Aoba::FIXED_RAM_BANK.as_bank.long, X
+    AND   #$FF
+    BZE   _rts
+    INX
+    LDA   Aoba::FIXED_RAM_BANK.as_bank.long, X
+    AND   #$FF
+    TAX
+    LDA   AssetConfig::Ingame.tile_properties.long, X
+    AND   #$FF
+    TAY
+    PLX
+    JMP   purchase
+  _rts:
+    RTS
+  end
+
+  ;; Enters the item
+  macro enter_item
+    LDA   dp(AssetConfig::Ingame::sprite_collision.collision_tile_data)
+    AND   #$FF
+    TAY
+    LDA   dp(AssetConfig::Ingame::sprite_collision.collision_index)
+    DEC   A
+    STA   Level.current_steal_item_index
+    CLC
+    ADC   AssetConfig::Ingame.tilemap_storage.tiles[:current].long
+    TAX
+    LDA   Aoba::FIXED_RAM_BANK.as_bank.long, X
+    AND   #$FF
+    BZE   _rts
+    TAX
+    LDA   AssetConfig::Ingame.tile_properties.long, X
+    AND   #$FF
+    TAX
+    JMP   purchase
+
+  _rts:
+    RTS
+  end
+
+end

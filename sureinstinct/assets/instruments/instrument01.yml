@@ -1,0 +1,11 @@
+name: Instrument 01
+sample: sample01
+volume: 127
+loop: 0
+pitch: -589
+adsr:
+  enabled: true
+  ar: 15
+  dr: 7
+  sr: 0
+  sl: 7

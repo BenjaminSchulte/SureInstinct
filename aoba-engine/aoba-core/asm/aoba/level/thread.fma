@@ -1,0 +1,88 @@
+module Aoba::Level
+  ;; The event handler
+  ;; @ignore-thread-safety
+  def event_handler
+    PHX
+    
+    ;; Tests how to handle the event
+    CPU.set A: 8
+    X.is_a! Event::Base
+    LDA   X[:event_bitmask]
+    ASL   A
+    BMI   _system_event
+    BCS   _system_event
+
+    LDA   X[:sender_thread_id]
+    BPL   _invoke_custom_event
+
+    ;; The event has been sent from a timer or other
+    Debug.BRK
+    BRA   _end_of_routine
+
+    ;; --
+
+  _system_event:
+    Debug.warn "+++ Thread {byte(long(add(word(long(add(D,$FE),#{FIXED_RAM_BANK})),2),#{VARIABLE_RAM_BANK}))}: SKIP SYSTEM EVENT {X}"
+    PLX
+    CPU.set A: 16
+    RTS
+
+    ;; --
+
+    ;; Invoke the thread by a default event handler
+  _invoke_custom_event:
+    TXY
+    LDA   X[:event_id]
+    Debug.profile_event_start
+    CPU.set A: 16
+    AND   dp(x00FF)
+    DEC   A
+    Debug.test_A_less_than Event::List.max_event_id, "Level Event ID out of range"
+    ASL   A
+    TAX
+    JSR   Event::List.routines.indirect, X
+    Debug.profile_event_stop
+
+  _end_of_routine:
+    PLX
+  end
+
+  ;; Thread entry point
+  ;; @ignore-thread-safety
+  def main
+    CPU.set A: 8
+    LDA   Memory::active_thread_id
+    STA   thread_id
+    Debug.profile_introduce 2
+    Debug.info "Thread {A}: Level Thread"
+    CPU.set A: 16
+    CLI
+
+    JSR   initialize_ram
+
+    Thread.wait_for_thread Tileset.thread_id
+    Thread.wait_for_thread Palette.thread_id
+
+  _loop:
+    LDA   #$FE
+    JSL   Thread.wait_for_event_icb_long
+    event_handler
+    JSL   Thread::Event.free_icb_long
+    BRA   _loop
+  end
+end
+
+module Aoba
+  LevelThread = Thread.new "Level" do
+    locate_at bank: LEVEL_ROM_BANK
+    priority LEVEL_PRIORITY
+
+    execute do
+      Level::main
+    end
+  end
+end
+
+Aoba::Event.on :system_initialize_A8_VARRAM do
+  STZ   Aoba::Level.thread_id
+end

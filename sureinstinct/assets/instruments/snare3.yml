@@ -1,0 +1,11 @@
+name: snare3
+sample: snare3
+volume: 95
+loop: -1
+pitch: 0xc00
+adsr:
+  enabled: true
+  ar: 15
+  dr: 7
+  sr: 0
+  sl: 7

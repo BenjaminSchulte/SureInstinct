@@ -1,0 +1,23 @@
+module Song
+
+  ;; The offset of the first sample
+  scope :song_data, at: SONG_DATA_OFFSET, length: SONG_DATA_SIZE, in: Memory.RAM
+
+  ;; The song playback volume
+  declare :song_volume, as: :uint8, in: ::Memory.Page0
+
+  ;; The song speed
+  declare :song_speed, as: :uint8, in: ::Memory.Page0
+
+  ;; The song active channels
+  declare :song_active_channels, as: :uint8, in: ::Memory.Page0
+
+  ;; Channels which have echo enabled
+  declare :song_enabled_echo_voices, as: :uint8, in: ::Memory.Page0
+
+  ;; Channels which have echo enabled
+  declare :song_enabled_noise_voices, as: :uint8, in: ::Memory.Page0
+
+  ;; Channels which have echo enabled
+  declare :song_enabled_pitchmod_voices, as: :uint8, in: ::Memory.Page0
+end

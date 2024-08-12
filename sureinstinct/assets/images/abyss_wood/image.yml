@@ -1,0 +1,7 @@
+name: Abyss
+color_depth: 4
+tile_size: {width: 8, height: 8}
+variants:
+  default:
+    image: abyss.png
+    palette: ../../tilesets/wood/main-palette.png

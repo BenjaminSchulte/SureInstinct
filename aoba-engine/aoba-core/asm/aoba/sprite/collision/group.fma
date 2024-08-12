@@ -1,0 +1,91 @@
+module Aoba::Sprite::Collision::Group
+
+  macro __create_remove_routine(num_sprites, sprite_index_table)
+    Thread.assert_thread thread_id
+
+    TXA
+    LDY   #0
+    CPY   num_sprites
+    BEQ   _rts
+
+  _loop:
+    CMP   sprite_index_table, Y
+    BEQ   _found
+    INY
+    INY
+    CPY   num_sprites
+    BNE   _loop
+  _rts:
+    RTS
+
+  _found:
+    PHP
+    SEI
+    DEC   num_sprites
+    DEC   num_sprites
+    CPY   num_sprites
+    BEQ   _plp_rts
+
+  _loop_copy:
+    LDA   sprite_index_table + 2, Y
+    STA   sprite_index_table, Y
+    INY
+    INY
+    CPY   num_sprites
+    BNE   _loop_copy
+
+  _plp_rts:
+    PLP
+  end
+
+  def remove_from_npc_group
+    __create_remove_routine num_npc_sprites, npc_sprite_index_table
+
+    X.is_a! Aoba::Sprite::Instance
+    LDA   X[:basic_flags]
+    AND   #$FFFF ^ BasicFlag::NPC_SPRITE_GROUP
+    STA   X[:basic_flags]
+  end
+
+  def remove_from_player_group
+    __create_remove_routine num_player_sprites, player_sprite_index_table
+
+    X.is_a! Aoba::Sprite::Instance
+    LDA   X[:basic_flags]
+    AND   #$FFFF ^ BasicFlag::PLAYER_SPRITE_GROUP
+    STA   X[:basic_flags]
+  end
+
+  def add_to_npc_group
+    Thread.assert_thread thread_id
+    LDY   num_npc_sprites
+    TXA
+    STA   npc_sprite_index_table, Y
+    INY
+    INY
+    STY   num_npc_sprites
+
+    X.is_a! Aoba::Sprite::Instance
+    LDA   X[:basic_flags]
+   ;AND   #$FFFF ^ BasicFlag::PLAYER_SPRITE_GROUP
+    ORA   #BasicFlag::NPC_SPRITE_GROUP
+    STA   X[:basic_flags]
+  end
+
+  def add_to_player_group
+    Thread.assert_thread thread_id
+    LDY   num_player_sprites
+    TXA
+    STA   player_sprite_index_table, Y
+    INY
+    INY
+    STY   num_player_sprites
+
+    X.is_a! Aoba::Sprite::Instance
+    LDA   X[:basic_flags]
+    ORA   #BasicFlag::PLAYER_SPRITE_GROUP
+    ;AND   #$FFFF ^ BasicFlag::NPC_SPRITE_GROUP
+    STA   X[:basic_flags]
+  end
+
+end

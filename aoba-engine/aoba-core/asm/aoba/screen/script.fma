@@ -1,0 +1,78 @@
+module Aoba::Screen
+  macro __create_direct_script_command(id, name, size=8, mask=$FFFF, asl=0, lsr=0)
+    Aoba::Script.callback "PPU_Set#{id}", bank: SCREEN_ROM_BANK do
+      CPU.set A: 8 if size == 8
+      if size == 8
+        if lsr >= 8
+          LDA   dp(Aoba::Script.register_a + 1)
+          (lsr - 8).times_lsr_A
+        else
+          LDA   dp(Aoba::Script.register_a)
+          lsr.times_lsr_A
+        end
+      else
+        LDA   dp(Aoba::Script.register_a)
+        lsr.times_lsr_A
+      end
+
+      asl.times_asl_A
+
+      unless mask == $FFFF
+        STA   dp(Aoba::Script.calc0)
+        LDA   register[name]
+        AND   #$FFFF ^ mask
+        ORA   dp(Aoba::Script.calc0)
+      end
+      STA   register[name]
+      CPU.set A: 16 if size == 8
+
+      if size == 8
+        LDA   update_registers_8
+        ORA   #Flag[name]
+        STA   update_registers_8
+      else
+        LDA   update_registers_16
+        ORA   #Flag[name]
+        STA   update_registers_16
+      end
+    end
+  end
+
+
+  __create_direct_script_command "BgMode",       :BGMODE,  8, $0F, 0, 0
+  __create_direct_script_command "BgLarge",      :BGMODE,  8, $F0, 4, 0
+
+  __create_direct_script_command "MosaicEnable", :MOSAIC,  8, $0F, 0, 0
+  __create_direct_script_command "MosaicSize",   :MOSAIC,  8, $F0, 4, 0
+
+  __create_direct_script_command "Bg1TilemapAddress", :BG1SC, 8, $FC, 0, 9
+  __create_direct_script_command "Bg1TilemapSize",    :BG1SC, 8, $03, 0, 0
+  __create_direct_script_command "Bg2TilemapAddress", :BG2SC, 8, $FC, 0, 9
+  __create_direct_script_command "Bg2TilemapSize",    :BG2SC, 8, $03, 0, 0
+  __create_direct_script_command "Bg3TilemapAddress", :BG3SC, 8, $FC, 0, 9
+  __create_direct_script_command "Bg3TilemapSize",    :BG3SC, 8, $03, 0, 0
+  __create_direct_script_command "Bg4TilemapAddress", :BG4SC, 8, $FC, 0, 9
+  __create_direct_script_command "Bg4TilemapSize",    :BG4SC, 8, $03, 0, 0
+  __create_direct_script_command "ObjAddress",        :OBSEL, 8, $07, 0, 14
+  __create_direct_script_command "ObjSize",           :OBSEL, 8, $E0, 5, 0
+
+  __create_direct_script_command "Bg1TileAddress", :BG12NBA, 8, $0F, 0, 13
+  __create_direct_script_command "Bg2TileAddress", :BG12NBA, 8, $F0, 0, 9
+  __create_direct_script_command "Bg3TileAddress", :BG34NBA, 8, $0F, 0, 13
+  __create_direct_script_command "Bg4TileAddress", :BG34NBA, 8, $F0, 0, 9
+
+  __create_direct_script_command "BgMainScreen", :TM, 8, $FFFF, 0, 0
+  __create_direct_script_command "BgSubScreen",  :TS, 8, $FFFF, 0, 0
+  __create_direct_script_command "WindowBgMainScreen", :TMW, 8, $FFFF, 0, 0
+  __create_direct_script_command "WindowBgSubScreen",  :TSW, 8, $FFFF, 0, 0
+
+  __create_direct_script_command "Bg1ScrollX",  :BG1HOFS, 16, $FFFF, 0, 0
+  __create_direct_script_command "Bg1ScrollY",  :BG1VOFS, 16, $FFFF, 0, 0
+  __create_direct_script_command "Bg2ScrollX",  :BG2HOFS, 16, $FFFF, 0, 0
+  __create_direct_script_command "Bg2ScrollY",  :BG2VOFS, 16, $FFFF, 0, 0
+  __create_direct_script_command "Bg3ScrollX",  :BG3HOFS, 16, $FFFF, 0, 0
+  __create_direct_script_command "Bg3ScrollY",  :BG3VOFS, 16, $FFFF, 0, 0
+  __create_direct_script_command "Bg4ScrollX",  :BG4HOFS, 16, $FFFF, 0, 0
+  __create_direct_script_command "Bg4ScrollY",  :BG4VOFS, 16, $FFFF, 0, 0
+
+end

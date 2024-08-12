@@ -1,0 +1,227 @@
+module Aoba::Script
+
+  ;; Datablock for script STOP
+  datablock stop_script
+    db   $01
+  end
+
+  ;; Loads the script address
+  macro load_script_address
+    ;; Waits to the event which informs about the script pointer
+    LDA   #Aoba::Thread::Event::USEREVENT_ID
+    JSL   Aoba::Thread.wait_for_event_icb_long
+
+    ;; Copy attributes to local memory
+    X.is_a! EventConfig
+    LDA   X[:script_address]
+    STA   dp(script_pointer)
+    CPU.set A: 8
+    LDA   X[:script_address] + 2
+    STA   dp(script_pointer) + 2
+    LDA   X[:script_create_flags]
+    STA   dp(register_a)
+    AND   #$40
+    TSB   dp(flags)
+    CPU.set A: 16
+
+    ;; Magic debug line :D
+    Debug.debug "Thread {byte(long(add(word(long(add(D,$FE),#{FIXED_RAM_BANK})),2),#{VARIABLE_RAM_BANK}))}: SCRIPT {byte(long(add(2,add(X,#{EventConfig.offset_of(:script_address)})),#{VARIABLE_RAM_BANK}))}:{word(long(add(X,#{EventConfig.offset_of(:script_address)}),#{VARIABLE_RAM_BANK}))} | <<START>>"
+
+    ;; Deletes the event
+    JSL   Aoba::Thread::Event.free_icb_long
+  end
+
+  ;; Loads the context if its being sent by the source thread
+  macro load_context_if_provided
+    ;; Tests whether the context should be provided
+    Debug.access_8bit_through_16bit
+    LSR   dp(register_a)
+    BCC   _no_context_expected
+
+    ;; Waits to the event which informs about the context
+    LDA   #Aoba::Thread::Event::USEREVENT_ID
+    JSL   Aoba::Thread.wait_for_event_icb_long
+
+    ;; Copy attributes to local memory
+    X.is_a! ContextConfig
+    LDA   X[:context]
+    STA   dp(register_c0)
+    
+    ;; Deletes the event
+    JSL   Aoba::Thread::Event.free_icb_long
+
+  _no_context_expected:
+  end
+
+  ;; Allocates the stack
+  macro allocate_stack
+    LDX   #STACK_SIZE
+    JSL   Memory::waitfor_allocate_from_behind_long
+    STX   dp(stack_ram)
+    STX   dp(stack_pointer)
+    STX   dp(register_p)
+  end
+
+  ;; Allocates script data
+  macro allocate_script_data
+    LDA   Aoba::Memory.active_thread_id
+    LDX   #ScriptData.size
+    JSL   Aoba::Memory.allocate_miniblock_long
+    STX   dp(script_data)
+    X.is_a! ScriptData
+
+    STZ   X[:unprocessed_keydown_bitmask]
+    STZ   X[:unprocessed_keyup_bitmask]
+    STZ   X[:current_dialog]
+    STZ   X[:userdata]
+    STZ   X[:sender_sprite]
+    Control.MAX_GAMEPADS.times do |i|
+      STZ   X[:previous_gamepad_listener] + i + i
+      STZ   X[:gamepad_listener] + i + i
+      STZ   X[:gamepad_disable_counter] + i + i
+    end
+    MAX_CUSTOM_TIMERS.times do |i|
+      STZ   X[:custom_timer] + i + i
+    end
+    CPU.set A: 8
+    STZ   X[:kill_event_sender_thread_id]
+    CPU.set A: 16
+  end
+
+  ;; Sets up the return command
+  macro setup_return_command
+    LDA   #stop_script.to_sym
+    STA   stack_pointer.indirect
+    INC   dp(stack_pointer)
+    LDA   #stop_script.to_sym >> 8
+    STA   stack_pointer.indirect
+    INC   dp(stack_pointer)
+    INC   dp(stack_pointer)
+  end
+
+  ;; Initializes the RAM
+  macro initialize_ram
+    LDA   #$FF
+    STA   dp(x00FF)
+    CPU.set A: 8
+    STZ   dp(flags)
+    CPU.set A: 16
+  end
+
+  ;; Notifies the caller thread
+  macro notify_caller_thread_if_requested
+    LDA   dp(flags)
+    BIT   #Flag.NOTIFY_FINISH
+    BZE   _no_notify_thread
+
+  _notify_thread:
+
+    ;; Notifies the sender that we are ready
+    LDA   #Thread::Event.READYEVENT_ID
+    JSL   Thread::Event.allocate_icb_long
+    X.is_a! Thread::Event::ReadyEvent
+    LDA   #EventId::READYEVENT
+    STA   X[:event_id]
+
+    LDY   Thread.current_thread_pointer
+    Y.is_a! Thread::Instance
+    LDA   Y[:parent_thread_id]
+    JSL   Thread::send_event_icb_long
+
+  _no_notify_thread:
+  end
+
+  ;; Notifies the killevent sender
+  def notify_killevent_sender_if_killed
+    LDX   dp(script_data)
+    X.is_a! ScriptData
+    LDA   X[:kill_event_sender_thread_id]
+    BZE   _skip_notify_thread
+
+  _notify_thread:
+    PHA
+    ;; Notifies the sender that we are ready
+    LDA   #Thread::Event.SYSTEMEVENT_ID
+    JSL   Thread::Event.allocate_icb_long
+    X.is_a! Thread::Event::ReadyEvent
+    LDA   #Thread::Event.KILLACKEVENT_ID
+    STA   X[:event_id]
+    LDA   Aoba::Memory.active_thread_id
+    STA   X[:userdata]
+    PLA
+    JSL   Thread::send_event_icb_long
+
+  _skip_notify_thread:
+  end
+
+  ;; Notifies the killevent sender
+  def notify_killevent_sender_if_killed_long
+    notify_killevent_sender_if_killed
+    RTL
+  end
+
+  ;; Cleans up the timers
+  macro cleanup_timer
+    LDY   dp(script_data)
+    Y.is_a! ScriptData
+    LDX   #MAX_CUSTOM_TIMERS
+    STX   dp(calc0)
+
+  _loop:
+    LDX   Y[:custom_timer]
+    BZE   _skip_timer
+
+    STY   dp(calc0 + 2)
+    JSL   Thread::Timer.free_icb_long
+    LDY   dp(calc0 + 2)
+
+  _skip_timer:
+    INY
+    INY
+    DEC   dp(calc0)
+    BNZ   _loop
+  end
+
+  ;; Cleans up the RAM
+  macro cleanup_memory
+    cleanup_timer
+  end
+
+  ;; Thread entry point
+  ;; @ignore-thread-safety
+  def main
+    if Aoba::ENABLE_PROFILING
+      LDA   Aoba::Memory.active_thread_id
+      Debug.profile_introduce 4
+    end
+
+    initialize_ram
+    load_script_address
+    load_context_if_provided
+    allocate_stack
+    allocate_script_data
+    setup_return_command
+
+    CLI
+    LDY   #0
+    execute_loop
+
+    cleanup_memory
+
+    CPU.set A: 8
+    notify_caller_thread_if_requested
+    notify_killevent_sender_if_killed
+    CPU.set A: 16
+  end
+end
+
+module Aoba
+  ScriptThread = Thread.new "Script" do
+    locate_at bank: SCRIPT_ROM_BANK
+    priority SCRIPT_PRIORITY
+
+    execute do
+      Script::main
+    end
+  end
+end

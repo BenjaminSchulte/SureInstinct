@@ -1,0 +1,246 @@
+module Game::Ball::Abyss
+
+  ;; Tests whether a bridge can be built
+  macro _test_build_bridge
+    SEI
+    LDY   gamepad
+    Y.is_a! Aoba::Control::GamepadPlayer
+    LDA   Y[:keys]
+    CLI
+    BIT   #Aoba::Control::Key.bitmap(:b, :a, :lmb)
+    BZE   _no_bridge
+    LDA   Level.selected_item
+    CMP   #Game::Item::BRIDGE
+    BNE   _no_bridge
+    LDA   Level.num_bridge
+    AND   #$FF
+    BZE   _no_bridge
+
+    DEC   Level.num_bridge
+    __update_modified_attributes Level::ModifiedAttribute.BRIDGE
+    LDA   #AssetConfig::TileList::BRIDGE
+    JMP   TileEvent::Change.set_all_layer_tile
+
+  _no_bridge:
+  end
+
+  ;; Sets the move event
+  macro _select_parachute
+    LDA   #Game::Item::PARACHUTE
+    STA   Level.selected_item
+    __update_modified_attributes Level::ModifiedAttribute::CURRENT_ITEM
+  end
+
+  macro _correct_ball_position
+    SEI
+    LDA   Level.global_ingame_flags
+    ORA   #Level::GlobalIngameFlag::CONTROLS_DISABLED | Level::GlobalIngameFlag::CUSTOM_BALL_ANIMATION
+    STA   Level.global_ingame_flags
+    CLI
+
+    LDX   Movement.player
+    X.is_a! Aoba::Sprite::Instance
+    LDA   X[:x]
+    STA   Game::Ball::Movement.abyss_respawn_x
+    LDA   X[:y]
+    STA   Game::Ball::Movement.abyss_respawn_y
+
+    STZ   X[:speed_x]
+    STZ   X[:speed_y]
+    STZ   X[:speed_x_decimal]
+    STZ   X[:speed_y_decimal]
+    STZ   X[:walk_speed]
+    STX   dp(Aoba::Sprite::Action::Move.speed_x)
+    STX   dp(Aoba::Sprite::Action::Move.speed_y)
+    STX   dp(Aoba::Sprite::Action::Move.speed_x_decimal)
+    STX   dp(Aoba::Sprite::Action::Move.speed_y_decimal)
+    LDA   dp(Aoba::Sprite::Action::Move.pos_x)
+    AND   #$FFF0
+    ORA   #$0008
+    STA   dp(Aoba::Sprite::Action::Move.pos_x)
+    LDA   dp(Aoba::Sprite::Action::Move.pos_y)
+    AND   #$FFF0
+    ORA   #$0008
+    STA   dp(Aoba::Sprite::Action::Move.pos_y)
+
+    LDX   dp(Aoba::Sprite.current_sprite)
+    LDA   #Assets::Animation::BallFallDown
+    JSL   Aoba::Sprite::Api.set_animation_icb_long
+  end
+
+  ;; Enters the abyss
+  macro on_enter
+    _test_build_bridge
+    _select_parachute
+    _correct_ball_position
+  end
+
+  ;; Opens a parachute
+  @locate_at bank: Aoba::SPRITE_ROM_BANK
+  def open_parachute
+    ;; Send an event to the control thread in order to handle 
+    Aoba::Sprite::Action::ManageSprite.allocate
+    X.is_a! Aoba::Sprite::Instance
+    STX   Game::Ball::Movement.parachute_sprite
+    STZ   X[:x]
+    STZ   X[:y]
+
+    LDA   #Aoba::Sprite::RenderableFlag.LAYER_FG
+    STA   X[:renderable_flags]
+    STZ   X[:direction]
+    LDA   #Assets::Sprite::Parachute::PaletteID
+    STA   X[:palette_group_id]
+    LDA   #Assets::Animation::ParachuteOpen
+    Aoba::Sprite::Action::ManageSprite.assign_animation_id
+    LDA   #Assets::Sprite::Parachute::ID
+    Aoba::Sprite::Action::ManageSprite.assign_sprite_id
+    Aoba::Sprite::Action::ManageSprite.recalculate_after_set_position
+
+    TXY
+    LDX   Game::Ball::Movement.player
+    Aoba::Sprite::Action::ManageSprite.attach_sprite
+
+    LDA   #DEAD_WAIT_TIME
+    STA   Level.dead_wait_time
+  end
+
+  OpenParachute = Aoba::Sprite::Event::List.create "OpenParachute" do
+    JMP   open_parachute
+  end
+
+  ;; The parachute is open now!
+  macro on_parachute_open
+    CPU.set A: 16
+    CPU.with_bank! Aoba::VARIABLE_RAM_BANK do
+      LDX   Game::Ball::Movement.player
+      X.is_a! Aoba::Sprite::Instance
+
+      LDA   X[:x]
+      CMP   Game::Ball::Movement.abyss_respawn_x
+      BEQ   _skip_x
+      BLT   _increase_x
+    _decrease_x:
+      DEC   A
+      BRA   _skip_x
+    _increase_x:
+      INC   A
+    _skip_x:
+      STA   X[:x]
+
+      LDA   X[:y]
+      CMP   Game::Ball::Movement.abyss_respawn_y
+      BEQ   _skip_y
+      BLT   _increase_y
+    _decrease_y:
+      DEC   A
+      BRA   _skip_y
+    _increase_y:
+      INC   A
+    _skip_y:
+      STA   X[:y]
+
+      LDA   X[:x]
+      CMP   Game::Ball::Movement.abyss_respawn_x
+      BNE   _not_at_target
+      16.divided_register_A
+      STA   dp(Aoba::Sprite._calc1)
+      STA   dp(Aoba::Sprite._calc0)
+      LDA   X[:y]
+      CMP   Game::Ball::Movement.abyss_respawn_y
+      BNE   _not_at_target
+
+      ;; Ensures that the previous tile is no abyss
+      16.divided_register_A
+      STA   dp(Aoba::Sprite._calc1 + 1)
+      LDA   X[:y]
+      AND   #$FFF0
+      (128 / 16).multiplicated_register_A
+      ORA   dp(Aoba::Sprite._calc0)
+      CLC
+      ADC   AssetConfig::Ingame.tilemap_storage.tiles[:current].long
+      TAX
+      STZ   Game::Ball::Movement.parachute_sprite
+      CPU.set A: 8
+      LDA   Aoba::FIXED_RAM_BANK.as_bank.long, X
+      TXY
+      LDX   AssetConfig::Ingame.replacement_tile_list
+      CMP   REPLACEMENT_TILE_LIST_BANK.as_bank(AssetConfig::TileList.ABYSS).long, X
+      BNE   _no_abyss
+      LDA   REPLACEMENT_TILE_LIST_BANK.as_bank(AssetConfig::TileList.BROKEN1).long, X
+      TYX
+      STA   Aoba::FIXED_RAM_BANK.as_bank.long, X
+
+      ;; Renders the new tile
+      LDA   #Aoba::Thread::Event::USEREVENT_ID
+      JSL   Aoba::Thread::Event.allocate_icb_long
+      X.is_a! Aoba::Tilemap::Renderer::SingleTilemapTileEvent
+      LDA   #AssetConfig::Ingame.tilemap_tile_renderer.plot_event_id
+      STA   X[:event_id]
+      LDA   dp(Aoba::Sprite._calc1)
+      STA   X[:x]
+      LDA   dp(Aoba::Sprite._calc1 + 1)
+      STA   X[:y]
+      LDA   Aoba::Level.thread_id
+      JSL   Aoba::Thread.send_event_icb_long
+      
+    _no_abyss:
+
+      ;; Reactivates movement
+      SEI
+      LDA   Level.global_ingame_flags
+      AND   #$FF ^ (Level::GlobalIngameFlag::CONTROLS_DISABLED | Level::GlobalIngameFlag::CUSTOM_BALL_ANIMATION)
+      STA   Level.global_ingame_flags
+      CLI
+      PLB
+      JMP   Aoba::Sprite::Action::Rendering.scriptcmd_83_DESTROY_SELF.callback
+
+    _not_at_target:
+
+    end
+    CPU.set A: 8
+  end
+
+  ;; Finished falling down
+  macro on_fell_down
+    A.pretend_size 8
+
+    CPU.with_bank! Aoba::VARIABLE_RAM_BANK do
+      ;; Tests if the parachute is used
+      LDA   Game::Level.selected_item
+      CMP   #Item::PARACHUTE
+      BNE   _no_parachute
+      CPU.set A: 16
+      LDX   gamepad
+      X.is_a! Aoba::Control::GamepadPlayer
+      LDA   X[:keys]
+      BIT   #Aoba::Control::Key.bitmap(:b, :a, :lmb)
+      CPU.set A: 8
+      BZE   _no_parachute
+      LDA   Game::Level.num_parachute
+      BZE   _no_parachute
+
+    _use_parachute:
+      DEC   A
+      STA   Game::Level.num_parachute
+      SEI
+      LDA   Game::Level.modified_attributes + 1
+      ORA   #Game::Level::ModifiedAttribute.PARACHUTE >> 8
+      STA   Game::Level.modified_attributes + 1
+      CLI
+      CPU.set A: 16
+      open_parachute
+      CPU.set A: 8
+      BRA   _rts
+      
+    _no_parachute:
+      CPU.set A: 16
+      JSL   Game::Level::UserInterface::Death.trigger_long
+      CPU.set A: 8
+
+    _rts:
+    end
+  end
+
+
+
+end

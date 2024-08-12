@@ -1,0 +1,19 @@
+module Aoba::GameVariable
+
+  locate_at bank: GAMEVAR_ROM_BANK
+
+
+  scope :RAM, in: ::Memory::FixedRAM
+
+
+  extern __asset_variableschema_default_global
+  GlobalInitializerData = __asset_variableschema_default_global
+  extern __asset_variableschema_default_persistent
+  PersistentInitializerData = __asset_variableschema_default_persistent
+
+  extern __asset_variableschema_index_address
+  VariableAddresses = __asset_variableschema_index_address
+  extern __asset_variableschema_index_config
+  VariableConfigs = __asset_variableschema_index_config
+
+end

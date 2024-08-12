@@ -1,0 +1,13 @@
+name: Debug
+scripts:
+  []
+tilemap: debug
+palette: wood/main
+top_palette: wood/main
+bottom_palette: wood/dark
+pause_palette: wood/pause
+custom_properties:
+  name: Debug map
+  stage: Debug
+  stage_index: 2
+  start_position: {x: 6.5, y: 9.5}

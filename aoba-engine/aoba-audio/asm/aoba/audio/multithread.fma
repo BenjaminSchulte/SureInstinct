@@ -1,0 +1,55 @@
+module Aoba::Audio
+  ;; Modified the IPC value and waits for ACK
+  ;; @ignore-thread-safety
+  unsafe_wait_for_ack_with_modified_ipc_value_long_foreign_db = create_sa1_ram_routine bank: AUDIO_ROM_BANK do
+    A.pretend_size 8
+
+    LDA   last_ipc_value.long
+    INC   A
+    STA   last_ipc_value.long
+    STA   CPU.APUIO0.long
+    unsafe_wait_for_ready nil
+    RTS
+  end
+
+  macro unsafe_wait_for_ready(bank)
+    if bank == VARIABLE_RAM_BANK
+      LDA   last_ipc_value 
+    else
+      LDA   last_ipc_value.long
+    end
+  _loop:
+    if bank == 0
+      CMP   CPU.APUIO0
+    else
+      CMP   CPU.APUIO0.long
+    end
+    BNE   _loop
+  end
+
+  macro wait_for_ready_SEI(bank)
+    BRA   _start
+  _loop:
+    CLI
+    NOP
+  _start:
+    SEI
+    if bank == VARIABLE_RAM_BANK
+      LDA   last_ipc_value 
+    else
+      LDA   last_ipc_value.long
+    end
+    if bank == 0
+      CMP   CPU.APUIO0
+    else
+      CMP   CPU.APUIO0.long
+    end
+    BNE   _loop
+  end
+
+  macro when_ready_SEI(bank)
+    wait_for_ready_SEI bank
+    yield
+    CLI
+  end
+end

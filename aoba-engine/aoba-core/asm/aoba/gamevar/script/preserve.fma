@@ -1,0 +1,31 @@
+module Aoba::GameVariable
+
+  ;; Creates a new slot
+  Aoba::Script.callback "GameVar_NewGame", bank: GAMEVAR_ROM_BANK do
+    Debug.BRK
+    NOP
+    NOP
+    NOP
+  end
+
+  ;; Loads a slot
+  ;;
+  ;; @param REGA character address
+  Aoba::Script.callback "GameVar_LoadGame", bank: GAMEVAR_ROM_BANK do
+    Debug.BRK
+    NOP
+    NOP
+    NOP
+  end
+
+  ;; Saves a slot
+  ;;
+  ;; @param REGA character address
+  Aoba::Script.callback "GameVar_SaveGame", bank: GAMEVAR_ROM_BANK do
+    Debug.BRK
+    NOP
+    NOP
+    NOP
+  end
+
+end

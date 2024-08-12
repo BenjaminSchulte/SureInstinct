@@ -1,0 +1,250 @@
+module Aoba::Sprite
+
+  ;; Loads a sprite
+  ;;
+  ;; @param REGA character address
+  Aoba::Script.callback "Character_AssignScript", bank: SPRITE_ROM_BANK do
+
+    CPU.set A: 8
+    LDX   dp(Aoba::Script.register_c0)
+    X.is_a! Instance
+
+    LDA   X[:automation_script_id]
+    BZE   _create_new_script
+
+  _cancel_script:
+    fatal_error "TODO cancel sprite script before create new"
+
+  _create_new_script:
+    CPU.set A: 16
+    LDA   dp(Aoba::Script.register_c0)
+    LDX   dp(Aoba::Script.register_a)
+    LDY   dp(Aoba::Script.register_a + 2)
+    JSL   Aoba::Script.execute_script_with_context_icb_long
+    TXA
+    CPU.set A: 8
+    LDY   dp(Aoba::Script.register_c0)
+    Y.is_a! Instance
+    STA   Y[:automation_script_id]
+    CPU.set A: 16
+    AND   dp(Aoba::Script.x00FF)
+    STA   dp(Aoba::Script.register_a)
+    STZ   dp(Aoba::Script.register_a) + 2
+  end
+
+  ;; Returns the character address
+  Aoba::Script.callback "Character_SetFromID", bank: SPRITE_ROM_BANK do
+    LDA   dp(Aoba::Script.register_a)
+    SEI
+    Action::ManageSprite.find_sprite_by_sprite_id
+    CLI
+    STX   dp(Aoba::Script.register_c0)
+  end
+
+  ;; Moves the sprite relative to its current position
+  ;;
+  ;; @param REGA Animation ID
+  Aoba::Script.callback "Character_SetAnimation", bank: SPRITE_ROM_BANK do
+    LDY   dp(Aoba::Script.register_c0)
+    LDA   dp(Aoba::Script.register_a)
+    JSL   Aoba::Sprite::Api.set_animation_icb_long
+  end
+
+  ;; Moves the sprite relative to its current position
+  ;;
+  ;; @param REGA Animation ID
+  Aoba::Script.callback "Character_SetPositionExact", bank: SPRITE_ROM_BANK do
+    CPU.set A: 8
+    LDX   #Aoba::Sprite::Event::SetPosition::EventConfig.size
+    LDA   Sprite.thread_id
+    SEI
+    JSL   Aoba::Memory.allocate_miniblock_long
+    CLI
+    STX   dp(Aoba::Script.calc0)
+    X.is_a! Aoba::Sprite::Event::SetPosition::EventConfig
+
+    LDY   dp(Aoba::Script.register_c0)
+    Y.is_a! Instance
+    LDA   Y[:id]
+    STA   X[:sprite_id]
+
+    CPU.set A: 16
+    LDA   dp(Aoba::Script.register_x)
+    STA   X[:x]
+    LDA   dp(Aoba::Script.register_a)
+    STA   X[:y]
+
+    LDA   #Aoba::Thread::Event.USEREVENT_ID
+    JSL   Aoba::Thread::Event.allocate_icb_long
+    X.is_a! Aoba::Sprite::Event::SetPosition::Event
+    LDA   #Aoba::Sprite::Event::SetPosition::ID
+    STA   X[:event_id]
+    CPU.set A: 16
+    LDA   dp(Aoba::Script.calc0)
+    STA   X[:config_address]
+    LDA   Sprite.thread_id
+    JSL   Aoba::Thread::send_event_icb_long
+  end
+
+  ;; Moves the sprite relative to its current position
+  ;;
+  ;; @param REGA Animation ID
+  Aoba::Script.callback "Character_SetAnimationX", bank: SPRITE_ROM_BANK do
+    SEI
+    LDA   dp(Aoba::Script.register_x)
+    Action::ManageSprite.find_sprite_by_sprite_id
+    X.is_a! Instance
+    LDA   dp(Aoba::Script.register_a) + 2
+    BMI   _skip_set_direction
+    STA   X[:new_direction]
+    LDA   dp(Aoba::Script.register_a) + 1
+    STA   X[:new_move_angle]
+  _skip_set_direction:
+    CLI
+
+    CPU.set A: 8
+    LDA   #Aoba::Thread::Event.USEREVENT_ID
+    JSL   Aoba::Thread::Event.allocate_icb_long
+    X.is_a! Aoba::Sprite::Event::SetAnimation::Event
+    LDA   #Aoba::Sprite::Event::SetAnimation::ID
+    STA   X[:event_id]
+    LDA   dp(Aoba::Script.register_a)
+    STA   X[:animation_id]
+    STZ   X[:palette_index_id]
+    LDA   dp(Aoba::Script.register_x)
+    STA   X[:sprite_id]
+    Y.is_a! Instance
+    LDA   Sprite.thread_id
+    JSL   Aoba::Thread::send_event_icb_long
+    CPU.set A: 16
+  end
+
+  ;; Moves the sprite relative to its current position
+  ;;
+  ;; @param REGA Animation ID
+  Aoba::Script.callback "Character_QueueAnimation", bank: SPRITE_ROM_BANK do
+    CPU.set A: 8
+    LDA   #Aoba::Thread::Event.USEREVENT_ID
+    JSL   Aoba::Thread::Event.allocate_icb_long
+    X.is_a! Aoba::Sprite::Event::QueueAnimation::Event
+    LDA   #Aoba::Sprite::Event::QueueAnimation::ID
+    STA   X[:event_id]
+    LDA   dp(Aoba::Script.register_a)
+    STA   X[:animation_id]
+    LDY   dp(Aoba::Script.register_c0)
+    Y.is_a! Instance
+    LDA   Y[:id]
+    STA   X[:sprite_id]
+    LDA   Sprite.thread_id
+    JSL   Aoba::Thread::send_event_icb_long
+    CPU.set A: 16
+  end
+
+  ;; Moves the sprite relative to its current position
+  ;;
+  ;; @param REGA MoveX, MoveY, SpeedIndex
+  Aoba::Script.callback "Character_MoveRelative", bank: SPRITE_ROM_BANK do
+    CPU.set A: 8
+    LDA   #Aoba::Thread::Event.USEREVENT_ID
+    JSL   Aoba::Thread::Event.allocate_icb_long
+    X.is_a! Aoba::Sprite::Event::MoveSpriteRelative::Event
+    LDA   #Aoba::Sprite::Event::MoveSpriteRelative::ID
+    STA   X[:event_id]
+    LDA   dp(Aoba::Script.register_a + 2)
+    STA   X[:speed_id]
+    LDY   dp(Aoba::Script.register_c0)
+    Y.is_a! Instance
+    LDA   Y[:id]
+    STA   X[:sprite_id]
+    CPU.set A: 16
+    LDA   dp(Aoba::Script.register_a)
+    STA   X[:fields_x]
+    LDA   Sprite.thread_id
+    JML   Aoba::Thread::send_event_icb_long
+  end
+
+  ;; Waits for a movement to be finished
+  Aoba::Script.callback "Character_WaitForMoveFinished", bank: SPRITE_ROM_BANK do
+    LDY   #1
+    JSL   Aoba::Thread.delay_icb_long
+    LDX   dp(Aoba::Script.register_c0)
+    X.is_a! Instance
+    SEI
+    LDA   X[:move_target_x]
+    ORA   X[:move_target_y]
+    BZE   _no_movement
+
+  _loop_wait_for_event:
+    LDA   Sprite.thread_id
+    AND   #$FF
+    ORA   #Aoba::Script::EventId.SPRITE_TARGET_REACHED << 8
+    JSL   Aoba::Thread.wait_for_ready_icb_long
+
+    ;; Tests whether this is the correct character to wait for
+    TXA
+    LDX   dp(Aoba::Script.register_c0)
+    X.is_a! Instance
+    EOR   X[:id]
+    AND   dp(Aoba::Script.x00FF)
+    BNZ   _loop_wait_for_event
+
+  _no_movement:
+    CLI
+  end
+
+  ;; Executes the NPCs action script
+  Aoba::Script.callback "Character_ExecuteActionScript", bank: SPRITE_ROM_BANK do
+    LDY   dp(Aoba::Script.register_c0)
+    Y.is_a! Instance
+
+    LDA   Y[:trigger_action_script] + 2
+    BZE   _no_action_script
+
+  _has_action_script:
+    LDX   dp(Aoba::Script.stack_pointer)
+    LDA   dp(Aoba::Script.script_pointer)
+    STA   0, X
+    CPU.set A: 8
+    LDA   dp(Aoba::Script.script_pointer) + 2
+    STA   2, X
+    LDA   Y[:trigger_action_script] + 2
+    STA   dp(Aoba::Script.script_pointer) + 2
+    CPU.set A: 16
+    LDA   Y[:trigger_action_script]
+    STA   dp(Aoba::Script.script_pointer)
+    INX
+    INX
+    INX
+    STX   dp(Aoba::Script.stack_pointer)
+
+  _no_action_script:
+  end
+
+  ;; Executes the NPCs action script
+  Aoba::Script.callback "Character_CameraDisable", bank: SPRITE_ROM_BANK do
+    LDA   #Aoba::Thread::Event.USEREVENT_ID
+    JSL   Aoba::Thread::Event.allocate_icb_long
+    X.is_a! Aoba::Sprite::Event::CameraDisable::Event
+    LDA   #Aoba::Sprite::Event::CameraDisable::ID
+    STA   X[:event_id]
+    LDA   Sprite.thread_id
+    CPU.set A: 16
+    JML   Aoba::Thread::send_event_icb_long
+  end
+
+  ;; Executes the NPCs action script
+  Aoba::Script.callback "Character_CameraAddCharacter", bank: SPRITE_ROM_BANK do
+    LDA   #Aoba::Thread::Event.USEREVENT_ID
+    JSL   Aoba::Thread::Event.allocate_icb_long
+    X.is_a! Aoba::Sprite::Event::CameraAddSprite::Event
+    LDA   #Aoba::Sprite::Event::CameraAddSprite::ID
+    STA   X[:event_id]
+    LDY   dp(Aoba::Script.register_c0)
+    Y.is_a! Instance
+    LDA   Y[:id]
+    STA   X[:sprite_id]
+    LDA   Sprite.thread_id
+    CPU.set A: 16
+    JML   Aoba::Thread::send_event_icb_long
+  end
+end

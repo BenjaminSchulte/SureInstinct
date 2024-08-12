@@ -1,0 +1,32 @@
+module Aoba::Compression::LZW
+
+  locate_at bank: COMPRESSION_LZW_ROM_BANK
+
+  ;; Object in DirectPage used as state
+  class State
+
+    ;; The source address
+    declare :source_address,         as: :uint24
+
+    ;; The target address
+    declare :target_address,         as: :uint24
+
+    ;; The current dictionary byffer
+    declare :dictionary_address,     as: :uint24
+
+    ;; The current size of the buffer left
+    declare :end_of_buffer,          as: :uint16
+
+    ;; Whether more data is available
+    declare :has_more,               as: :uint16
+
+    ;; Control character
+    declare :control_char_size,      as: :uint8
+    declare :control_char,           as: :uint8
+
+    ;; Counter for decompression
+    declare :counter_for_decompress, as: :uint8
+
+  end
+
+end

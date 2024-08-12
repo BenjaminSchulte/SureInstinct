@@ -1,0 +1,32 @@
+module Aoba::Sprite::Collision
+
+  ;; Speed for shifting an NPC
+  NPC_SHIFT_SPEED = $100
+
+  ;; Flags (See docs/collision.adoc for further details)
+  module Flag
+    ;; Mask for the layer bits
+    LAYER_MASK = $0060
+
+    ;; Layer 20
+    LAYER_20 = $0020
+
+    ;; Layer 40
+    LAYER_40 = $0040
+
+    ;; Both layers
+    LAYER_BOTH = $0060
+
+    ;; Collision flag
+    FLAG_COLLISION = $0010
+
+    ;; Full collision bits
+    FULL_COLLISION = $007F
+
+    ;; The Enter Event flag
+    FLAG_ENTER_EVENT = $3800
+
+    ;; The Move Event flag
+    MOVE_EVENT_MASK = $000F
+  end
+end

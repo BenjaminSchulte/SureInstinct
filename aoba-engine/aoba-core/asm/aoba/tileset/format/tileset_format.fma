@@ -1,0 +1,111 @@
+module Aoba::Tileset
+
+  class TilesetFormatBuilder
+    macro initialize(format)
+      @format = format
+    end
+
+    ;; Includes another module
+    macro use(other)
+      other.include_to_tileset_format @format
+    end
+
+    ;; Creates a new layer
+    macro tiles(id, &block)
+      use TilesetTilesFormat.create(id, &block)
+    end
+
+    ;; Creates a new layer
+    macro bg(id, &block)
+      use TilesetBgFormat.create(id, &block)
+    end
+
+    ;; Creates a new layer
+    macro layer(id, &block)
+      use TilesetLayerFormat.create(id, &block)
+    end
+  end
+
+
+  class TilesetFormat < Aoba::EngineObject
+    ;; Constructor
+    macro initialize
+      super
+
+      @bgs = []
+      @bgs_by_id = {}
+
+      @tiles = []
+      @tiles_by_id = {}
+      
+      @layers = []
+      @layers_by_id = {}
+    end
+
+    macro parent_objects
+      return @layers + @bgs + @tiles
+    end
+
+    ;; Add this tileset to a tilemap
+    macro include_to_tilemap_format(format)
+      format.tileset = self
+    end
+
+    ;; Adds this to a storage
+    macro include_to_tileset_storage(storage)
+      storage.tileset = self
+    end
+
+    ;; Add to VRAM
+    macro include_as_vram_object(id, layout, scope)
+      obj = VramObject.new(self)
+      obj.include_as_vram_object id, layout, scope
+    end
+
+    macro _configure_vram(scene, vram)
+      _self = self
+      scene.event.on :load8_fixed do
+        _address = vram.address
+
+        _self.tiles.each do |tiles|
+          LDA   #_address >> 9
+          tiles.tiles.snes_bgs.each do |bg|
+            case bg
+              when 1
+                STA   Composer.vram_bg1_tileset
+              when 2
+                STA   Composer.vram_bg2_tileset
+              else
+                raise "Unsupported background: #{bg}"
+            end
+          end
+          _address += tiles.tiles.size_in_bytes
+        end
+      end
+    end
+
+    macro include_as_scene_object(scene, as, vram)
+      vram_obj = scene.vram_layout.objects[vram]
+      _configure_vram scene, vram_obj
+
+      SceneObject.new(self).include_to_scene_mode(scene, as)
+    end
+
+    macro finalize
+      _self = self
+      @bgs.each do |bg|
+        bg.tiles.tiles.snes_bgs << bg.bg.snes_bg
+      end
+    end
+
+    ;; Creates a new tileset format  
+    macro self.create(&block)
+      format = TilesetFormat.new
+      builder = TilesetFormatBuilder.new(format)
+      block.call with_context builder
+      format.finalize
+      return format
+    end
+  end
+
+end

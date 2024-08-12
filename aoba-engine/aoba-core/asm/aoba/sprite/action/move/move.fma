@@ -1,0 +1,373 @@
+module Aoba::Sprite::Action::Move
+
+  ;; The temporary RAM
+  scope :TempRAM, in: ActionRAM
+
+  ;; Shared temporary RAM within this ram
+  scope :SharedTempRAM, in: TempRAM, shared: true
+  
+  ;; Quick access for speed variables
+  declare :speed_x_decimal, as: :uint32, in: TempRAM
+  speed_x = speed_x_decimal + 2
+  declare :speed_y_decimal, as: :uint32, in: TempRAM
+  speed_y = speed_y_decimal + 2
+  
+  ;; Quick access for position variables
+  declare :pos_x_decimal, as: :uint32, in: TempRAM
+  pos_x = pos_x_decimal + 2
+  declare :pos_y_decimal, as: :uint32, in: TempRAM
+  pos_y = pos_y_decimal + 2
+
+  ;; Quick access flags
+  declare :basic_flags, as: :uint16, in: TempRAM
+
+  ;; Collision bitmask for NPC collision test
+  declare :collision_x_bitmask, as: :uint16, in: TempRAM
+  declare :collision_y_bitmask, as: :uint16, in: TempRAM
+
+  ;; Special flags used during movement
+  declare :move_flags, as: :uint16, in: TempRAM
+  MOVE_FLAG_STOP_PUSH = $01
+  MOVE_PREVENT_DIAGONAL = $02
+
+  ;; Prepares the speed
+  macro __prepare_sprite_dp_speed(shift)
+    LDA   X[:speed_x_decimal]
+    if shift
+      CLC 
+      ADC   X[:shift_x_speed_decimal]
+    end
+    STA   dp(speed_x_decimal)
+    LDA   X[:speed_x]
+    ADC   X[:shift_x_speed] if shift
+    STA   dp(speed_x)
+
+    LDA   X[:speed_y_decimal]
+    if shift
+      CLC
+      ADC   X[:shift_y_speed_decimal]
+    end
+    STA   dp(speed_y_decimal)
+    LDA   X[:speed_y]
+    ADC   X[:shift_y_speed] if shift
+    STA   dp(speed_y)
+  end
+
+  ;; Resets the being shifted flag
+  def _reset_shifted_flag
+    X.is_a! Instance
+    LDA   X[:movable_flags]
+    BIT   #MovableFlag::IDLE_IS_BEING_PUSHED
+    BZE   _end_of_idle
+
+    AND   #$FFFF ^ MovableFlag::IDLE_IS_BEING_PUSHED
+    STA   X[:movable_flags]
+    RTS
+
+    ;; --
+
+  _end_of_idle:
+    AND   #$FFFF ^ MovableFlag::IS_BEING_PUSHED
+    STA   X[:movable_flags]
+  end
+
+  ;; Resets the pushing flag
+  def _reset_pushing_flag
+    X.is_a! Instance
+
+    BIT   #MovableFlag::IDLE_IS_PUSHING
+    BZE   _end_of_idle
+
+    AND   #$FFFF ^ MovableFlag::IDLE_IS_PUSHING
+    STA   X[:movable_flags]
+    RTS
+
+    ;; --
+
+  _end_of_idle:
+    AND   #$FFFF ^ MovableFlag::IS_PUSHING
+    STA   X[:movable_flags]
+    INC   dp(move_flags)
+  end
+
+  ;; Prepares the sprite memory for moved NPCs
+  macro _prepare_moved_sprite_dp
+    LDA   X[:basic_flags]
+    STA   dp(basic_flags)
+  end
+
+  ;; Prepares the sprite memory
+  macro _prepare_sprite_dp
+    CPU.set A: 8
+    STZ   dp(move_flags)
+    LDA   X[:movable_flags]
+    BIT   #MovableFlag::IS_PUSHING | MovableFlag::IDLE_IS_PUSHING
+    BZE   _not_pushing
+    _reset_pushing_flag
+    LDA   X[:movable_flags]
+  _not_pushing:
+    BIT   #MovableFlag::IS_BEING_PUSHED | MovableFlag::IDLE_IS_BEING_PUSHED
+    CPU.set A: 16
+    BZE   _direct_move
+
+    ;; Tests if it has been shifted last frame
+  _test_shift_move:
+    LDA   X[:shift_x_speed]
+    ORA   X[:shift_x_speed_decimal]
+    ORA   X[:shift_y_speed]
+    ORA   X[:shift_y_speed_decimal]
+    BZE   _no_shift_this_frame
+
+    ;; Move shifted
+    __prepare_sprite_dp_speed shift: true
+
+    STZ   X[:shift_x_speed]
+    STZ   X[:shift_x_speed_decimal]
+    STZ   X[:shift_y_speed]
+    STZ   X[:shift_y_speed_decimal]
+    BRA   _after_direct_move
+
+    ;; ---
+
+    ;; No shift last frame. Reset moved flag
+  _no_shift_this_frame:
+    _reset_shifted_flag
+
+  _direct_move:
+    __prepare_sprite_dp_speed shift: false
+
+  _after_direct_move:
+  end
+
+  ;; Skips any action if no movement is 
+  macro _skip_if_no_movement(label)
+    LDA   dp(speed_x_decimal)
+    ORA   dp(speed_x)
+    ORA   dp(speed_y_decimal)
+    ORA   dp(speed_y)
+    BZE   label
+  end
+
+  ;; @ignore-thread-safety
+  def _recalculate_new_position
+    X.is_a! Instance
+
+    CLC
+    LDA   X[:x_decimal]
+    ADC   dp(speed_x_decimal)
+    STA   dp(pos_x_decimal)
+    LDA   X[:x]
+    ADC   dp(speed_x)
+    STA   dp(pos_x)
+
+    LDX   dp(current_sprite)
+    CLC
+    LDA   X[:y_decimal]
+    ADC   dp(speed_y_decimal)
+    STA   dp(pos_y_decimal)
+    LDA   X[:y]
+    ADC   dp(speed_y)
+    STA   dp(pos_y)
+    LDX   dp(current_sprite)
+  end
+
+  ;; Tests whether there was any tile event
+  ;; @ignore_thread_safety
+  def _test_tile_event
+    X.is_a! Instance
+
+    LDA   dp(pos_x)
+    AND   #$FFF0
+    CMP   X[:last_tile_event_x]
+    BNE   _update
+
+    LDA   dp(pos_y)
+    AND   #$FFF0
+    CMP   X[:last_tile_event_y]
+    BNE   _update
+    RTS
+
+  _update:
+    config.collision.on_tile_changed unless config.collision.nil?
+
+    LDA   dp(pos_x)
+    AND   #$FFF0
+    STA   X[:last_tile_event_x]
+    LDA   dp(pos_y)
+    AND   #$FFF0
+    STA   X[:last_tile_event_y]
+    RTS
+  end
+
+  ;; Recalculates the collision bitmask
+  def _recalculate_collision_bitmask
+    LDX   #0
+    LDA   dp(pos_x)
+    BMI   _skip_calc_x
+    (SPRITE_MAX_VISIBLE_POSITION_X >> 5).fast_divided_register_A
+    AND   #$FE
+    TAX
+  _skip_calc_x:
+    LDA   axis_collision_bitmask.long, X
+    STA   dp(collision_x_bitmask)
+
+    LDX   #0
+    LDA   dp(pos_y)
+    BMI   _skip_calc_y
+    (SPRITE_MAX_VISIBLE_POSITION_Y >> 5).fast_divided_register_A
+    AND   #$FE
+    TAX
+  _skip_calc_y:
+    LDA   axis_collision_bitmask.long, X
+    STA   dp(collision_y_bitmask)
+  end
+
+  ;; Sends an event to the script
+  ;;
+  ;; @param AL event bitmask
+  ;; @param AH event ID
+  def send_event_to_script
+    Thread.assert_thread thread_id
+
+    STA   dp(_calc0)
+
+    CPU.set A: 8
+    JSL   Aoba::Thread::Event.allocate_icb_long
+    X.is_a! Aoba::Thread::Event::ReadyEvent
+    LDA   dp(_calc0) + 1
+    STA   X[:event_id]
+    CPU.set A: 16
+    LDY   dp(current_sprite)
+    Y.is_a! Instance
+    LDA   Y[:id]
+    STA   X[:userdata]
+
+    LDA   Y[:automation_script_id]
+    JSL   Aoba::Thread::send_event_icb_long
+  end
+
+  ;; Stops pushing
+  def _stop_pushing
+    X.is_a! Aoba::Sprite::Instance
+    CPU.set A: 8
+    LDA   X[:movable_flags]
+    BIT   #MovableFlag::IS_PUSHING | MovableFlag::IDLE_IS_PUSHING
+    BZE   _stop
+  _rts:
+    CPU.set A: 16
+    RTS
+
+    A.pretend_size 8
+
+  _stop:
+    LDY   dp(current_sprite)
+    Y.is_a! Instance
+    LDA   Y[:automation_script_id]
+    BZE   _rts
+
+    Debug.fatal "PUSH :: STOP"
+    PHA
+    LDA   #Aoba::Thread::Event::USEREVENT_ID
+    JSL   Aoba::Thread::Event.allocate_icb_long
+    X.is_a! Aoba::Thread::Event::ReadyEvent
+    LDA   #Aoba::Script::EventId::STOP_PUSH_NPC
+    STA   X[:event_id]
+    PLA
+    JSL   Aoba::Thread.send_event_icb_long
+    CPU.set A: 16
+    LDX   dp(current_sprite)
+    RTS
+  end
+
+  ;; Tests if we can stop pushing
+  macro _test_stop_pushing
+    Debug.access_8bit_through_16bit
+    LDA   dp(move_flags)
+    LSR   A
+    BCC   _no_stop_push
+    _stop_pushing
+  _no_stop_push:
+  end
+
+  ;; Moves the sprite in dp(current_sprite)
+  def move_sprite
+    Thread.assert_thread thread_id
+    X.is_a! Aoba::Sprite::Instance
+
+Debug.profile_event_start $FC
+    ;; Applies the move event
+    _prepare_sprite_dp
+    MoveEvent._apply_move_event unless config.move_events.nil?
+Debug.profile_event_stop
+
+    ;; Skips if there is no movement
+    LDA   X[:movable_flags] - 1
+    BMI   _force_movement
+    _skip_if_no_movement _no_movement
+  _force_movement:
+    _prepare_moved_sprite_dp
+
+    ;; Basic collision detection
+    _recalculate_new_position
+    LDA   X[:collision_flags] - 1
+    BMI   _skip_collision_test
+Debug.profile_event_start $FE
+    config.collision.test_collision unless config.collision.nil?
+Debug.profile_event_stop
+    _skip_if_no_movement _stopped_by_tile_collision
+
+  _do_npc_collision_test:
+
+Debug.profile_event_start $FB
+    ;; Recalculates the position
+    LDX   dp(current_sprite)
+    _recalculate_new_position
+    _recalculate_collision_bitmask
+    LDX   dp(current_sprite)
+Debug.profile_event_stop
+Debug.profile_event_start $FF
+    Collision::NPC.process_collision
+Debug.profile_event_stop
+    _skip_if_no_movement _stopped_by_npc_collision
+
+  _skip_collision_test:
+
+Debug.profile_event_start $FB
+    ;; Recalculates the position
+    LDX   dp(current_sprite)
+    _recalculate_new_position
+    _recalculate_collision_bitmask
+    LDX   dp(current_sprite)
+    config.collision.cache_collision unless config.collision.nil?
+Debug.profile_event_stop
+
+Debug.profile_event_start $FD
+    ;; Tests whether there is any tile event
+    _test_tile_event
+Debug.profile_event_stop
+
+    ;; Collision detection is done. Resume
+    LDX   dp(current_sprite)
+    _test_stop_pushing
+    JMP   MoveTarget.store_new_position
+  _stopped_by_npc_collision:
+  _stopped_by_tile_collision:
+    LDX   dp(current_sprite)
+    X.is_a! Instance
+    Debug.access_8bit_through_16bit
+    LDA   X[:automation_flags]
+    BIT   #AutomationFlag::COLLISION_EVENT_LISTENER
+    BNZ   _notify_script_about_collision
+
+  _no_movement:
+    _test_stop_pushing
+    RTS
+
+    ;; ======= New routine =======
+
+  _notify_script_about_collision:
+    LDA   #Aoba::Thread::Event::USEREVENT_ID | (Aoba::Script::EventId::SPRITE_COLLISION << 8)
+    JMP   send_event_to_script
+  end
+
+end

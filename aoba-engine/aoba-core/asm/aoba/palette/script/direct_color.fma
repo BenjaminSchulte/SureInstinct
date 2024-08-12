@@ -1,0 +1,31 @@
+module Aoba::Palette
+
+  ;; Sets a color directly
+  ;;
+  ;; @param REGA dialog image
+  Aoba::Script.callback "Palette_SetColor", bank: DIALOG_ROM_BANK do
+    ;; Updates the color directly
+    LDA   dp(Aoba::Script.register_a)
+    AND   dp(Aoba::Script.x00FF)
+    ASL   A
+    TAX
+    LDA   dp(Aoba::Script.register_a + 1)
+    STA   cgram.long, X
+
+;;;Debug.log "[DEPRECATED] Palette_SetColor always updates the row, maybe deprecate this update and force manually update"
+
+    ;; Triggers a cgram upload
+    CPU.set A: 8
+    LDA   #Aoba::Thread::Event::USEREVENT_ID
+    JSL   Aoba::Thread::Event.allocate_icb_long
+    X.is_a! Aoba::Palette::Event::UploadPaletteRow::Event
+    LDA   #Aoba::Palette::Event::UploadPaletteRow::ID
+    STA   X[:event_id]
+    LDA   dp(Aoba::Script.register_a)
+    STA   X[:row]
+    LDA   thread_id
+    JSL   Aoba::Thread.send_event_icb_long
+    CPU.set A: 16
+  end
+
+end

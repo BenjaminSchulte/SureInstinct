@@ -1,0 +1,26 @@
+module Aoba::Level::Event::LoadLevel
+
+  ;; Temporary RAM
+  scope :TempRAM, in: ActionRAM
+
+  ;; The event
+  class Event < Base
+    ;; The config
+    declare :level_address, as: :uint16
+  end
+
+  ;; Updates scrolling
+
+  ;; Creates a load event for a tileset_loader
+  macro create_for(level_loader)
+    List.create "LoadLevel" do
+      Y.is_a! Event
+
+      LDA   Y[:level_address]
+      level_loader.load
+
+      level_loader.tilemap_renderer.camera.update_composer_scrolling
+    end
+  end
+
+end

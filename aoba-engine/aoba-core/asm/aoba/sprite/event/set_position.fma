@@ -1,0 +1,58 @@
+module Aoba::Sprite::Event::SetPosition
+
+  ;; The event
+  class Event < Base 
+    ;; The config address
+    declare :config_address, as: :uint16
+  end
+
+  ;; The configuration
+  class EventConfig
+    ;; The creature address
+    declare :sprite_id, as: :uint8
+
+    ;; The position X
+    declare :x, as: :uint16
+
+    ;; The position Y
+    declare :y, as: :uint16
+  end
+
+  ;; Temporary RAM
+  scope :TempRAM, in: ActionRAM
+
+  ;; The event configuration
+  declare :config, as: EventConfig.pointer(:uint16), in: TempRAM
+
+  ;; Creates the sprite
+  ;; @ignore-thread-safety
+  ID = List.create "SetPosition" do
+    Y.is_a! Event
+
+    ;; Read the events configuration
+    LDX   Y[:config_address]
+    STX   dp(config)
+    TXY
+    Y.is_a! EventConfig
+
+    LDA   Y[:sprite_id]
+    Action::ManageSprite.find_sprite_by_sprite_id
+
+    X.is_a! Instance
+    LDA   Y[:x]
+    STA   X[:x]
+    STZ   X[:x_decimal]
+    LDA   Y[:y]
+    STA   X[:y]
+    STZ   X[:y_decimal]
+    Action::ManageSprite.recalculate_after_set_position
+
+    ;; We are ready. Clear RAM
+    LDX   dp(config)
+    SEI
+    JSL   Aoba::Memory.free_miniblock_long
+    CLI
+
+  end
+
+end

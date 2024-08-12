@@ -1,0 +1,31 @@
+module Song
+
+  ;; Update routine invoked by timer
+  macro update
+    ; Store channel bits which should be processed
+    MOV    A, dp(song_active_channels)
+    BZE    _no_timer_triggered
+
+    MOV    dp(Channel.processed_channels), A
+    EOR    A, dp(SFX.sfx_active_channels)
+    AND    A, dp(song_active_channels)
+    AND    A, dp(Stream.stream_disabled_voices)
+    MOV    dp(Channel.enabled_voices), A
+
+    ; Copy local attributes
+    MOV    dp(Script.main_volume), dp(song_volume)
+
+    ; Prepare execute script iteration
+    MOV    dp(Channel.num_channels), #NUM_SONG_CHANNELS
+    MOV    A, #SONG_CHANNEL_INDEX
+    Channel.channel_index_to_channel_pointer
+
+    Script.process
+
+    ; Store values back
+    MOV    dp(song_active_channels), dp(Channel.processed_channels)
+
+  _no_timer_triggered:
+  end
+
+end

@@ -1,0 +1,207 @@
+module Aoba::Sprite::Action::Rendering
+
+  cmd_loop_with_sprite_instance = nil
+
+  scriptcmd_80_BEGIN_LOOP = AnimationCommand.create :begin_loop do
+    CPU.set A: 16
+    LDX   dp(sprite_instance)
+    LDA   dp(sprite_script_pointer)
+    STA   VARIABLE_RAM_BANK.as_bank(Instance.offset_of(:animation_start_script_pointer)).long, X
+    LDA   dp(sprite_frame_reference_pointer)
+    STA   VARIABLE_RAM_BANK.as_bank(Instance.offset_of(:animation_start_frame_reference_pointer)).long, X
+    CPU.set A: 8
+  end
+
+  ;; Loops
+  ;; @ignore-thread-safety
+  scriptcmd_81_LOOP = AnimationCommand.create :loop do
+    CPU.set A: 16
+    LDX   dp(sprite_instance)
+  _with_sprite_instance:
+    LDA   VARIABLE_RAM_BANK.as_bank(Instance.offset_of(:animation_start_script_pointer)).long, X
+    STA   dp(sprite_script_pointer)
+    LDA   VARIABLE_RAM_BANK.as_bank(Instance.offset_of(:animation_start_frame_reference_pointer)).long, X
+    STA   dp(sprite_frame_reference_pointer)
+    CPU.set A: 8
+
+    cmd_loop_with_sprite_instance = _with_sprite_instance
+  end
+
+  ;; Stop
+  ;; @ignore-thread-safety
+  scriptcmd_82_STOP = AnimationCommand.create :stop do
+    LDX   dp(sprite_instance)
+    LDA   VARIABLE_RAM_BANK.as_bank(Instance.offset_of(:renderable_configuration_flags)).long, X
+    BIT   #RenderableConfigurationFlag.FORCE_LOOP_ANIMATION
+    BZE   _stop_animation
+    CPU.set A: 16
+    JMP   cmd_loop_with_sprite_instance
+    A.pretend_size 8
+
+  _stop_animation:
+    LDA   #0
+    STA   VARIABLE_RAM_BANK.as_bank(Instance.offset_of(:animation_duration)).long, X
+    CPU.set A: 16
+    CLC
+    RTS
+  end
+
+  ;; Destroys the current sprite
+  scriptcmd_83_DESTROY_SELF = AnimationCommand.create :destroy_self do
+    CPU.with_bank! VARIABLE_RAM_BANK do
+      LDA   #Aoba::Thread::Event::USEREVENT_ID
+      JSL   Aoba::Thread::Event.allocate_icb_long
+      X.is_a! Aoba::Sprite::Event::DestroySprite::Event
+      LDA   #Aoba::Sprite::Event::DestroySprite::ID
+      STA   X[:event_id]
+      LDY   dp(sprite_instance)
+      Y.is_a! Instance
+      LDA   Y[:id]
+      STA   X[:sprite_id]
+      LDA   thread_id
+      JSL   Aoba::Thread::send_event_icb_long
+
+      LDX   dp(sprite_instance)
+      X.is_a! Instance
+      LDA   #$FF
+      STA   X[:animation_duration]
+    end
+
+    CPU.set A: 16
+    CLC
+    RTS
+  end
+
+  ;; Stops the script if no palette is loaded
+  macro _RTS_if_sprite_palette_is_not_loaded
+    CPU.set A: 16
+    LDX   dp(sprite_instance)
+    LDA   VARIABLE_RAM_BANK.as_bank(Instance.offset_of(:palette_slot_x2)).long, X
+    AND   dp(x00FF)
+    TAX
+    LDA   Aoba::Palette.requested_sprite_palette_ids.long, X
+    CMP   Aoba::Palette.loaded_sprite_palette_ids.long, X
+    BEQ   _palette_is_ok
+
+  _palette_is_not_loaded:
+    SEC
+    RTS
+
+  _palette_is_ok:
+    CPU.set A: 8
+  end
+
+  ;; Parses the script
+  def _parse_script
+    CPU.set A: 8
+  _loop:
+    LDX   dp(sprite_script_pointer)
+  _loop_no_x:
+    TDC
+    XBA
+
+    ;; Loads the script command
+  _loop_inner:
+    LDA   ANIMATION_SCRIPT_ROM_BANK.as_bank.long, X
+    BMI   _is_script_command
+    CMP   #$10
+    BLT   _is_default_frame
+    CMP   #$20
+    BLT   _is_frame_adjust
+    CMP   #$40
+    BLT   _is_move
+
+    ;; Reserved
+    Debug.BRK
+    NOP    
+    NOP    
+    NOP
+    INX
+    BRA   _loop_inner
+    
+    ;; Invokes a script command
+  _is_script_command:
+    INX
+    STX   dp(sprite_script_pointer)
+    ASL   A
+    TAX
+    if Aoba::Sprite::AnimationCommand._collection.index.nil?
+      fatal_error "no custom animation script commands added"
+    else 
+      JMP   Aoba::Sprite::AnimationCommand._collection.index.indirect, X
+    end
+
+    ;; Adjusts the current frame pointer
+  _is_frame_adjust:
+    INX
+    ;STX   dp(sprite_script_pointer)
+    BIT   #$8
+    CPU.set A: 16
+    BNZ   _is_negative_frame_adjust
+
+  _is_positive_frame_adjust:
+    AND   #$7
+    BRA   _resume_frame_adjust
+
+  _is_negative_frame_adjust:
+    ORA   #$FFF0
+  _resume_frame_adjust:
+    STA   dp(_calc0)
+    ASL   A
+    CLC
+    ADC   dp(_calc0)
+    CLC
+    ADC   dp(sprite_frame_reference_pointer)
+    STA   dp(sprite_frame_reference_pointer)
+    CPU.set A: 8
+    BRA   _loop_no_x
+
+    ;; Triggers a move speed change
+  _is_move:
+    INX
+    STX   dp(sprite_script_pointer)
+    AND    #$1F
+    ASL    A
+    TAY
+    LDX   dp(sprite_instance)
+    X.is_a! Instance
+    LDA   VARIABLE_RAM_BANK.as_bank(Instance.offset_of(:automation_flags)).long, X
+    BIT   #AutomationFlag.SPEED_IS_LOCKED
+    BNE   _loop
+    CPU.set A: 16
+    TYX
+    LDA   CharacterSpeedTable.long, X
+    CPU.with_bank! VARIABLE_RAM_BANK do
+      LDX   dp(sprite_instance)
+      X.is_a! Instance
+      STA   X[:walk_speed]
+      MoveSprite.set_simple_movespeed_from_angle_and_speed
+    end
+    CPU.set A: 8
+    BRA   _loop
+
+    ;; Renders a frame
+  _is_default_frame:
+    ;; Checks if the palette has already been loaded
+    INX
+    STX   dp(sprite_script_pointer)
+    STA   dp(_calc0)
+    _RTS_if_sprite_palette_is_not_loaded
+
+    ;; Writes the duration to the instance
+    LDA   dp(_calc0)
+    AND   #$F
+    INC   A
+    LDX   dp(sprite_instance)
+    STA   VARIABLE_RAM_BANK.as_bank(Instance.offset_of(:animation_duration)).long, X
+
+    CPU.set A: 16
+    _render_next_frame
+  
+  _end_of_script:
+    CLC
+  end
+
+  _parse_script_loop = _parse_script._loop
+
+end

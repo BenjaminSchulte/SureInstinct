@@ -1,0 +1,100 @@
+type: BallSprite
+frames:
+  bomb0: {images: [{image: 0}]}
+  bomb1: {images: [{image: 1}]}
+  bomb2: {images: [{image: 2}]}
+  bomb3: {images: [{image: 3}]}
+  bomb4: {images: [{image: 4}]}
+  bomb5: {images: [{image: 5}]}
+  bomb6: {images: [{image: 6}]}
+  bomb7: {images: [{image: 7}]}
+  explosion1: {images: [{image: 8}]}
+  explosion2: {images: [{image: 9}]}
+  explosion3: {images: [{image: 10}]}
+  explosion4: {images: [{image: 11}]}
+  explosion5: {images: [{image: 12}]}
+  explosion6: {images: [{image: 13}]}
+  explosion7: {images: [{image: 14}]}
+  explosion8: {images: [{image: 15}]}
+
+animations:
+  stand_down:
+    - frame: bomb0
+      delay: 15
+  placed_down:
+    - {frame: bomb0, delay: 3}
+    - {frame: bomb1, delay: 3}
+    - {frame: bomb0, delay: 3}
+    - {frame: bomb1, delay: 3}
+    - {frame: bomb0, delay: 3}
+    - {frame: bomb1, delay: 3}
+    - {frame: bomb0, delay: 3}
+    - {frame: bomb1, delay: 3}
+    - {frame: bomb0, delay: 3}
+    - {frame: bomb1, delay: 3}
+    - {frame: bomb0, delay: 3}
+    - {frame: bomb1, delay: 3}
+    - {frame: bomb0, delay: 3}
+    - {frame: bomb1, delay: 3}
+    - {frame: bomb0, delay: 3}
+    - {frame: bomb1, delay: 3}
+    - {frame: bomb2, delay: 3}
+    - {frame: bomb3, delay: 3}
+    - {frame: bomb2, delay: 3}
+    - {frame: bomb3, delay: 3}
+    - {frame: bomb2, delay: 3}
+    - {frame: bomb3, delay: 3}
+    - {frame: bomb2, delay: 3}
+    - {frame: bomb3, delay: 3}
+    - {frame: bomb2, delay: 3}
+    - {frame: bomb3, delay: 3}
+    - {frame: bomb2, delay: 3}
+    - {frame: bomb3, delay: 3}
+    - {frame: bomb2, delay: 3}
+    - {frame: bomb3, delay: 3}
+    - {frame: bomb2, delay: 3}
+    - {frame: bomb3, delay: 3}
+    - {frame: bomb4, delay: 3}
+    - {frame: bomb5, delay: 3}
+    - {frame: bomb4, delay: 3}
+    - {frame: bomb5, delay: 3}
+    - {frame: bomb4, delay: 3}
+    - {frame: bomb5, delay: 3}
+    - {frame: bomb4, delay: 3}
+    - {frame: bomb5, delay: 3}
+    - {frame: bomb4, delay: 3}
+    - {frame: bomb5, delay: 3}
+    - {frame: bomb4, delay: 3}
+    - {frame: bomb5, delay: 3}
+    - {frame: bomb4, delay: 3}
+    - {frame: bomb5, delay: 3}
+    - {frame: bomb4, delay: 3}
+    - {frame: bomb5, delay: 3}
+    - {frame: bomb6, delay: 3}
+    - {frame: bomb7, delay: 3}
+    - {frame: bomb6, delay: 3}
+    - {frame: bomb7, delay: 3}
+    - {frame: bomb6, delay: 3}
+    - {frame: bomb7, delay: 3}
+    - {frame: bomb6, delay: 3}
+    - {frame: bomb7, delay: 3}
+    - {frame: bomb6, delay: 3}
+    - {frame: bomb7, delay: 3}
+    - {frame: bomb6, delay: 3}
+    - {frame: bomb7, delay: 3}
+    - {frame: bomb6, delay: 3}
+    - {frame: bomb7, delay: 3}
+    - action: begin_loop
+    - {frame: bomb6, delay: 3}
+    - {frame: bomb7, delay: 3}
+    - action: loop
+  explode_down:  
+    - {frame: explosion1, delay: 2}
+    - {frame: explosion2, delay: 2}
+    - {frame: explosion3, delay: 2}
+    - {frame: explosion4, delay: 3}
+    - {frame: explosion5, delay: 3}
+    - {frame: explosion6, delay: 4}
+    - {frame: explosion7, delay: 5}
+    - {frame: explosion8, delay: 6}
+    - action: destroy_self

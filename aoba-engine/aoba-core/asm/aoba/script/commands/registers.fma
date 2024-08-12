@@ -1,0 +1,305 @@
+module Aoba::Script
+
+  macro _rel_param_address
+    read_current_script_value
+    AND   dp(x00FF)
+    BIT   #$80
+    BZE   _positive
+    Debug.BRK
+    ORA   #$FF00
+  _positive:
+    CLC
+    ADC   dp(register_p)
+    TAX
+  end
+
+  command Opcode::LDA8_PARAM, :lda8_param do
+    _rel_param_address
+    LDA   0, X
+    AND   dp(x00FF)
+    STA   dp(register_a)
+    STZ   dp(register_a) + 2
+    INY
+  end
+
+  command Opcode::LDA16_PARAM, :lda16_param do
+    _rel_param_address
+    LDA   0, X
+    STA   dp(register_a)
+    STZ   dp(register_a) + 2
+    INY
+  end
+
+  command Opcode::LDA24_PARAM, :lda24_param do
+    _rel_param_address
+    LDA   0, X
+    STA   dp(register_a)
+    LDA   2, X
+    AND   dp(x00FF)
+    STA   dp(register_a) + 2
+    INY
+  end
+
+  command Opcode::LDA32_PARAM, :lda32_param do
+    _rel_param_address
+    LDA   0, X
+    STA   dp(register_a)
+    LDA   2, X
+    STA   dp(register_a) + 2
+    INY
+  end
+
+  command Opcode::FUNC_START, :func_start do
+    LDA   dp(register_p)
+    LDX   dp(stack_pointer)
+    STA   0, X
+    STX   dp(register_p)
+    
+    read_current_script_value
+    AND   dp(x00FF)
+    CLC
+    ADC   dp(stack_pointer)
+    INC   A
+    INC   A
+    STA   dp(stack_pointer)
+  end
+
+  command Opcode::FUNC_END, :func_end do
+    LDX   dp(register_p)
+    LDA   0, X ; = new register P
+    STA   dp(register_p)
+    DEX
+    DEX
+    DEX
+
+    read_current_script_value
+    AND   dp(x00FF)
+    STA   dp(calc0)
+
+    LDA   0, X ; = rts address
+    STA   dp(script_pointer)
+    LDA   1, X ; = rts address
+    STA   dp(script_pointer) + 1
+    
+    TXA
+    SEC
+    SBC   dp(calc0)
+    STA   dp(stack_pointer)
+    
+    LDY   #0
+  end
+
+  command Opcode::STA8_PARAM, :sta8_param do
+    _rel_param_address
+    CPU.set A: 8
+    LDA   dp(register_a)
+    STA   0, X
+    CPU.set A: 16
+    INY
+  end
+
+  command Opcode::STA16_PARAM, :sta16_param do
+    _rel_param_address
+    LDA   dp(register_a)
+    STA   0, X
+    INY
+  end
+
+  command Opcode::STA24_PARAM, :sta24_param do
+    _rel_param_address
+    LDA   dp(register_a)
+    STA   0, X
+    CPU.set A: 8
+    LDA   dp(register_a) + 2
+    STA   2, X
+    CPU.set A: 16
+    INY
+  end
+
+  command Opcode::STA32_PARAM, :sta32_param do
+    _rel_param_address
+    LDA   dp(register_a)
+    STA   0, X
+    LDA   dp(register_a) + 2
+    STA   2, X
+    INY
+  end
+
+
+  command Opcode::LDA8_IMMEDIATE, :lda8_immediate do
+    read_current_script_value
+    AND   dp(x00FF)
+    STA   dp(register_a)
+    STZ   dp(register_a) + 2
+    INY
+  end
+
+  command Opcode::LDA16_IMMEDIATE, :lda16_immediate do
+    read_current_script_value
+    STA   dp(register_a)
+    STZ   dp(register_a) + 2
+    INY
+    INY
+  end
+
+  command Opcode::LDA24_IMMEDIATE, :lda24_immediate do
+    read_current_script_value
+    STA   dp(register_a)
+    INY
+    INY
+    CPU.set A: 8
+    read_current_script_value
+    STA   dp(register_a) + 2
+    STZ   dp(register_a) + 3
+    INY
+    CPU.set A: 16
+  end
+
+  command Opcode::LDA32_IMMEDIATE, :lda32_immediate do
+    read_current_script_value
+    INY
+    INY
+    STA   dp(register_a)
+    read_current_script_value
+    INY
+    INY
+    STA   dp(register_a) + 2
+  end
+
+  command Opcode::LDX8_IMMEDIATE, :ldx8_immediate do
+    read_current_script_value
+    AND   dp(x00FF)
+    STA   dp(register_x)
+    INY
+  end
+
+  command Opcode::LDX16_IMMEDIATE, :ldx16_immediate do
+    read_current_script_value
+    STA   dp(register_x)
+    INY
+    INY
+  end
+
+  command Opcode::TAX, :tax do
+    LDA   dp(register_a)
+    STA   dp(register_x)
+  end
+
+  command Opcode::TXA, :txa do
+    LDA   dp(register_x)
+    STA   dp(register_a)
+    STZ   dp(register_a) + 2
+  end
+
+  command Opcode::TAC0, :tac do
+    LDA   dp(register_a)
+    STA   dp(register_c0)
+  end
+
+  command Opcode::TC0A, :tca do
+    LDA   dp(register_c0)
+    STA   dp(register_a)
+  end
+
+  command Opcode::DEC, :dec do
+    DEC   dp(register_a)
+    BCC   _rts
+    DEC   dp(register_a) + 2
+  _rts:
+  end
+
+  command Opcode::INC, :inc do
+    INC   dp(register_a)
+    BCC   _rts
+    INC   dp(register_a) + 2
+  _rts:
+  end
+
+  command Opcode::SET_BIT, :set_bit do
+    read_current_script_value
+    INY
+    INY
+    CLC
+    ADC   dp(register_c0)
+    STA   dp(calc0)
+
+    LDA   dp(current_command)
+    AND   #$3
+    TAX
+
+    CPU.set A: 8
+    LDA   PowerOfTwo8.long, X
+    LDX   dp(calc0)
+    ORA   $7F0000, X
+    STA   $7F0000, X
+    CPU.set A: 16
+  end
+  command_alias Opcode::SET_BIT + 1, :set_bit
+  command_alias Opcode::SET_BIT + 2, :set_bit
+  command_alias Opcode::SET_BIT + 3, :set_bit
+  command_alias Opcode::SET_BIT + 4, :set_bit
+  command_alias Opcode::SET_BIT + 5, :set_bit
+  command_alias Opcode::SET_BIT + 6, :set_bit
+  command_alias Opcode::SET_BIT + 7, :set_bit
+
+  command Opcode::CLR_BIT, :clr_bit do
+    read_current_script_value
+    INY
+    INY
+    CLC
+    ADC   dp(register_c0)
+    STA   dp(calc0)
+
+    LDA   dp(current_command)
+    AND   #$3
+    TAX
+
+    CPU.set A: 8
+    LDA   PowerOfTwo8.long, X
+    LDX   dp(calc0)
+    EOR   dp(x00FF)
+    AND   $7F0000, X
+    STA   $7F0000, X
+    CPU.set A: 16
+  end
+  command_alias Opcode::CLR_BIT + 1, :clr_bit
+  command_alias Opcode::CLR_BIT + 2, :clr_bit
+  command_alias Opcode::CLR_BIT + 3, :clr_bit
+  command_alias Opcode::CLR_BIT + 4, :clr_bit
+  command_alias Opcode::CLR_BIT + 5, :clr_bit
+  command_alias Opcode::CLR_BIT + 6, :clr_bit
+  command_alias Opcode::CLR_BIT + 7, :clr_bit
+
+  command Opcode::LDA_BIT, :lda_bit do
+    read_current_script_value
+    INY
+    INY
+    CLC
+    ADC   dp(register_c0)
+    TAX
+    STZ   dp(register_a)
+    STZ   dp(register_a + 2)
+    CPU.set A: 8
+    TDC
+    XBA
+    LDA   $7F0000, X
+    STA   dp(calc0)
+    LDA   dp(current_command)
+    AND   #$7
+    TAX
+    LDA   PowerOfTwo8.long, X
+    AND   dp(calc0)
+    BZE   _not_set
+    INC   dp(register_a)
+  _not_set:
+    CPU.set A: 16
+  end
+  command_alias Opcode::LDA_BIT + 1, :lda_bit
+  command_alias Opcode::LDA_BIT + 2, :lda_bit
+  command_alias Opcode::LDA_BIT + 3, :lda_bit
+  command_alias Opcode::LDA_BIT + 4, :lda_bit
+  command_alias Opcode::LDA_BIT + 5, :lda_bit
+  command_alias Opcode::LDA_BIT + 6, :lda_bit
+  command_alias Opcode::LDA_BIT + 7, :lda_bit
+
+end

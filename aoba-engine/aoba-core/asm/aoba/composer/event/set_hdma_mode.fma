@@ -1,0 +1,51 @@
+module Aoba::Composer::Event::SetHdmaMode
+
+  ;; The event
+  class Event < Base
+    ;; The screen mode
+    declare :mode, as: :uint8
+
+    ;; Parameter for the mode
+    declare :param, as: :uint16
+  end
+
+  ;; Sets the screen mode
+  ;; @ignore-thread-safety
+  ID = List.create "SetHdmaMode" do
+    SEI
+
+    ;; Disable old mode if there is some mode in queue currently
+    Debug.access_8bit_through_16bit
+    LDA   Hdma.queued_hdma_mode
+    AND   dp(x00FF)
+    BZE   _no_queued_hdma_mode
+
+  _has_queued_hdma_mode:
+    DEC   A
+    ASL   A
+    TAX
+    PHY
+    LDY   Hdma.queued_userdata
+    JSR   Hdma.mode_release_pointer.indirect, X
+    PLY
+    Y.is_a! Event
+
+    ;; Setup new mode - Mode pointer to X, param to A
+_no_queued_hdma_mode:
+    LDA   Y[:mode]
+    AND   dp(x00FF)
+    CPU.set A: 8
+    STA   Hdma.queued_hdma_mode
+    CPU.set A: 16
+    DEC   A
+    ASL
+    TAX
+    LDA   Y[:param]
+    TAY
+    JSR   Hdma.mode_setup_pointer.indirect, X
+    STY   Hdma.queued_userdata
+   
+    CLI
+  end
+
+end

@@ -1,0 +1,80 @@
+module Aoba::Tileset
+
+  class RamTileReferenceStorageBuilder < TileReferenceStorageBuilder
+    macro add_layer(layer, num_tiles)
+      @storage.max_num_tiles[layer] = num_tiles
+    end
+  end
+
+  class RamTileReferenceStorage < TileReferenceStorage
+    ;; Initialize
+    macro initialize
+      super
+
+      @max_num_tiles = {}
+      @tiles = {}
+    end
+
+    ;; Finalizes the storage (i.e create it)
+    macro finalize
+      _self = self
+
+      @max_num_tiles.keys.each do |id|
+        bgtiles_per_tile = _self.tile_format.num_bgtiles * _self.num_bgs
+        num_tiles = _self.max_num_tiles[id]
+        _self.tiles[id] = MemoryVariable.new("tiles_#{id}", as: :uint16, length: num_tiles * bgtiles_per_tile, in: _self.RAM)
+      end
+    end
+
+    ;; Loads a tile from a reference
+    macro load_tile_from_reference(origin)
+      (@tile_format.num_bgtiles * @num_bgs * 2).multiplicated_register_A
+      CLC
+      ADC   origin
+    end
+    
+    ;; Iterates a tile from the reference
+    macro generate_load_flipped_tile_code(xaxis, yaxis, mask, reg=:X)
+      xbase = 0
+      xbase = (@tile_format.num_bgtiles_x - 1) * 2 if xaxis < 0
+
+      ybase = 0
+      ybase = (@tile_format.num_bgtiles_y - 1) * @tile_format.num_bgtiles_x * 2 if yaxis < 0
+
+      _self = self
+
+      @num_bgs.times do |bg|
+        _self.tile_format.num_bgtiles_y.times do |y|
+          _self.tile_format.num_bgtiles_x.times do |x|
+            address = xbase + (x * 2 * xaxis) + ybase + (y * 2 * yaxis * _self.tile_format.num_bgtiles_x) + (bg * _self.tile_format.num_bgtiles * 2)
+
+            Debug.allow_invalid_ram_access 2
+            if reg == :X
+              LDA   address, X
+            elsif reg == :Y
+              LDA   address, Y
+            end
+            EOR   #mask if mask
+
+            yield x, y, bg
+          end
+        end
+      end
+    end
+
+    ;; Returns the reference for a specific layer
+    macro reference_index_for(layer)
+      return @tiles[layer]
+    end
+
+    ;; Creates the storage
+    macro self.create(&block)
+      storage = RamTileReferenceStorage.new
+      builder = RamTileReferenceStorageBuilder.new(storage)
+      block.call with_context builder
+      storage.finalize
+      return storage
+    end
+  end
+
+end

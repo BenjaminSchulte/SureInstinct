@@ -1,0 +1,182 @@
+module Aoba::Math
+
+  ;; Sets the seed
+  macro set_initial_seed
+    ;; Generates a random seed
+    if SNES::ENABLE_SA1
+      Debug.todo "SA1 set_initial_seed does not work yet"
+    else
+      CPU.set A: 8
+      LDA   CPU.STAT78.long
+      LDA   CPU.SLHV.long
+      LDA   CPU.OPHCT.long
+      XBA
+      LDA   CPU.OPHCT.long
+      EOR   CPU.OPVCT.long
+      XBA
+      EOR   CPU.OPVCT.long
+      CPU.set A: 16
+    end
+    EOR   #$AFFE
+    TAX
+    EOR   #$1337 ^ $AFFE
+    TAY
+
+    Debug.only do
+      ;STZ   random_seed[0]
+      ;STZ   random_seed[2]
+    end
+
+    update_seed_icb
+  end
+
+  ;; Sets the seed
+  ;; @ignore-thread-safety
+  def update_seed_icb
+    TXA
+    Debug.allow_invalid_ram_access 2
+    EOR   random_seed[0]
+    STA   random_seed[0]
+    TYA
+    Debug.allow_invalid_ram_access 2
+    EOR   random_seed[2]
+    STA   random_seed[2]
+  end
+
+  ;; Returns a random number
+  ;; @ignore-thread-safety
+  def random8_icb
+    LDA   random_seed[2]
+    STA   random_seed[3]
+    LDA   random_seed[1]
+    STA   random_seed[2]
+    LDA   random_seed[0]
+    STA   random_seed[1]
+    CMP   random_seed[2]
+    BMI   _is_greater
+    LDA   random_seed[2]
+  _is_greater:
+    CLC
+    ADC   random_seed[3]
+    STA   random_seed[0]
+
+    ;AND   #$FF
+  end
+
+  ;; Returns a random number
+  def random8_icb_long
+    random8_icb
+    RTL
+  end
+
+  ;; Returns a random number
+  ;; @ignore-thread-safety
+  def random_icb_long
+    PHP
+    CPU.set A: 8
+    random8_icb
+    PLP
+    RTL
+  end
+
+  ;; SNES implementation of random
+  macro __random_AL_AH_snes(parameter)
+    STA   CPU.WRDIVL.long
+    LDA   #0
+    STA   CPU.WRDIVH.long
+    LDA   dp(parameter + 1)
+    INC   A
+    STA   CPU.WRDIVB.long
+
+    LDA   #0
+    XBA
+    CLC
+    LDA   dp(parameter)
+    NOP
+    NOP
+    ADC   CPU.RDMPY.long
+    XBA
+    ROL
+    XBA
+  end
+
+  ;; SNES implementation of random
+  macro __random_AL_AH_sa1(parameter)
+    STA   SA1.MA.long
+    LDA   #1
+    STA   SA1.MCNT.long
+    LDA   dp(parameter + 1)
+    INC   A
+    STA   SA1.MB.long
+    LDA   #0
+    STA   SA1.MA.long + 1
+    STA   SA1.MB.long + 1
+    LDA   #0
+    XBA
+    LDA   dp(parameter)
+    CLC
+    ADC   SA1.MR.long + 2
+    XBA
+    ROL
+    XBA
+  end
+
+  ;; Returns a random value between AL and AH-1
+  ;;
+  ;; @param AL offset
+  ;; @param AH size
+  def random_from_AL_size_AH_icb
+    routine do
+      make_thread_safe
+      input A
+
+      declare :parameter, as: :uint16
+
+      execute do |parameter|
+        STA   dp(parameter)
+        CPU.set A: 8
+        random8_icb
+
+        if SNES::ENABLE_SA1
+          __random_AL_AH_sa1 parameter
+        else
+          __random_AL_AH_snes parameter
+        end
+        CPU.set A: 16
+        TAX
+      end
+    end
+    TXA
+  end
+
+  def random_from_AL_size_AH_icb_long
+    random_from_AL_size_AH_icb
+    RTL
+  end
+
+  ;; Updates the seed from the HCOUNTER
+  macro update_seed_from_hcounter
+    CPU.set A: 8
+    LDA   $2137.long
+    LDA   $213C.long
+    XBA
+    LDA   $213C.long
+    AND   #1
+    XBA
+    CPU.set A: 16
+    EOR   random_seed.long
+    STA   random_seed.long
+  end
+end
+
+Aoba::Event.on :system_initialize_A16_VARRAM do
+  Aoba::Math.set_initial_seed
+end
+
+Aoba::Event.on :snes_nosa1_update do
+  Aoba::Math.update_seed_from_hcounter
+end
+
+Aoba::Event.on :snes_sa1_update do
+  Aoba::Math.update_seed_from_hcounter
+end

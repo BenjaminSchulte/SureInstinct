@@ -1,0 +1,284 @@
+module Game::Ball::Bomb
+
+  macro RTS_if_existing_bomb_on_tile
+    LDX   dp(Aoba::Sprite.current_sprite)
+    X.is_a! Aoba::Sprite::Instance
+    LDA   X[:x]
+    STA   dp(Aoba::Sprite::Action::Move.pos_x)
+    LDA   X[:y]
+    STA   dp(Aoba::Sprite::Action::Move.pos_y)
+    Game::Ball::TileEvent::Change.calculate_x_y_position
+
+    LDA   dp(TileEvent::Change.x_position)
+    PHP
+    SEI
+    LDX   Aoba::Sprite.bomb_list.first
+    BZE   _skip_bomb_loop
+
+  _loop_bomb:
+    CMP   X[:current_tile_x]
+    BNE   _loop_next
+    LDA   X[:current_tile_y]
+    CMP   dp(TileEvent::Change.y_position)
+    BEQ   _rts
+    LDA   dp(TileEvent::Change.x_position)
+  _loop_next:
+    LDY   X[:next_bomb]
+    TYX
+    BNZ   _loop_bomb
+    BRA   _skip_bomb_loop
+
+  _rts:
+    PLP
+    RTS
+
+  _skip_bomb_loop:
+    PLP
+  end
+
+  ;; Tests whether the user tries to place a bomb
+  macro RTS_unless_place_bomb
+    ;; Tests if the event key is pressed
+    SEI
+    LDY   gamepad
+    Y.is_a! Aoba::Control::GamepadPlayer
+    LDA   Y[:keys]
+    CLI
+    BIT   #Aoba::Control::Key.bitmap(:b, :a, :lmb)
+    BNZ   _event_key_pressed
+  _rts:
+    RTS
+
+  _event_key_pressed:
+    ;; Tests if bombs are selected and available
+    LDA   Level.selected_item
+    CMP   #Game::Item::BOMB
+    BNE   _rts
+    LDA   Level.num_bomb
+    AND   #$FF
+    BZE   _rts
+
+    ;; Tests if there is already a bomb on this tile
+    RTS_if_existing_bomb_on_tile
+
+    ;; Decrements the bomb count
+    DEC   Level.num_bomb
+    __update_modified_attributes Level::ModifiedAttribute.BOMB
+  end
+
+  ;; Creates the bomb
+  macro create_bomb_sprite
+    Aoba::Sprite::Action::ManageSprite.allocate
+    X.is_a! Aoba::Sprite::Instance
+    LDA   dp(Aoba::Sprite::Action::Move.pos_x)
+    AND   #$FFF0
+    ORA   #8
+    STA   X[:x]
+    LDA   dp(Aoba::Sprite::Action::Move.pos_y)
+    AND   #$FFF0
+    ORA   #8
+    STA   X[:y]
+    
+    LDA   dp(TileEvent::Change.x_position)
+    STA   X[:current_tile_x]
+    LDA   dp(TileEvent::Change.y_position)
+    STA   X[:current_tile_y]
+    LDA   AssetConfig::Ingame.tilemap_storage.tiles[:current].long
+    STA   X[:sprite_layer]
+    CPU.set A: 8
+    LDA   #PRIORITY_BALL_BACK
+    STA   X[:render_priority]
+    CPU.set A: 16
+
+    LDA   #BOMB_TIMER
+    STA   X[:object_userdata1]
+
+    LDA   #Aoba::Sprite::RenderableFlag.LAYER_FG
+    STA   X[:renderable_flags]
+    LDA   #$303
+    STA   X[:direction]
+    LDA   #Assets::Sprite::Bomb::PaletteID
+    STA   X[:palette_group_id]
+    LDA   #Assets::Animation::BombPlaced
+    Aoba::Sprite::Action::ManageSprite.assign_animation_id
+    LDA   #Assets::Sprite::Bomb::ID
+    Aoba::Sprite::Action::ManageSprite.assign_sprite_id
+    Aoba::Sprite::Action::ManageSprite.recalculate_after_set_position
+    Aoba::Sprite::Action::ManageSprite.queue
+
+    PHP
+    SEI
+    Aoba::Sprite.bomb_list.add
+    PLP
+  end
+
+  @locate_at bank: Aoba::SPRITE_ROM_BANK
+  datablock bomb_explode_todo
+    dw   -1, -1, AssetConfig::TileList.BROKEN3
+    dw    0, -1, AssetConfig::TileList.BROKEN3
+    dw    1, -1, AssetConfig::TileList.BROKEN3
+    dw   -1,  0, AssetConfig::TileList.BROKEN3
+    dw    0,  0, AssetConfig::TileList.BROKEN2
+    dw    1,  0, AssetConfig::TileList.BROKEN3
+    dw   -1,  1, AssetConfig::TileList.BROKEN3
+    dw    0,  1, AssetConfig::TileList.BROKEN3
+    dw    1,  1, AssetConfig::TileList.BROKEN3
+  end
+
+  macro _set_destroyed_tiles
+    LDX   #0
+  _loop_set_tiles:
+    LDY   dp(Aoba::Sprite.current_sprite)
+    Y.is_a! Aoba::Sprite::Instance
+    LDA   Y[:current_tile_x]
+    CLC
+    ADC   bomb_explode_todo.to_sym.long, X
+    STA   dp(Game::Ball::TileEvent::Change.x_position)
+    LDA   Y[:current_tile_y]
+    CLC
+    ADC   bomb_explode_todo.to_sym.long + 2, X
+    STA   dp(Game::Ball::TileEvent::Change.y_position)
+    LDA   bomb_explode_todo.to_sym.long + 4, X
+    STA   dp(Game::Ball::TileEvent::Change.front_tile)
+    STA   dp(Game::Ball::TileEvent::Change.back_tile)
+    LDA   Y[:sprite_layer]
+    PHX
+    Game::Ball::TileEvent::Change.set_tile
+    JSR   Game::Ball::TileEvent::Change.set_previous_tile.update_bg_tile
+    PLA
+    CLC
+    ADC   #6
+    TAX
+    CMP   #9 * 6
+    BNE   _loop_set_tiles
+  end
+
+  macro _player_shockwave_effect
+    ;; Tests if the player is close to the bomb
+    LDX   dp(Aoba::Sprite.current_sprite)
+    X.is_a! Aoba::Sprite::Instance
+    LDA   X[:sprite_layer]
+    CMP   AssetConfig::Ingame.tilemap_storage.tiles[:current].long
+    BNE   _skip_player_bomb
+
+    LDY   Game::Ball::Movement.player
+    Y.is_a! Aoba::Sprite::Instance
+    LDA   Y[:x]
+    SEC
+    SBC   X[:x]
+    STA   dp(Game::Ball::TileEvent::Change.x_position)
+    LDA   Y[:y]
+    SEC
+    SBC   X[:y]
+    TAY
+    STY   dp(Game::Ball::TileEvent::Change.y_position)
+    LDX   dp(Game::Ball::TileEvent::Change.x_position)
+    JSL   Aoba::Math.quick_distance_near_long
+    CMP   #BOMB_MAX_DISTANCE
+    BGE   _skip_player_bomb
+
+    CMP   #BOMB_MAX_ENERGY_LOSE_DISTANCE
+    BGE   _no_hp_lose
+
+  _lose_hp:
+    PHA
+    LSR   A
+    TAX
+    LDA   bomb_lost_energy_datatable.long, X
+    XBA
+    AND   #$FF00
+    _modify_hp
+    PLA
+
+  _no_hp_lose:
+    STA   dp(Aoba::Sprite._calc0)
+    LDA   #BOMB_MAX_DISTANCE
+    SEC
+    SBC   dp(Aoba::Sprite._calc0)
+    LSR   A
+    STA   dp(Aoba::Sprite._calc0)
+    LSR   A
+    LSR   A
+    CLC
+    ADC   dp(Aoba::Sprite._calc0)
+    STA   Game::Ball::Movement.bomb_ball_speed_counter
+
+
+    LDX   dp(Game::Ball::TileEvent::Change.x_position)
+    LDY   dp(Game::Ball::TileEvent::Change.y_position)
+    JSL   Aoba::Math.xy_to_direction_long
+    LDY   Game::Ball::Movement.player
+    Y.is_a! Aoba::Sprite::Instance
+    STA   Y[:move_angle]
+    LDX   dp(Aoba::Sprite._calc0)
+    LDA   #BOMB_BALL_SPEED
+    STA   Y[:walk_speed]
+    CPU.set A: 8
+    TYX
+    Aoba::Sprite::Action::MoveSprite.set_movespeed_from_angle_and_speed
+    CPU.set A: 16
+
+  _skip_player_bomb:
+  end
+
+  ;; Counts down a bomb
+  @locate_at bank: Aoba::SPRITE_ROM_BANK
+  def on_bomb_explode
+    X.is_a! Aoba::Sprite::Instance
+
+    LDA   #Assets::Sfx::Explosion
+    JSL   Aoba::Audio::Api.play_sfx_icb_long
+    LDA   #BOMB_SFX_DURATION
+    STA   Game::Level.sfx_wait_time
+
+    _set_destroyed_tiles
+    _player_shockwave_effect
+
+    Aoba::Effect::Shake.trigger 0, 2, 15, bg1: true, bg2: true
+
+    LDX   dp(Aoba::Sprite.current_sprite)
+    LDA   #Assets::Animation::BombExplode
+    Aoba::Sprite::Action::ManageSprite.assign_animation_id
+    PHP
+    SEI
+    Aoba::Sprite.bomb_list.remove
+    PLP
+  end
+
+  ;; Counts down bombs
+  macro count_down_bombs
+    LDA   Game.global_game_flags
+    BPL   _skip_loop
+
+    Debug.access_8bit_through_16bit
+    LDA   Game::Level.global_ingame_flags
+    BIT   #Game::Level::GlobalIngameFlag::TIME_PAUSED
+    BNZ   _skip_loop
+
+    PHP
+    SEI
+    LDX   Aoba::Sprite.bomb_list.first
+    BZE   _skip_loop_plp
+  _loop_bomb:
+    X.is_a! Aoba::Sprite::Instance
+    LDY   X[:next_bomb]
+    PHY
+    STX   dp(Aoba::Sprite.current_sprite)
+    DEC   X[:object_userdata1]
+    BNZ   _skip_explode
+    on_bomb_explode
+  _skip_explode:
+    PLX
+    BNZ   _loop_bomb
+  _skip_loop_plp:
+    PLP
+
+  _skip_loop:
+  end
+
+  ;; Enter event
+  macro on_test_trigger
+    RTS_unless_place_bomb
+    create_bomb_sprite
+  end
+end

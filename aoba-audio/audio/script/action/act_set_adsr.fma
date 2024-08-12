@@ -1,0 +1,46 @@
+module Script::Action::SetAdsr
+
+  macro __set_common(register, mask)
+    MOV   X, A
+
+    ; Select register
+    MOV   A, dp(Channel.voice_base_pointer)
+    OR    A, #register
+    MOV   dp(SPC.DSP_ADDR), A
+
+    MOV   A, addr(Channel.sample_adsr_high_bytes, Y)
+    AND   A, #mask
+    OR    A, indirect(Script.address, X)
+    INCW  dp(Script.address)
+    MOV   addr(Channel.sample_adsr_high_bytes, Y), A
+  end
+
+  macro __update
+    MOV   Y, A
+    MOV   A, dp(Channel.voice_bit_pointer)
+    AND   A, dp(Channel.enabled_voices)
+    BEQ   _skip
+    MOV   dp(SPC.DSP_DATA), Y
+  _skip:
+    RET
+  end
+
+  def cmd
+  set_sr:
+    __set_common 6, $E0
+  update:
+    __update
+  set_ar:
+    __set_common 5, $F0
+    BRA   update
+  set_dr:
+    __set_common 5, $8F
+    BRA   update
+  set_sl:
+    __set_common 6, $1F
+    BRA   update
+  end
+
+  ;set_sr = __cmd.set_sr
+  ;set_ar = __cmd.set_ar
+end

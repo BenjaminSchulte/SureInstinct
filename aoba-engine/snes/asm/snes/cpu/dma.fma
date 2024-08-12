@@ -1,0 +1,127 @@
+module CPU
+
+  ; Declares the registers
+  class DMARegister
+    ;; The control register
+    declare :control, as: :uint8
+
+    ;; The destination register
+    declare :destination, as: :uint8
+
+    ;; The source address
+    declare :source_address, as: :uint16
+
+    ;; The source bank
+    declare :source_bank, as: :uint8
+
+    ;; The size
+    declare :size, as: :uint16
+
+    ;; HDMA indirect bank
+    declare :indirect_bank, as: :uint8
+
+    declare :_unused, as: :uint8, length: 8
+
+    ;; Returns the own index
+    macro index
+      (self.control >> 4) & $7
+    end
+
+    ;; Configures the DMA
+    ;;
+    ;; The `transfer_mode` might be one of the following
+    ;;
+    ;; - `transfer_1_once`: 1 byte: p (default)
+    ;; - `transfer_2_once`: 2 bytes: p, p+1
+    ;; - `transfer_1_twice`: 2 bytes: p, p
+    ;; - `transfer_2_twice_each`: 4 bytes: p, p, p+1, p+1
+    ;; - `transfer_4_once`: 4 bytes: p, p+1, p+2, p+3
+    ;; - `transfer_2_twice_alter`: 4 bytes: p, p+1, p, p+1
+    ;;
+    ;; @param transfer_mode string - the mode which should be used for transfer
+    macro configure_value(transfer_mode=:transfer_1_once, indirect=false)
+      value = 0
+      case transfer_mode
+      when :transfer_1_once
+        value = 0
+      when :transfer_2_once
+        value = 1
+      when :transfer_1_twice
+        value = 2
+      when :transfer_2_twice_each
+        value = 3
+      when :transfer_4_once
+        value = 4
+      when :transfer_2_twice_alter
+        value = 5
+      else
+        raise "Invalid DMA configuration: #{transfer_mode}"
+      end
+
+      value |= $40 if indirect
+
+      value
+    end
+
+    macro configure(*args, **kwargs)
+      LDA   #configure_value(*args, **kwargs)
+      STA   self.control
+    end
+
+    macro configure_long(*args, **kwargs)
+      LDA   #configure_value(*args, **kwargs)
+      STA   self.control.long
+    end
+
+    ;; Sets the target register of the DMA
+    ;;
+    ;; @param register number - the register to write to
+    macro set_destination(register)
+      LDA   #register & $FF
+      STA   self.destination
+    end
+
+    ;; Sets the target register of the DMA
+    ;;
+    ;; @param register number - the register to write to
+    macro set_destination_long(register)
+      LDA   #register & $FF
+      STA   self.destination.long
+    end
+
+    ;; Triggers this DMA (no other)
+    macro trigger
+      CPU.trigger_dma self.index
+    end
+
+    ;; Triggers this DMA (no other)
+    macro trigger_long
+      CPU.trigger_dma_long self.index
+    end
+
+  end
+
+  scope :_dma_registers, in: SNES::MemoryMap.SYSTEM, bank: $00
+
+  ;; Triggers all indices passed to the arguments
+  macro trigger_dma(*args)
+    value = 0
+    args.each do |index|
+      value = value | (1 << index)
+    end
+    LDA #value
+    STA $420B
+  end
+
+  ;; Triggers all indices passed to the arguments
+  macro trigger_dma_long(*args)
+    value = 0
+    args.each do |index|
+      value = value | (1 << index)
+    end
+    LDA #value
+    STA $420B.long
+  end
+end
+
+declare :DMA, as: CPU::DMARegister, at: $4300, length: 8, in: CPU._dma_registers

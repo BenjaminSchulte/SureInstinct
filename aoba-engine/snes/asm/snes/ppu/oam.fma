@@ -1,0 +1,39 @@
+module PPU
+  ;; Controls the OAM
+  module OAM
+
+    ;; Configures the oam
+    macro configure(low_table, high_table=nil, small=8, large=16, target=:default)
+      high_table = low_table if high_table.nil?
+
+      value = 0
+      case "#{small}_#{large}"
+      when "8_16"
+        value = 0
+      when "8_32"
+        value = 1
+      when "8_64"
+        value = 2
+      when "16_32"
+        value = 3
+      when "16_64"
+        value = 4
+      when "32_64"
+        value = 5
+      else
+        raise "Invalid OAM sprite size configuration"
+      end
+
+      high = (((high_table - low_table - $2000) & $FFFF) >> 10) & $14
+      low  = ((low_table & $FFFF) >> 14) & $7
+      LDA   #(value << 5) | high | low
+
+      if target == :dp
+        STA   dp(OBSEL)
+      else
+        STA   OBSEL
+      end
+    end
+
+  end
+end

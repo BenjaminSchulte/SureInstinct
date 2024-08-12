@@ -1,0 +1,84 @@
+module Aoba::Sprite
+
+  ;; The collision flags
+  module CollisionFlag
+    ;; Whether the sprite can collide
+    IGNORE_COLLISION = $80
+
+    ;; Whether the sprite triggers exit events
+    TRIGGER_EXIT_EVENTS = $40
+
+    ;; Whether the bounding box is calculated
+    BOUNDINGBOX_IS_VALID = $20
+
+    ;; Whether to use the collision box as enter trigger instead of collision
+    IS_ENTER_TRIGGER = $02
+
+    ;; Whether the sprite can enter exits
+    EXIT_IS_BLOCKING = $01
+  end
+
+  class Collidable
+    ;; Last tile the collision has been tested on
+    declare :last_collision_test_y, as: :uint16
+
+    ;; Last tile the collision has been tested on
+    declare :last_collision_test_x, as: :uint16
+
+    ;; Last tile the collision has been tested on
+    declare :last_tile_event_y, as: :uint16
+
+    ;; Last tile the collision has been tested on
+    declare :last_tile_event_x, as: :uint16
+
+    ;; Hitbox for events
+    declare :hitbox_id, as: :uint8
+
+    ;; Collision for events
+    declare :collisionbox_id, as: :uint8
+
+    ;; The current layer
+    declare :current_layer, as: :uint8
+
+    ;; Collision flags
+    declare :collision_flags, as: :uint8
+
+    ;; The current on move event
+    declare :on_move_event, as: :uint8
+
+    ;; Left bounding box
+    declare :boundingbox_left, as: :int16
+
+    ;; Right bounding box
+    declare :boundingbox_right, as: :int16
+
+    ;; Left bounding box
+    declare :boundingbox_top, as: :int16
+
+    ;; Left bounding box
+    declare :boundingbox_bottom, as: :int16
+
+    ;; Cooldown timer for enter trigger
+    declare :current_entertrigger_sprite_id, as: :uint8
+
+    ;; Configures the class when being included
+    macro self.configure(Instance)
+      Instance.event.on :reset16 do
+        LDA   #$FFFF
+        STA   X[:last_collision_test_y]
+        STA   X[:last_tile_event_y]
+        STA   X[:last_collision_test_x]
+        STA   X[:last_tile_event_x]
+      end
+      Instance.event.on :reset8 do
+        STZ   X[:current_layer]
+        STZ   X[:collision_flags]
+        STZ   X[:on_move_event]
+        STZ   X[:hitbox_id]
+        STZ   X[:collisionbox_id]
+        STZ   X[:current_entertrigger_sprite_id]
+      end
+    end
+  end
+
+end

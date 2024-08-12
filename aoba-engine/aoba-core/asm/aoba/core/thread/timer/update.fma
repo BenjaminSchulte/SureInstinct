@@ -1,0 +1,107 @@
+module Aoba::Thread::Timer
+
+  ;; Tests for frameskip
+  macro RTS_if_frameskip
+    CPU.set A: 8
+    DEC   frameskip_counter
+    BNZ   _no_skip
+    LDA   frameskip_counter_reset
+    BZE   _no_skip
+    STA   frameskip_counter
+
+  _return:
+    CPU.set A: 16
+    RTS
+
+  _no_skip:
+    CPU.set A: 16
+  end
+
+  ;; Triggers the current timer
+  def trigger_timer
+    routine from_A: 16, from_XY: 16 do
+      is_thread_safe
+      
+      declare :timer, as: :uint16
+
+      execute do |timer|
+        X.is_a! TimerInstance
+
+        ;; Allocates the timer evet
+        STX   dp(timer)
+        LDA   #Event.SYSTEMEVENT_ID
+        JSR   Event.allocate_icb
+
+        ;; Configures the timer event
+        X.is_a! TimerEvent
+        CPU.set A: 8
+        LDA   #TIMER_THREAD_ID
+        STA   X[:sender_thread_id]
+        CPU.set A: 16
+        LDA   dp(timer)
+        STA   X[:timer]
+        TAY
+        Y.is_a! TimerInstance
+
+        Debug.allow_invalid_ram_access 2
+        LDA   Y[:userdata]
+        STA   X[:userdata]
+
+        ;; Dispatches the timer event
+        Debug.access_8bit_through_16bit
+        LDA   Y[:thread_id]
+        JSR   send_event_icb
+
+        ;; Tests whether this thread is recurring or not
+        X.is_a! TimerInstance
+        LDX   dp(timer)
+        LDA   X[:flags] - 1
+        EOR   #Flag.QUEUED << 8
+        STA   X[:flags] - 1
+        BIT   #Flag.AUTODESTROY << 8
+        BZE   _no_autodestroy
+
+        Debug.BRK
+        NOP
+        NOP
+        NOP
+
+      _no_autodestroy:
+      end
+    end
+  end
+
+  ;; Updates all timer relevant values
+  ;;
+  ;; @ignore-thread-safety
+  def update
+    RTS_if_frameskip
+
+    ;; Updates the frame counter
+    INC   current_frame_low
+    BCC   _no_update_high
+    INC   current_frame_high
+  _no_update_high:
+
+  _loop_after_trigger:
+    Y.is_a! TimerInstance
+    LDY   #active_timers
+    LDA   current_frame_low
+    TYX
+    LDX   Y[:next_timer]
+    BZE   _end_of_loop
+    CMP   X[:frame]
+    BLT   _end_of_loop
+
+  _trigger:
+    LDA   X[:next_timer]
+    STA   active_timers
+
+    trigger_timer
+
+    BNZ   _loop_after_trigger
+
+  _end_of_loop:
+  end
+
+end

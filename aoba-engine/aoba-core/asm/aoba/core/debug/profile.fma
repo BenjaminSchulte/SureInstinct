@@ -1,0 +1,161 @@
+module Debug
+  macro mark_ram_X_unused(size)
+    return unless Aoba::ENABLE_PROFILING
+    Debug.log_raw "{aobaevent(11,#{size})}{muteif(1)}"
+    NOP
+  end
+
+  macro mark_ram_X_threadsafe(size)
+    return unless Aoba::ENABLE_PROFILING
+    Debug.log_raw "{aobaevent(12,#{size})}{muteif(1)}"
+    NOP
+  end
+
+  macro mark_ram_X_initialized(size)
+    return unless Aoba::ENABLE_PROFILING
+    Debug.log_raw "{aobaevent(13,#{size})}{muteif(1)}"
+    NOP
+  end
+
+  macro enter_threadsafe_ram_access
+    return unless Aoba::ENABLE_PROFILING
+    Debug.log_raw "{aobaevent(8,1)}{muteif(1)}"
+    NOP
+  end
+
+  macro leave_threadsafe_ram_access
+    return unless Aoba::ENABLE_PROFILING
+    Debug.log_raw "{aobaevent(8,0)}{muteif(1)}"
+    NOP
+  end
+
+  macro pretend_thread(id)
+    return unless Aoba::ENABLE_PROFILING
+    Debug.log_raw "{aobaevent(7,#{id})}{muteif(1)}"
+    NOP
+  end
+ 
+  macro allow_invalid_ram_access(times)
+    return unless Aoba::ENABLE_PROFILING
+    Debug.log_raw "{aobaevent(5,#{times})}{muteif(1)}"
+    NOP
+  end
+
+  macro allow_require_valid_ram_access(times)
+    return unless Aoba::ENABLE_PROFILING
+    Debug.log_raw "{aobaevent(6,#{times})}{muteif(1)}"
+    NOP
+  end
+
+  macro access_8bit_through_16bit
+    return unless Aoba::ENABLE_PROFILING
+    Debug.log_raw "{aobaevent(6,1)}{aobaevent(5,1)}{muteif(1)}"
+    NOP
+  end
+
+  macro profile_irq
+    return unless Aoba::ENABLE_PROFILING
+
+    Debug.log_raw "{put_byte(1)}{put_int(clock)}{muteif(1)}"
+    NOP
+  end
+
+  macro profile_idle
+    return unless Aoba::ENABLE_PROFILING
+
+    Debug.log_raw "{put_byte(2)}{put_int(clock)}{muteif(1)}"
+    NOP
+  end
+
+  macro profile_thread_enter
+    return unless Aoba::ENABLE_PROFILING
+
+    Debug.log_raw "{put_byte(3)}{put_int(clock)}{put_byte(A)}{muteif(1)}"
+    NOP
+  end
+
+  macro profile_event_start(event=nil)
+    return unless Aoba::ENABLE_PROFILING
+
+    event="A" if event.nil?
+
+    Debug.log_raw "{put_byte(4)}{put_int(clock)}{put_byte(#{event})}{muteif(1)}"
+    NOP
+  end
+
+  macro profile_event_stop
+    return unless Aoba::ENABLE_PROFILING
+
+    Debug.log_raw "{put_byte(5)}{put_int(clock)}{muteif(1)}"
+    NOP
+  end
+
+  macro profile_introduce(id)
+    return unless Aoba::ENABLE_PROFILING
+
+    Debug.log_raw "{put_byte(6)}{put_byte(A)}{put_byte(#{id})}{muteif(1)}"
+    NOP
+  end
+
+  macro profile_thread_create
+    return unless Aoba::ENABLE_PROFILING
+
+    Debug.log_raw "{put_byte(7)}{put_byte(A)}{muteif(1)}"
+    NOP
+  end
+
+  macro profile_memory_allocate
+    return unless Aoba::ENABLE_PROFILING
+
+    Debug.log_raw "{aobaevent(1)}{put_byte(8)}{put_word(X)}{put_word(Y)}{muteif(1)}"
+    NOP
+  end
+
+  macro profile_memory_free
+    return unless Aoba::ENABLE_PROFILING
+
+    Debug.log_raw "{aobaevent(2)}{put_byte(9)}{put_word(X)}{put_word(Y)}{muteif(1)}"
+    NOP
+  end
+
+  macro profile_miniblock_allocate
+    return unless Aoba::ENABLE_PROFILING
+
+    Debug.log_raw "{aobaevent(3)}{put_byte(10)}{put_word(X)}{put_word(Y)}{muteif(1)}"
+    NOP
+  end
+
+  macro profile_miniblock_free
+    return unless Aoba::ENABLE_PROFILING
+
+    Debug.log_raw "{aobaevent(4)}{put_byte(11)}{put_word(X)}{muteif(1)}"
+    NOP
+  end
+
+  macro profile_thread_destroy
+    return unless Aoba::ENABLE_PROFILING
+
+    Debug.log_raw "{put_byte(12)}{put_byte(byte(long(add(X16,2),$7F)))}{muteif(1)}"
+    NOP
+  end
+
+  macro profile_threadevent_allocate
+    return unless Aoba::ENABLE_PROFILING
+
+    Debug.log_raw "{aobaevent(9,1)}{put_byte(13)}{put_word(X)}{muteif(1)}"
+    NOP
+  end
+
+  macro profile_threadevent_free
+    return unless Aoba::ENABLE_PROFILING
+
+    Debug.log_raw "{aobaevent(10,1)}{put_byte(14)}{put_word(X)}{muteif(1)}"
+    NOP
+  end
+
+  macro profile_threadevent_register_address
+    return unless Aoba::ENABLE_PROFILING
+
+    Debug.log_raw "{put_byte(16)}{put_word(X)}{muteif(1)}"
+  end
+end

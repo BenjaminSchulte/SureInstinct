@@ -1,0 +1,224 @@
+module Aoba::Audio::Action::LoadSong
+
+  ;; Temporary RAM
+  scope :TempRAM, in: ActionRAM
+
+  ;; The new song ID
+  declare :new_song_id, as: :uint8, in: TempRAM
+
+  ;; The old song ID
+  declare :old_song_id, as: :uint8, in: TempRAM
+
+  ;; The song address
+  declare :new_song_address, as: :uint16, in: TempRAM
+
+  ;; The song address
+  declare :old_song_address, as: :uint24, in: TempRAM
+
+
+  ;; The size of the new sample list
+  declare :new_sample_list_size, as: :uint8, in: TempRAM
+
+  ;; The size of the old sample list
+  declare :old_sample_list_size, as: :uint8, in: TempRAM
+
+  ;; The size of the old sample list
+  declare :deleted_sample_count, as: :uint8, in: TempRAM
+
+  ;; Stores the new song address to the DP
+  macro _load_new_song_address
+    ;; Fetches the address of the new song
+    CPU.set A: 16
+    DEC   A
+    AND   #$FF
+    STA   dp(new_song_address)
+    ASL   A
+    CLC
+    ADC   dp(new_song_address)
+    TAX
+
+    LDA   SongIndex.long, X
+    STA   dp(new_song_address)
+    CPU.set A: 8
+    LDA   SongIndex.long + 2, X
+    PHA
+    PLB
+  end
+
+  ;; Stores the new song address to the DP
+  macro _load_old_song_address
+    ;; Fetches the address of the new song
+    LDA   current_loaded_song_id.long
+    DEC   A
+    CPU.set A: 16
+    AND   #$FF
+    STA   dp(old_song_address)
+    ASL   A
+    CLC
+    ADC   dp(old_song_address)
+    TAX
+
+    LDA   SongIndex.long, X
+    STA   dp(old_song_address)
+    CPU.set A: 8
+    LDA   SongIndex.long + 2, X
+    STA   dp(old_song_address) + 2
+  end
+
+  ;; Unloads an instrument
+  macro __unload_instrument
+    XBA
+    when_ready_SEI nil do
+      XBA
+      STA   CPU.APUIO1.long
+      LDA   last_ipc_value.long
+      AND   #IPC.IPC_TOGGLE_BIT
+      EOR   #IPC.IPC_TOGGLE_BIT | IPC.CMD_UNLOAD_SAMPLE
+      STA   CPU.APUIO0.long
+      STA   last_ipc_value.long
+    end
+  end
+
+  ;; Unloads an instrument
+  macro __defrag_sample_ram
+    when_ready_SEI nil do
+      LDA   last_ipc_value.long
+      AND   #IPC.IPC_TOGGLE_BIT
+      EOR   #IPC.IPC_TOGGLE_BIT | IPC.CMD_DEFRAG_SAMPLES
+      STA   CPU.APUIO0.long
+      STA   last_ipc_value.long
+    end
+  end
+
+  ;; Unloads all old samples
+  ;; @ignore-thread-safety
+  unload_old_instruments = create_sa1_ram_routine bank: AUDIO_ROM_BANK do
+    A.pretend_size 8
+    X.pretend_size 16
+
+    LDA   current_loaded_song_id.long
+    BNZ   _has_old_song
+  _return:
+    RTS
+
+    ;; --
+
+  _has_old_song:
+    Debug.log "Unloading old song instruments..."
+    _load_old_song_address
+
+    LDY   #0
+    LDA   old_song_address.indirect.long, Y
+    BZE   _return
+    STA   dp(old_sample_list_size)
+    INY
+    STZ   dp(deleted_sample_count)
+
+    ;; Loops through all old samples
+  _loop_outer:
+    ; A = old sample ID
+    LDA   old_song_address.indirect.long, Y
+    STA   dp(_calc0)
+    SNES_RAM_JMP GarbageCollector.decrement_instrument_usage, :JSR, :JSR
+    BNZ   _resume
+    
+    LDX   dp(new_song_address)
+    LDA   0, X
+    BZE   _remove
+    STA   dp(new_sample_list_size)
+    LDA   dp(_calc0)
+
+    ;; Checks whether the same instrument is used in the new song
+  _loop_inner:
+    CMP   1, X
+    BEQ   _resume
+    INX
+    DEC   dp(new_sample_list_size)
+    BNZ   _loop_inner
+
+    ;; Removes the instrument
+  _remove:
+    PHY
+    INC   dp(deleted_sample_count)
+    LDA   dp(_calc0)
+    __unload_instrument
+    PLY
+
+  _resume:
+    LDX   dp(new_song_address)
+    LDA   0, X
+    STA   dp(new_sample_list_size)
+
+    INY
+    DEC   dp(old_sample_list_size)
+    BNZ   _loop_outer
+
+    LDA   dp(deleted_sample_count)
+    BZE   _no_sample_deleted
+
+  _defrag_sample_list:
+    __defrag_sample_ram
+
+  _no_sample_deleted:
+    RTS
+  end
+
+  ;; Uploads the song
+  macro _upload_song
+    Mutex.lock
+
+    ;; Sends the song size
+    CPU.set A: 16
+    LDA   $0, X
+    TAY
+    STA   CPU.APUIO2.long
+    CPU.set A: 8
+
+    ;; Sends the start command
+    LDA   last_ipc_value.long
+    AND   #IPC.IPC_TOGGLE_BIT
+    EOR   #IPC.IPC_TOGGLE_BIT | IPC.CMD_UPLOAD_SONG
+    STA   CPU.APUIO0.long
+    STA   last_ipc_value.long
+    INX
+    INX
+    unsafe_wait_for_ready nil
+
+    Debug.info "[AUDIO] Upload song"
+    
+    SNES_RAM_JMP IPC.transfer, :JSR, :JSR
+
+    Mutex.unlock
+  end
+
+  ;; Loads the song
+  ;;
+  ;; @param A song ID
+  invoke_icb = create_sa1_ram_routine bank: AUDIO_ROM_BANK do
+    A.pretend_size 8
+
+    ;; Tests whether the song we want to load has already been loaded
+    CMP   current_loaded_song_id.long
+    BEQ   _skip_load_song
+    STA   dp(new_song_id)
+
+    ;; Loads the correct pointers
+    PHB
+    _load_new_song_address
+    SNES_RAM_JMP unload_old_instruments, :JSR, :JSR
+
+    LDX   dp(new_song_address)
+    SNES_RAM_JMP LoadInstrumentList.load_list, :JSR, :JSR
+    
+    _upload_song
+
+    LDA   dp(new_song_id)
+    STA   current_loaded_song_id.long
+
+    PLB
+
+  _skip_load_song:
+    RTS
+  end
+
+end

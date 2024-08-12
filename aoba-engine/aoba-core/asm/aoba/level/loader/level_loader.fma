@@ -1,0 +1,195 @@
+module Aoba::Level::Loader
+
+  class LevelLoaderBuilder
+    macro initialize(loader)
+      @loader = loader
+    end
+
+    macro enable_script_support(name)
+      __create_level_loader_script_commands name, @loader
+    end
+
+    macro configure_generator(bank, temp_ram)
+      temp_ram.include @loader.TempRAM
+      @loader.class.__static_locate_at_kwargs = {bank: bank}
+    end
+
+    macro data_bank(bank)
+      @loader.data_bank = bank
+    end
+
+    macro thread_priority(value)
+      @loader.thread_priority = value
+    end
+    
+    macro use(other)
+      other.include_to_level_loader @loader
+    end
+
+    macro add(param)
+      param.loader = @loader
+      param.offset = @loader.header_size
+      @loader.header_size += param.size_in_bytes
+      @loader.parameter << param
+      param.preconfigure
+    end
+
+    macro on(id, &block)
+      @loader.event.on id, &block
+    end
+  end
+
+  class LevelLoader < Aoba::StaticRoutineEngineObject
+    macro initialize
+      super
+
+      @load_event_id = Event::LoadLevel.create_for(self)
+      @unload_event_id = Event::UnloadLevel.create_for(self)
+
+      @VariableRAM = MemoryScope.new("LeveloaderVariableRAM", in: nil, for: ::SNES::MemoryMap::RAM)
+      @RAM = MemoryScope.new("LeveloaderRAM", in: nil, for: ::SNES::MemoryMap::RAM)
+      @TempRAM = MemoryScope.new("LevelLoaderTempRAM", in: nil, for: ::SNES::MemoryMap::RAM)
+      @SharedTempRAM = MemoryScope.new("SharedLevelLoaderTempRAM", in: @TempRAM, shared: true)
+
+      @loader_flags = MemoryVariable.new("loader_flags", as: :uint8, in: @VariableRAM)
+      @level_header = MemoryVariable.new("level_header", as: :uint16, in: @RAM)
+      @_current_level = MemoryVariable.new("_current_level", in: @TempRAM, as: :uint16)
+
+      @data_bank = nil
+      @thread_priority = 10
+      @header_size = 0
+      @event = Aoba::Event::Emitter.new
+      @parameter = []
+    end
+
+    macro include_as_scene_object(scene, **kwargs)
+      SceneObject.new(self).include_to_scene_mode scene, **kwargs
+    end
+
+    macro include_to_sprite_thread(thread)
+      thread.level_loader = self
+    end
+
+    macro parent_objects
+      _result = []
+      @parameter.each do |p|
+        _result += p.parent_objects
+      end
+      return _result
+    end
+
+    macro configure_for_scene(scene)
+      scene.FixedRAM.include @RAM
+      scene.VariableRAM.include @VariableRAM
+
+      _self = self
+      scene.event.on :load8 do
+        STZ   _self.loader_flags
+      end
+    end
+
+    macro read_header_at(offset)
+      LDA   @data_bank.as_bank(offset).long, X
+    end
+
+    ;; Finalizes the loader
+    macro finalize
+      @parameter.each do |p|
+        p.finalize
+      end
+      setup_static_routines
+    end
+
+    ;; Sets the thread priority
+    macro __prepare
+      CPU.set A: 8
+      LDA   #@thread_priority
+      JSL   Thread.set_priority_icb_long
+      PHA
+      @event.invoke :prepare8
+      CPU.set A: 16
+      @event.invoke :prepare16
+    end
+
+    ;; Finishes the thread
+    macro __finish
+      @event.invoke :nodp_before_finish16
+      CPU.set A: 8
+      @event.invoke :nodp_before_finish8
+      PLA
+      JSL   Thread.set_priority_icb_long
+      @event.invoke :nodp_after_finish8
+      LDA   #GlobalFlag.IS_LOADED
+      ORA   @loader_flags
+      STA   @loader_flags
+
+      Debug.fatal "Sprite.global_flags should not be accessed from foreign thread"
+      LDA   Sprite.global_flags
+      ORA   #Sprite::GlobalFlag.VALID_MAX_SCROLL | Sprite::GlobalFlag.SCROLL_THREAD_READY
+      STA   Sprite.global_flags
+      CPU.set A: 16
+      @event.invoke :nodp_after_finish16
+    end
+
+    routine :unload do
+      ;; Unloads the level
+      CPU.set A: 8
+      Debug.fatal "Sprite.global_flags should not be accessed from foreign thread"
+      LDA   Sprite.global_flags
+      AND   #$FF ^ Sprite::GlobalFlag.VALID_MAX_SCROLL ^ Sprite::GlobalFlag.SCROLL_THREAD_READY
+      STA   Sprite.global_flags
+      STZ   @loader_flags
+      CPU.set A: 16
+
+      @parameter.each do |p|
+        p.unload
+      end
+
+      RTS
+    end
+
+    ;; Loads the level
+    ;;
+    ;; @param A level address
+    routine :load do
+      STA   dp(@_current_level)
+      STA   @level_header.long
+
+      __prepare
+
+      unload
+
+      LDX   dp(@_current_level)
+      @parameter.each do |p|
+        Debug.log "Load level parameter #{p.class.name}"
+        p.load
+      end
+
+      CPU.set A: 8
+      @event.invoke :load8
+      CPU.set A: 16
+      @event.invoke :load16
+
+      @event.invoke :after_load
+      @event.invoke :before_wait_for_ready
+      @event.invoke :wait_for_ready
+      @event.invoke :after_wait_for_ready
+      @event.invoke :loaded
+      @event.invoke :finish
+
+      __finish
+
+      RTS
+    end
+
+    ;; Creates the storage
+    macro self.create(&block)
+      loader = LevelLoader.new
+      builder = LevelLoaderBuilder.new(loader)
+      block.call with_context builder
+      loader.finalize
+      return loader
+    end
+  end
+
+end

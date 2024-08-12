@@ -1,0 +1,110 @@
+module Aoba::Mouse
+
+  ;; Allocates a region
+  ;; @returns X Region
+  def allocate_region_icb
+    routine do
+      make_thread_safe
+
+      execute do
+        LDX   free_region
+        X.is_a! Region
+        BZE   _fail
+        LDA   X[:next_region]
+        STA   free_region
+        BRA   _rts
+
+        ;; --
+
+      _fail:
+        fatal_error "No free region to allocate"
+
+      _rts:
+      end
+    end
+  end
+
+  def allocate_region_icb_long
+    allocate_region_icb
+    RTL
+  end
+
+  ;; @param A event
+  ;; @param Y region
+  def send_region_event
+    Y.is_a! Region
+    STA   dp(_calc0)
+    STY   dp(_calc0) + 2
+
+    CPU.set A: 8
+    LDA   #Aoba::Thread::Event::USEREVENT_ID
+    JSL   Aoba::Thread::Event.allocate_icb_long
+    X.is_a! RegionEvent
+    LDY   dp(_calc0) + 2
+    LDA   dp(_calc0)
+    STA   X[:flags]
+    LDA   Y[:event_id]
+    STA   X[:event_id]
+    LDA   Y[:userdata]
+    STA   X[:userdata]
+    CPU.set A: 16
+    TYA
+    STA   X[:region]
+    LDA   Y[:thread_id]
+    JSL   Aoba::Thread.send_event_icb_long
+  end
+
+  ;; @param A event
+  ;; @return Y region
+  def find_region
+    X.is_a! Aoba::Sprite::Instance
+    Y.is_a! Region
+
+    LDY   first_region
+    BZE   _rts
+    
+  _loop:
+    LDA   X[:x]
+    CMP   Y[:left]
+    BLT   _skip
+    CMP   Y[:right]
+    BGE   _skip
+    LDA   X[:y]
+    CMP   Y[:top]
+    BLT   _skip
+    CMP   Y[:bottom]
+    BLT   _rts
+
+  _skip:
+    LDA   Y[:next_region]
+    TAY
+    BNZ   _loop
+
+  _rts:
+  end
+
+
+  ;; Initializes the regions
+  macro _initialize_regions
+    SEI
+    LDX   #MAX_NUM_REGIONS * Region.size
+    JSL   Aoba::Memory.allocate_long
+    CLI
+    STX   regions_ram
+    STX   free_region
+    STZ   first_region
+
+    LDY   #MAX_NUM_REGIONS - 1
+    X.is_a! Region
+    CLC
+  _loop:
+    TXA
+    ADC   #Region.size
+    STA   X[:next_region]
+    TAX
+    DEY
+    BNZ   _loop
+    STZ   X[:next_region]
+  end
+
+end

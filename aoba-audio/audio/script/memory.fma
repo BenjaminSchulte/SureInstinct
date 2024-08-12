@@ -1,0 +1,87 @@
+module Script
+
+  ;; Temporary script RAM
+  scope :TempScriptRAM, in: Memory.SharedPage0
+  TempScriptRAM.include Channel.IterationControl
+  TempScriptRAM.include Channel.ChannelControl
+  scope :SharedTempScriptRAM, in: TempScriptRAM, shared: true
+
+  ;; Bits of channels which should be played
+  declare :start_channels, as: :uint8, in: TempScriptRAM
+
+  ;; The current script offset
+  declare :address, as: :uint16, in: TempScriptRAM
+
+  ;; The current main volume used for calculations
+  declare :main_volume, as: :uint8, in: TempScriptRAM
+
+  ;; Current control flags
+  declare :ch_control_flags, as: :uint8, in: TempScriptRAM
+
+  ;; Current effect flags
+  declare :ch_effect_flags, as: :uint8, in: TempScriptRAM
+
+  ;; Current channel pitch
+  declare :ch_current_pitch, as: :uint16, in: TempScriptRAM
+  declare :ch_current_pitch_float, as: :uint16, in: TempScriptRAM
+
+
+  ;; Stores the current channel to the local RAM for quick access
+  def _store_channel_to_local_ram
+    MOV   Y, dp(Channel.pointer)
+
+    MOV   A, addr(Channel.control_flags, Y)
+    MOV   dp(ch_control_flags), A
+    MOV   A, addr(Channel.effect_flags, Y)
+    MOV   dp(ch_effect_flags), A
+
+    MOV   A, addr(Channel.pitch_low_bytes, Y)
+    MOV   dp(ch_current_pitch), A
+    MOV   A, addr(Channel.pitch_high_bytes, Y)
+    MOV   dp(ch_current_pitch+1), A
+
+    MOV   A, addr(Channel.pitch_float_low_bytes, Y)
+    MOV   dp(ch_current_pitch_float), A
+    MOV   A, addr(Channel.pitch_float_high_bytes, Y)
+    MOV   dp(ch_current_pitch_float+1), A
+  end
+
+  ;; Restores the channel info from the local ram
+  def _restore_channel_from_local_ram
+    MOV   Y, dp(Channel.pointer)
+
+    MOV   A, dp(ch_current_pitch)
+    MOV   addr(Channel.pitch_low_bytes, Y), A
+    MOV   A, dp(ch_current_pitch+1)
+    MOV   addr(Channel.pitch_high_bytes, Y), A
+
+    MOV   A, dp(ch_current_pitch_float)
+    MOV   addr(Channel.pitch_float_low_bytes, Y), A
+    MOV   A, dp(ch_current_pitch_float+1)
+    MOV   addr(Channel.pitch_float_high_bytes, Y), A
+
+    MOV   A, dp(ch_control_flags)
+    MOV   addr(Channel.control_flags, Y), A
+    MOV   A, dp(ch_effect_flags)
+    MOV   addr(Channel.effect_flags, Y), A
+  end
+
+  ;; Stores the script address to the local RAM
+  macro _store_script_address_to_local_ram
+    MOV   X, dp(Channel.pointer_2x)
+    MOV   A, addr(Channel.script_offsets + 1, X)
+    MOV   Y, A
+    MOV   A, addr(Channel.script_offsets, X)
+    MOVW  dp(address), YA
+  end
+
+  ;; Restores the script address from the local RAM
+  macro _restore_script_address_from_local_ram
+    MOV   X, dp(Channel.pointer_2x)
+    MOVW  YA, dp(address)
+    MOV   addr(Channel.script_offsets, X), A
+    MOV   A, Y
+    MOV   addr(Channel.script_offsets + 1, X), A
+  end
+
+end

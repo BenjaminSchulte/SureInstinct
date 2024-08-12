@@ -1,0 +1,50 @@
+module SA1
+
+  ;; Min scope
+  scope :_scope, in: SNES::MemoryMap.SYSTEM, bank: $00
+
+  declare :CCNT, as: :uint8, in: _scope, at: $2200
+  declare :SIE, as: :uint8, in: _scope, at: $2201
+  declare :SIC, as: :uint8, in: _scope, at: $2202
+  declare :CRV, as: :uint16, in: _scope, at: $2203
+  declare :CNV, as: :uint16, in: _scope, at: $2205
+  declare :CIV, as: :uint16, in: _scope, at: $2207
+  declare :SCNT, as: :uint8, in: _scope, at: $2209
+  declare :CIE, as: :uint8, in: _scope, at: $220A
+  declare :CIC, as: :uint8, in: _scope, at: $220B
+  declare :SNV, as: :uint16, in: _scope, at: $220C
+  declare :SIV, as: :uint16, in: _scope, at: $220E
+  declare :TMC, as: :uint8, in: _scope, at: $2210
+  declare :CTR, as: :uint8, in: _scope, at: $2211
+  declare :HCNT, as: :uint16, in: _scope, at: $2212
+  declare :VCNT, as: :uint16, in: _scope, at: $2214
+  declare :CXB, as: :uint8, in: _scope, at: $2220
+  declare :DXB, as: :uint8, in: _scope, at: $2221
+  declare :EXB, as: :uint8, in: _scope, at: $2222
+  declare :FXB, as: :uint8, in: _scope, at: $2223
+  declare :BMAPS, as: :uint8, in: _scope, at: $2224
+  declare :BMAP, as: :uint8, in: _scope, at: $2225
+  declare :SBWE, as: :uint8, in: _scope, at: $2226
+  declare :CBWE, as: :uint8, in: _scope, at: $2227
+  declare :BWPA, as: :uint8, in: _scope, at: $2228
+  declare :SIWP, as: :uint8, in: _scope, at: $2229
+  declare :CIWP, as: :uint8, in: _scope, at: $222A
+  declare :DCNT, as: :uint8, in: _scope, at: $2230
+  declare :CDMA, as: :uint8, in: _scope, at: $2231
+  declare :SDA, as: :uint8, length: 3, in: _scope, at: $2232
+  declare :DDA, as: :uint8, length: 3, in: _scope, at: $2235
+  declare :DTC, as: :uint16, in: _scope, at: $2238
+  declare :BBF, as: :uint8, in: _scope, at: $223F
+  declare :BRF, as: :uint8, length: 16, in: _scope, at: $2240
+  declare :MCNT, as: :uint8, in: _scope, at: $2250
+  declare :MA, as: :uint16, in: _scope, at: $2251
+  declare :MB, as: :uint16, in: _scope, at: $2253
+  declare :VBD, as: :uint8, in: _scope, at: $2258
+  declare :VDA, as: :uint8, in: _scope, at: $2259
+
+  declare :SFR, as: :uint8, in: _scope, at: $2300
+  declare :CFR, as: :uint8, in: _scope, at: $2301
+
+  declare :MR, as: :uint8, length: 5, in: _scope, at: $2306
+
+end

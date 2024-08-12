@@ -1,0 +1,14 @@
+name: Sure Instinct
+id: com.aobastudio.sureinstinct
+version: 1.0.0
+
+author:
+  - Benjamin Schulte
+
+dependencies:
+  com.aobastudio.aoba.core: 1.0.0
+  com.aobastudio.aoba.audio: 1.0.0
+  com.aobastudio.aoba.mouse: 1.0.0
+
+includes:
+  - "game"

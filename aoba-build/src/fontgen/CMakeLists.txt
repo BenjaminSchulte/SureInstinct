@@ -1,0 +1,9 @@
+FILE(GLOB_RECURSE FONTGEN_SRC src *.cpp)
+
+SET(CMAKE_CXX_STANDARD 11)
+
+FIND_PACKAGE(Qt5 COMPONENTS Core Gui REQUIRED)
+
+ADD_EXECUTABLE(aoba-fontgen ${FONTGEN_SRC})
+TARGET_LINK_LIBRARIES(aoba-fontgen libaoba libaobascript librpg libmaker Qt5::Core Qt5::Gui)
+TARGET_INCLUDE_DIRECTORIES(aoba-fontgen PRIVATE include)

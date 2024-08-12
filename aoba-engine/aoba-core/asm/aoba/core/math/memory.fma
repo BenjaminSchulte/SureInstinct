@@ -1,0 +1,6 @@
+module Aoba::Math
+  locate_at bank: SYSTEM_ROM_BANK
+
+  ;; Random seed
+  declare :random_seed, as: :uint8, length: 4, in: ::Memory::VariableRAM
+end

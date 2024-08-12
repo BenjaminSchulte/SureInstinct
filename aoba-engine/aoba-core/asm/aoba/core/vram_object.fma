@@ -1,0 +1,49 @@
+module Aoba
+  class VramObject
+    macro initialize
+      @align = nil
+      @__address = nil
+      @__previous = nil
+      @__force_address = nil
+    end
+
+    macro force_address(address)
+      @__force_address = address
+    end
+
+    macro __first
+      return @__previous.__first unless @__previous.nil?
+      return self
+    end
+
+    macro size_in_bytes
+      raise "Size in bytes is missing"
+    end
+
+    macro address
+      return @__address unless @__address.nil?
+
+      if @__previous.nil?
+        if @__force_address.nil?
+          @__address = MemoryVariable.new("vram_object", as: :uint8, in: @scope, size: @size_in_bytes, align: @align)
+        else
+          @__address = MemoryVariable.new("vram_object", as: :uint8, in: @scope, size: @size_in_bytes, align: @align, address: @__force_address)
+        end
+      else
+        @__address = __first.address + @__address_offset
+      end
+
+      return @__address
+    end
+
+    macro setup
+    end
+
+    macro include_as_vram_object(id, layout, scope)
+      layout.objects[id] = self
+      layout.all_objects << self
+      @layout = layout
+      @scope = scope
+    end
+  end
+end

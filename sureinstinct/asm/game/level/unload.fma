@@ -1,0 +1,59 @@
+module Game::Level::Unload
+
+
+  Aoba::Script.callback "Ingame_Kill", bank: Aoba::SPRITE_ROM_BANK do
+
+    LDA   #UserInterface::MenuState::KILL
+    STA   UserInterface.menu_state
+    JSL   Game::Ball::Movement.unload_long
+
+    ;; Unloads all bombs
+    SEI
+  _loop_bomb:
+    LDX   Aoba::Sprite.bomb_list.first
+    X.is_a! Aoba::Sprite::Instance
+    BZE   _last_bomb
+    LDA   X[:next_bomb]
+    STA   Aoba::Sprite.bomb_list.first
+    LDA   X[:id]
+    JSR   Aoba::Sprite::Api.destroy_sprite_icb
+    BRA   _loop_bomb
+  _last_bomb:
+
+  _loop_map_sprite:
+    LDX   Aoba::Sprite.map_sprite_list.first
+    X.is_a! Aoba::Sprite::Instance
+    BZE   _last_map_sprite
+    LDA   X[:next_map_sprite]
+    STA   Aoba::Sprite.map_sprite_list.first
+    LDA   X[:id]
+    JSR   Aoba::Sprite::Api.destroy_sprite_icb
+    BRA   _loop_map_sprite
+  _last_map_sprite:
+    CLI
+
+    ;; Unloads tileset animations
+    LDA   #Aoba::Thread::Event::USEREVENT_ID
+    JSL   Aoba::Thread::Event.allocate_icb_long
+    LDA   #AssetConfig::Ingame.tileset_loader.unload_event_id
+    STA   Aoba::Thread::Event::Base.size, X
+    LDA   Aoba::Tileset.thread_id
+    JSL   Aoba::Thread.send_event_icb_long
+
+    ;; Unloads palette 
+    LDA   #Aoba::Thread::Event::USEREVENT_ID
+    JSL   Aoba::Thread::Event.allocate_icb_long
+    X.is_a! Aoba::Palette::Event::UnloadPalette::Event
+    LDA   #Aoba::Palette::Event::UnloadPalette::ID
+    STA   X[:event_id]
+    LDA   #$FFFF
+    STA   X[:palette_mask]
+    LDA   Aoba::Palette.thread_id
+    JSL   Aoba::Thread.send_event_icb_long
+    
+    SEI
+    JSL   Aoba::Thread.pause_current_thread_temporary_icb_long
+    CLI
+  end
+
+end

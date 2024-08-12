@@ -1,0 +1,5 @@
+module Aoba::LevelScene
+
+end
+
+require "vram"

@@ -1,0 +1,199 @@
+module Aoba::Sprite::Api
+
+  ;; @param X the event configuration
+  ;; @returns X the sprite
+  def create_sprite_icb_long
+    PHX
+    
+    ;; Create the event
+    ;CPU.set A: 8
+    LDA   #Aoba::Thread::Event::USEREVENT_ID
+    JSL   Thread::Event.allocate_icb_long
+    X.is_a! Event::CreateSprite::Event
+
+    ;; Configures the event
+    LDA   #Event::CreateSprite::ID
+    STA   X[:event_id]
+    ;CPU.set A: 16
+    PLA
+    STA   X[:config_address]
+
+    ;; Sends the event
+    CPU.set A: 8
+    LDA   thread_id
+    JSL   Thread.send_event_icb_long
+
+    ;; Waits for the sprite create response
+    LDA   #Event::CreateSprite::ID
+    XBA
+    LDA   thread_id
+    JSL   Thread.wait_for_ready_icb_long
+    CPU.set A: 16
+    RTL
+  end
+
+  ;; @param X Instance
+  ;; @param AL new animation ID
+  def set_animation_icb_long
+    AND   #$FF
+    set_animation_and_palette_icb
+    RTL
+  end
+
+  ;; @param X Instance
+  ;; @param AL new animation ID
+  ;; @param AH new animation ID
+  def set_animation_and_palette_icb_long
+    set_animation_and_palette_icb
+    Debug.warn "Palette is not yet supported in event"
+    RTL
+  end
+
+  ;; @param X Instance
+  ;; @param AL new animation ID
+  ;; @param AH new animation ID
+  def set_animation_and_palette_icb
+    PHX
+    PHA
+    CPU.set A: 8
+    LDA   #Aoba::Thread::Event.USEREVENT_ID
+    JSL   Aoba::Thread::Event.allocate_icb_long
+    X.is_a! Aoba::Sprite::Event::SetAnimation::Event
+    LDA   #Aoba::Sprite::Event::SetAnimation::ID
+    STA   X[:event_id]
+    PLA
+    STA   X[:animation_id]
+    PLA
+    STA   X[:palette_index_id]
+    PLY
+    PHY
+    Y.is_a! Instance
+    LDA   Y[:id]
+    STA   X[:sprite_id]
+    LDA   Sprite.thread_id
+    JSL   Aoba::Thread::send_event_icb_long
+    CPU.set A: 16
+    PLX
+  end
+
+  ;; Queues the sprite
+  def queue_sprite_icb_long
+    PHX
+    LDA   #Aoba::Thread::Event::USEREVENT_ID
+    JSL   Thread::Event.allocate_icb_long
+    X.is_a! Event::QueueSprite::Event
+    CPU.set A: 8
+    LDA   #Event::QueueSprite::ID
+    STA   X[:event_id]
+    PLY
+    PHY
+    Y.is_a! Instance
+    LDA   Y[:id]
+    STA   X[:sprite_id]
+    STZ   X[:parent_sprite_id]
+    LDA   thread_id
+    CPU.set A: 16
+    JSL   Thread.send_event_icb_long
+    PLX
+    RTL
+  end
+
+  ;; @param X the event configuration
+  ;; @returns X SpriteInstance
+  def create_character_icb_long
+    PHX
+
+    ;; Create the event
+    LDA   #Aoba::Thread::Event::USEREVENT_ID
+    JSL   Thread::Event.allocate_icb_long
+    X.is_a! Event::CreateCharacter::Event
+
+    ;; Configures the event
+    LDA   #Event::CreateCharacter::ID
+    STA   X[:event_id]
+    CPU.set A: 16
+    PLA
+    STA   X[:config_address]
+
+    ;; Sends the event
+    CPU.set A: 8
+    LDA   thread_id
+    JSL   Thread.send_event_icb_long
+
+    ;; Waits for the sprite create response
+    LDA   #Event::CreateCharacter::ID
+    XBA
+    LDA   thread_id
+    JSL   Thread.wait_for_ready_icb_long
+    CPU.set A: 16
+
+    RTL
+  end
+
+  ;; Stops a sprite
+  ;; @param A sprite ID
+  ;; @ignore-thread-safety
+  def stop_movement_icb
+    PHP
+    CPU.set A: 8
+    PHA
+    LDA   #Aoba::Thread::Event::USEREVENT_ID
+    JSL   Aoba::Thread::Event.allocate_icb_long
+    X.is_a! Aoba::Sprite::Event::StopMovement::Event
+    LDA   #Aoba::Sprite::Event::StopMovement::ID
+    STA   X[:event_id]
+    PLA
+    STA   X[:sprite_id]
+    LDA   Sprite.thread_id
+    JSL   Aoba::Thread.send_event_icb_long
+    PLP
+  end
+
+  ;; Stops a sprite
+  ;; @param A sprite ID
+  ;; @ignore-thread-safety
+  def stop_movement_icb_long
+    stop_movement_icb
+    RTL
+  end
+
+  def destroy_sprite_async_icb
+    PHP
+    CPU.set A: 8
+    PHA
+    LDA   #Aoba::Thread::Event.USEREVENT_ID
+    JSL   Aoba::Thread::Event.allocate_icb_long
+    X.is_a! Aoba::Sprite::Event::DestroySprite::Event
+    LDA   #Aoba::Sprite::Event::DestroySprite::ID
+    STA   X[:event_id]
+    PLA
+    STA   X[:sprite_id]
+    CPU.set A: 8
+    LDA   Aoba::Sprite.thread_id
+    JSL   Aoba::Thread.send_event_icb_long
+    PLP
+  end
+
+  ;; Destroys a sprite
+  ;; @param A sprite ID
+  ;; @ignore-thread-safety
+  def destroy_sprite_icb
+    destroy_sprite_async_icb
+    PHP
+    CPU.set A: 8
+    LDA   #Aoba::Sprite::Event::DestroySprite::READY_ID
+    XBA    
+    LDA   Aoba::Sprite.thread_id
+    JSL   Aoba::Thread.wait_for_ready_icb_long
+    CPU.set A: 16
+    PLP
+  end
+
+  ;; Destroys a sprite
+  ;; @param A sprite ID
+  def destroy_sprite_icb_long
+    destroy_sprite_icb
+    RTL
+  end
+
+end

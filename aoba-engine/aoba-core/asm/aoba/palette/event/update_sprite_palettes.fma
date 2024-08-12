@@ -1,0 +1,44 @@
+module Aoba::Palette::Event::UpdateSpritePalettes
+
+  ;; The event
+  class Event < Base
+  end
+
+  ;; Loads the palette
+  ;; @ignore-thread-safety
+  ID = List.create "UpdateSpritePalettes" do
+    Y.is_a! Event
+
+    LDY   #16 - 2
+  _loop:
+    LDA   requested_sprite_palette_ids, Y
+    CMP   loaded_sprite_palette_ids, Y
+    BEQ   _skip_record
+
+    ;; Loads the new palette
+    TAX
+    TYA
+    ASL   A
+    ASL   A
+    ASL   A
+    ORA   #$80
+    PHY
+    Action::LoadPalette.load_palette_to_cgram
+    PLY
+
+    ;; Updates the record
+    LDA   requested_sprite_palette_ids, Y
+    STA   loaded_sprite_palette_ids, Y
+    CPU.set A: 8
+    LDA   #1
+    Debug.allow_invalid_ram_access 1
+    STA   sprite_palette_is_modified
+    CPU.set A: 16
+
+  _skip_record:
+    DEY
+    DEY
+    BPL   _loop
+  end
+
+end

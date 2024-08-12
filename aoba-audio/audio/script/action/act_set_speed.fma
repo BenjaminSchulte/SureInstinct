@@ -1,0 +1,18 @@
+module Script::Action::SetSpeed
+
+  def process
+    MOV   X, A
+    MOV   A, indirect(Script.address, X)
+    INCW  dp(Script.address)
+    BBS0  dp(ch_control_flags), _is_sfx_channel
+
+  _is_song_channel:
+    MOV   dp(SPC.TIMER1), A
+    MOV   dp(Song.song_speed), A
+    RET
+
+  _is_sfx_channel:
+    MOV   dp(SPC.TIMER0), A
+  end
+
+end

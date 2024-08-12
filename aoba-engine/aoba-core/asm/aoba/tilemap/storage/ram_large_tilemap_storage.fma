@@ -1,0 +1,100 @@
+module Aoba::Tilemap::Storage
+
+  class RamLargeTilemapStorageBuilder < BaseBuilder
+    macro format(id)
+      @storage.format = id
+    end
+
+    macro add_layer(layer)
+      @storage.layers_to_create << layer
+    end
+  end
+
+  class RamLargeTilemapStorage < Base
+    macro initialize
+      super
+
+      @format = :uint16
+      @can_flip = true
+      @layers_to_create = []
+    end
+
+    ;; Generates the load code for a flippable item
+    macro _generate_load_tile_code_flip(calc32, &block)
+      Debug.BRK
+      NOP
+      NOP
+      NOP
+    end
+
+    ;; Generates a load tile for this tileset
+    macro generate_load_tile_code(tileset_storage, calc32, tileset_reference, &block)
+      Debug.BRK
+      NOP
+      NOP
+      NOP
+    end
+
+    ;; Increments the read address X
+    macro increment_read_address_X_from_stack_to_register_Y
+      Debug.BRK
+      NOP
+      NOP
+      NOP
+    end
+
+    ;; Increments the read address
+    macro increment_read_address_Y_from_stack_to_register_Y(renderer)
+      Debug.BRK
+      NOP
+      NOP
+      NOP
+    end
+
+    ;; Stores a pointer to the data in 
+    macro bgtile_data_read_offset(left_tile, top_tile, width, height)
+      Debug.BRK
+      NOP
+      NOP
+      NOP
+    end
+
+    ;; Increments the tile pointer X
+    macro increment_bgtile_data_read_column_stack_to_Y
+      Debug.BRK
+      NOP
+      NOP
+      NOP
+    end
+
+    ;; Increments the tile pointer X
+    macro increment_bgtile_data_read_row_stack_to_Y
+      Debug.BRK
+      NOP
+      NOP
+      NOP
+    end
+
+    ;; Stores a pointer to the data in 
+    macro data_read_offset(left_tile, top_tile, width, height)
+      Debug.BRK
+      NOP
+      NOP
+      NOP
+    end
+
+    ;; Finalizes the storage
+    macro finalize
+    end
+
+    ;; Creates the storage
+    macro self.create(&block)
+      storage = RamLargeTilemapStorage.new
+      builder = RamLargeTilemapStorageBuilder.new(storage)
+      block.call with_context builder
+      storage.finalize
+      return storage
+    end
+  end
+
+end

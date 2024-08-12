@@ -1,0 +1,72 @@
+module Aoba::Composer::Event::DisableHdmaMode
+
+  ;; The event
+  class Event < Base
+    ;; The screen mode
+    declare :mode, as: :uint8
+
+    ;; Parameter for the mode
+    declare :param, as: :uint16
+  end
+
+  ;; The RAM for scrolling configuration
+  scope :TempRAM, in: ActionRAM
+  
+  declare :event, as: :uint16, in: TempRAM
+
+  ;; Sets the screen mode
+  ;; @ignore-thread-safety
+  ID = List.create "DisableHdmaMode" do
+    STY   dp(event)
+    Y.is_a! Event
+
+    SEI
+
+    ;; Tests whether the queued HDMA mode is the requested mode
+    LDA   Hdma.queued_hdma_mode
+    EOR   Y[:mode]
+    AND   dp(x00FF)
+    BNZ   _not_queued_hdma_mode
+    LDA   Hdma.queued_userdata
+    EOR   Y[:param]
+    BNZ   _not_queued_hdma_mode
+
+    ;; The mode to disable is currently queued, release it immediately
+    ;; and unqueue it
+  _is_queued_hdma_mode:
+    LDA   Hdma.queued_hdma_mode
+    AND   dp(x00FF)
+    DEC   A
+    ASL   A
+    LDY   Hdma.queued_userdata
+    JSR   Hdma::mode_release_pointer.indirect, X
+    LDY   dp(event)
+    Y.is_a! Event
+    CPU.set A: 8
+    STZ   Hdma.queued_hdma_mode
+    CPU.set A: 16
+    CLI
+    RTS
+
+    ;; Tests whether the HDMA mode is the requested mode
+  _not_queued_hdma_mode:
+    LDA   Hdma.hdma_mode
+    EOR   Y[:mode]
+    AND   dp(x00FF)
+    BNZ   _return
+    LDA   Hdma.userdata
+    EOR   Y[:param]
+    BNZ   _return
+
+    ;; Disable the current HDMA mode
+  _is_hdma_mode:
+    CPU.set A: 8
+    LDA   #1
+    STA   Hdma.queued_hdma_mode
+    CPU.set A: 16
+
+  _return:
+    CLI
+  end
+
+end

@@ -1,0 +1,198 @@
+module Aoba::Effect
+
+  class BaseBuilder
+    macro initialize(effect)
+      @effect = effect
+    end
+
+    macro on(id, &block)
+      @effect.event.on id, &block
+    end
+
+    macro with_event_class(Klass)
+      @effect.EventClass = Klass
+    end
+
+    macro with_variables(Klass)
+      @effect.VariableClass = Klass
+
+      @effect.event.on :timer_setup, order: Aoba::Event::Order::FIRST do
+        Debug.access_8bit_through_16bit
+        LDA   Aoba::EffectThread.thread_id
+        LDX   #Klass.size
+        SEI
+        JSL   Aoba::Memory.allocate_miniblock_long
+        CLI
+        LDY   dp(current_effect_timer)
+        Y.is_a! TimerHandler
+        TXA
+        STA   Y[:memory]
+        STA   dp(current_memory)
+      end
+
+      @effect.event.on :timer_free, order: Aoba::Event::Order::FIRST do
+        Y.is_a! TimerHandler
+        LDX   Y[:memory]
+        SEI
+        JSL   Aoba::Memory.free_miniblock_long
+        CLI
+        LDY   dp(current_effect_timer)
+      end
+
+      @effect.event.on :reload_on_update do
+        LDY   dp(current_effect_timer)
+        Y.is_a! TimerHandler
+        LDA   Y[:memory]
+        STA   dp(current_memory)
+      end
+    end
+
+    macro start(&block)
+      @effect.event.on :start, &block
+    end
+
+    macro update(&block)
+      _effect = @effect
+      @effect.event.on :start, order: Aoba::Event::Order::FIRST do
+        TimerHandlerList.allocate
+        Y.is_a! TimerHandler
+        STY   dp(current_effect_timer)
+        LDA   #_effect.update.to_sym - 1
+        STA   Y[:update_callback]
+
+        _effect.event.invoke :timer_setup
+      end
+
+      @effect.event.on :update do
+        _effect.event.invoke :reload_on_update
+
+        block.call
+      end
+
+      @effect.event.on :finish, order: Aoba::Event::Order::ALWAYS_FIRST do
+        _effect.event.invoke :reload_on_update
+      end
+
+      @effect.event.on :finish, order: Aoba::Event::Order::LAST do
+        LDY   dp(current_effect_timer)
+        _effect.event.invoke :timer_free
+        TimerHandlerList.free
+      end
+    end
+
+    macro vblank_update(&block)
+      _effect = @effect
+      @effect.event.on :start, order: Aoba::Event::Order::LAST do
+        LDX   #_effect.vblank_update.to_sym - 1
+        LDY   dp(current_memory)
+        Aoba::Effect.add_vblank_update
+      end
+
+      @effect.event.on :vblank_update do
+        block.call
+      end
+
+      @effect.event.on :finish, order: Aoba::Event::Order::FIRST do
+        LDX   #_effect.vblank_update.to_sym - 1
+        LDY   dp(current_memory)
+        Aoba::Effect.remove_vblank_update
+      end
+    end
+
+    macro finish(&block)
+      @effect.event.on :finish, &block
+    end
+
+    macro trigger_finish
+      @effect.finish
+    end
+    
+    macro queue_update(delay=1)
+      LDY   dp(current_effect_timer)
+      Y.is_a! TimerHandler
+      LDX   Y[:timer]
+      LDY   #delay
+      LDA   #0
+      JSL   Aoba::Thread::Timer.queue_icb_long
+    end
+
+    macro routine(name, &block)
+      @effect.instance_routine name, &block
+      self[name] = @effect[name]
+    end
+  end
+
+  module Event
+    class Base < Aoba::Thread::Event::Base
+      declare :event_id, as: :uint8
+    end
+  end
+
+  class EffectBase
+    include Aoba::StaticRoutineClass
+
+    locate_at bank: EFFECT_ROM_BANK
+    register A: 16, XY: 16
+
+    macro initialize(name)
+      @name = name
+      @timer_id = nil
+      @EventClass = Event::Base
+      @VariableClass = nil
+      @event = Aoba::Event::Emitter.new
+    end
+
+    macro finalize
+      setup_static_routines
+
+      _self = self
+      @start_event_id = EffectThread.event_list.create "Start#{@name}" do
+        STY   dp(current_event)
+        event.invoke :start
+      end
+    end
+
+    macro create_start_event
+      LDA   #Thread::Event::USEREVENT_ID
+      JSL   Aoba::Thread::Event.allocate_icb_long
+      X.is_a! @EventClass
+      LDA   #@start_event_id
+      STA   X[:event_id]
+    end
+
+    macro send_start_event
+      Debug.access_8bit_through_16bit
+      LDA   EffectThread.thread_id
+      JSL   Aoba::Thread.send_event_icb_long
+    end
+
+    macro start
+      create_start_event
+      send_start_event
+    end
+
+    routine :update do
+      @event.invoke :update
+      RTS
+    end
+
+    routine :vblank_update do
+      @event.invoke :vblank_update
+      RTS
+    end
+
+    routine :finish do
+      @event.invoke :finish
+      RTS
+    end
+  end
+
+  macro create(name, &block)
+    effect = EffectBase.new(name)
+    builder = BaseBuilder.new(effect)
+    block.call with_context builder
+    effect.finalize
+    return effect
+  end
+
+end

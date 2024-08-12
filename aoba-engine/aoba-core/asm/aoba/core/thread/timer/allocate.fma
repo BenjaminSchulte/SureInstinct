@@ -1,0 +1,86 @@
+module Aoba::Thread::Timer
+
+  ;; Frees a timer
+  ;;
+  ;; @param X timer
+  def free_icb
+    routine A: nil, from_XY: 16 do
+      make_thread_safe
+
+      execute do
+        X.is_a! TimerInstance
+        PHX
+        unqueue_icb
+        PLX
+
+        LDA   free_timers
+        STA   X[:next_timer]
+        STX   free_timers
+      end
+    end
+  end
+
+  ;; Frees a timer
+  ;;
+  ;; @param X timer
+  def free_icb_long
+    free_icb
+    RTL
+  end
+
+  ;; Frees a timer
+  ;;
+  ;; @param X timer
+  def free_long
+    CPU.with_bank! VARIABLE_RAM_BANK do
+      free_icb
+    end
+    RTL
+  end
+
+  ;; Allocates a new timer
+  ;;
+  ;; @param A thread ID
+  ;; @return X timer
+  def allocate_icb
+    routine A: nil, from_XY: 16 do
+      make_thread_safe
+      input A
+
+      execute do
+        LDX   free_timers
+        X.is_a! TimerInstance
+        CPU.set A: 8
+        STA   X[:thread_id]
+        STZ   X[:flags]
+        CPU.set A: 16
+        LDA   X[:next_timer]
+        STA   free_timers
+        STZ   X[:next_timer]
+      end
+    end
+  end
+
+  ;; Allocates a new timer
+  ;;
+  ;; @param A thread ID
+  ;; @return X timer
+  def allocate_long
+    PHP
+    CPU.with_bank! VARIABLE_RAM_BANK do
+      allocate_icb
+    end
+    PLP
+    RTL
+  end
+
+  ;; Allocates a new timer
+  ;;
+  ;; @param A thread ID
+  ;; @return X timer
+  def allocate_icb_long
+    allocate_icb
+    RTL
+  end
+
+end

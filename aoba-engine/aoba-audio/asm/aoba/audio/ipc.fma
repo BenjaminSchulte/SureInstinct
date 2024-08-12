@@ -1,0 +1,40 @@
+module Aoba::Audio::IPC
+
+  ;; Transfer data from DB/X to SPC with data size Y (divided by three)
+  ;; @ignore-thread-safety
+  transfer = create_sa1_ram_routine bank: AUDIO_ROM_BANK do
+    A.pretend_size 8
+
+  _loop:
+    ; Send next three bytes
+    LDA   $0, X
+    STA   CPU.APUIO2.long
+    LDA   $1, X
+    STA   CPU.APUIO3.long
+    LDA   $2, X
+    STA   CPU.APUIO1.long
+
+    ; Send command to APU
+    LDA   last_ipc_value.long
+    INC   A
+    AND   #$7F
+    STA   CPU.APUIO0.long
+    STA   last_ipc_value.long
+
+    ; Is there more data?
+    DEY
+    BZE   _end_of_transfer
+
+    ; Update pointers and wait for ACK
+    INX
+    INX
+    INX
+
+    ; Loop after ACK
+    unsafe_wait_for_ready nil
+    BRA   _loop
+
+  _end_of_transfer:
+    RTS
+  end
+end

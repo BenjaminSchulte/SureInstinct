@@ -1,0 +1,177 @@
+module Aoba::Sprite::Collision::Tile
+
+  class CollisionTest < StaticRoutineClass
+    locate_at bank: SPRITE_ROM_BANK
+    register A: 16, XY: 16
+
+    macro initialize(parent)
+      @parent = parent
+      setup_static_routines
+    end
+
+    ;; Reads a tile from the layer
+    ;;
+    ;; @param A the relative X position
+    ;; @param Y the relative Y position
+    ;; @return A collision data
+    ;; @ignore_thread_safety
+    routine :_read_relative_tile_from_layer do
+      @parent.__calculate_tile_index_from_storage _out_of_map
+      
+      if @parent.tilemap_storage.nil?
+        STZ   dp(@parent.collision_tile_data)
+        return
+      end
+
+      TAX
+
+      LDA   dp(Action::Move.basic_flags)
+      BIT   #BasicFlag.COLLISION_FG_LAYER
+      BNZ   _is_fg_layer
+
+    _is_bg_layer:
+      LDA   @parent.tilemap_storage.tiles[:bg].to_sym.long, X
+      STA   dp(@parent.collision_tile)
+      AND   #$3FF
+      ASL   A
+      TAX
+      LDA   Tileset.collision_layer_bg.long, X
+      STA   dp(@parent.collision_tile_data)
+      RTS
+
+      ;; --
+    _is_fg_layer:
+      LDA   @parent.tilemap_storage.tiles[:fg].to_sym.long, X
+      STA   dp(@parent.collision_tile)
+      AND   #$3FF
+      ASL   A
+      TAX
+      LDA   Tileset.collision_layer_fg.long, X
+      STA   dp(@parent.collision_tile_data)
+      RTS
+
+      ; No collision out of map
+    _out_of_map:
+      LDA   #$7F
+      STA   dp(@parent.collision_tile_data)
+      RTS
+    end
+
+    ;; Returns the bit to test which edge is currently requested
+    macro _get_edge_test_bit
+      LDA   dp(@parent.collision_tiles_x)
+      LSR   A
+      LSR   A
+      AND   #2
+      STA   dp(_calc0)
+
+      LDA   dp(@parent.collision_tiles_y)
+      BIT   #8
+      BZE   _not_south
+      LDA   #4
+      TSB   dp(_calc0)
+    _not_south:
+
+      LDA   dp(_calc0)
+      TAX
+      LDA   PowerOfTwo16.long, X
+    end
+
+    macro _test_exit_collision
+      ;; Tests if this tile is an exit
+      BIT   #$8000
+      BZE   _no_exit
+
+      LDA   X[:collision_flags]
+      LSR   A
+      BCC   _no_exit_reload
+
+      LDA   #Flag::FULL_COLLISION
+      STA   dp(@parent.collision_tile_data)
+
+    _no_exit_reload:
+      LDA   dp(@parent.collision_tile_data)
+    _no_exit:
+    end
+
+    ;; Tests for collision
+    ;; @param A relative X
+    ;; @param Y relative Y
+    ;; @param X current_sprite
+    routine :test_collision do
+      Thread.assert_thread thread_id
+
+      ;LDX   dp(current_sprite)
+      _read_relative_tile_from_layer
+      LDX   dp(current_sprite)
+      X.is_a! Instance
+
+      _test_exit_collision
+
+      ;; If no layer is selected there can't be a collision
+      AND   #Flag::LAYER_MASK
+      BZE   _no_collision
+
+      ;; $60 would be layer independent, because the collision is for both layers
+      CMP   #Flag::LAYER_BOTH
+      BEQ   _layer_independent_collision
+
+      ;; Check whether the layer is matching our own
+      STA   dp(_calc0)
+      LDA   X[:current_layer]
+      AND   #$FF
+      BZE   _layer_independent_collision
+      CMP   #Flag::LAYER_BOTH
+      BEQ   _layer_independent_collision
+      CMP   dp(_calc0)
+      BNE   _collision
+
+      ;; Check whether this is actually a collision or not
+    _layer_independent_collision:
+      LDA   dp(@parent.collision_tile_data)
+      BIT   #Flag::FLAG_COLLISION
+      BNZ   _test_default_collision
+
+      ;; Check whether there is a special collision
+    _test_special_collision:
+      AND   #$1F
+      CMP   #8
+      BGE   _might_be_diagonal_collision
+
+      ;; No collision happened
+    _no_collision:
+      CLC
+      RTS
+
+      ;; Tests for diagonal collision
+    _might_be_diagonal_collision:
+      @parent._diagonal._process_diagonal_collision
+      BCS   _collided_with_special_behaviour
+      BEQ   _no_collision
+      BRA   _collision
+
+      ;; Tests default collision
+    _test_default_collision:
+      _get_edge_test_bit
+      AND   dp(@parent.collision_tile_data)
+      BZE   _no_collision
+
+    _collision:
+      LDA   dp(@parent.tile_collision_target_bit)
+      TSB   dp(@parent.tile_collision_target)
+
+      SEC
+      RTS
+
+      ;; ---
+
+    _collided_with_special_behaviour:
+      Debug.warn "COLLIDED SPECIAL"
+      LDA   dp(@parent.tile_collision_target_bit)
+      TSB   dp(@parent.tile_collision_target)
+      SEC
+      RTS
+    end
+  end
+
+end

@@ -1,0 +1,28 @@
+module Aoba::Tilemap::Loader
+
+  class TilemapSizeParameter < Parameter
+    macro initialize(storage)
+      super
+      @storage = storage
+    end
+
+    macro size_in_bytes
+      return 2
+    end
+
+    macro load
+      @loader.read_header_at @offset
+      CLC
+      ADC   #$101
+      STA   @storage.width.long
+      AND   #$FF
+      @storage.tilemap.any_tile_format.tile_width.multiplicated_register_A
+      STA   @storage.width_in_pixel.long
+      LDA   @storage.width.long + 1
+      AND   #$FF
+      @storage.tilemap.any_tile_format.tile_height.multiplicated_register_A
+      STA   @storage.height_in_pixel.long
+    end
+  end
+
+end

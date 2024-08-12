@@ -1,0 +1,33 @@
+#!/bin/bash
+
+set -e
+
+if ! [[ -d "sureinstinct/assets" ]]; then
+  echo "Error: Script must be executed from project root."
+  exit 1
+fi
+
+AOBA_MODULE_PATH=`pwd`/aoba-engine ./aoba-build/build/src/cli/cli ./sureinstinct debug_ntsc
+
+if ! [[ -f "sureinstinct/obj/build.fma" ]]; then
+  echo "Error: Assets not compiled yet. Please compile assets."
+  exit 1
+fi
+
+ROMBASENAME=Debug-DE-`date +%Y%m%d-%H%M%S`
+
+flags=`cat sureinstinct/obj/compile-flags.txt`
+./bin/audio-compile sureinstinct $ROMBASENAME
+
+ROMNAME=$ROMBASENAME.sfc
+echo "$ROMNAME" > ./sureinstinct/obj/lastrom.txt
+
+echo fma -l 65816 -o./sureinstinct/dist/$ROMNAME $flags ./sureinstinct/obj/build.fma
+fma -l 65816 -o./sureinstinct/dist/$ROMNAME $flags ./sureinstinct/obj/build.fma
+
+
+#rm -f ./sureinstinct/dist/$ROMBASENAME.bp
+
+bsnes --break-on-brk --show-debugger --enable-debug-interface --record-movie ./sureinstinct/dist/$ROMNAME
+#snes9x-gtk ./sureinstinct/dist/$ROMNAME
+node tools/profile-to-json.js

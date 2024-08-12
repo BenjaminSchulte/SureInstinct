@@ -1,0 +1,157 @@
+module Script::Tick
+
+  ;; Temporary RAM used for note playback
+  scope :TempRAM, in: Script.SharedTempScriptRAM
+  declare :calc, as: :uint16, in: TempRAM
+
+  ;; Processes the vibrato effect
+  def _process_vibrato_effect
+    BBS2  dp(ch_effect_flags), _pitch_is_negative
+
+    MOV   A, addr(Channel.vibrato_power_high, X)
+    MOV   Y, A
+    MOV   A, addr(Channel.vibrato_power_low, X)
+    ADDW  YA, dp(ch_current_pitch)
+    MOVW   dp(ch_current_pitch), YA
+    BRA   _after_update_pitch
+
+  _pitch_is_negative:
+    SETC
+    MOV   A, dp(ch_current_pitch)
+    SBC   A, addr(Channel.vibrato_power_low, X)
+    MOV   dp(ch_current_pitch), A
+    MOV   A, dp(ch_current_pitch + 1)
+    SBC   A, addr(Channel.vibrato_power_high, X)
+    MOV   dp(ch_current_pitch + 1), A
+
+  _after_update_pitch:
+    MOV   A, addr(Channel.vibrato_current_ticks, X)
+    DEC   A
+    BNE   _no_direction_change
+
+    NOT1  ch_effect_flags, 2
+
+    MOV   A, addr(Channel.vibrato_ticks, X)
+    ASL   A
+
+  _no_direction_change:
+    MOV   addr(Channel.vibrato_current_ticks, X), A
+  end
+
+  ;; Processes the ease pitch effect
+  def _process_ease_pitch_effect
+    MOV   X, dp(Channel.pointer_2x)
+    MOV   A, addr(Channel.ease_pitch_increment_word1, X)
+    MOV   Y, A
+    MOV   A, addr(Channel.ease_pitch_increment_word1+1, X)
+    BBS5  dp(ch_control_flags), _pitch_is_decrementing
+
+  _pitch_is_incrementing:
+    ADDW  YA, dp(ch_current_pitch_float)
+    BCC   _no_float_overflow
+    INCW  dp(ch_current_pitch)
+  _no_float_overflow:
+    MOVW  dp(ch_current_pitch_float), YA
+
+    MOV   A, addr(Channel.ease_pitch_increment_word0, X)
+    MOV   Y, A
+    MOV   A, addr(Channel.ease_pitch_increment_word0+1, X)
+    ADDW  YA, dp(ch_current_pitch)
+    MOVW  dp(ch_current_pitch), YA
+    RET
+
+  _pitch_is_decrementing:
+    MOVW  dp(calc), YA
+    MOVW  YA, dp(ch_current_pitch_float)
+    SUBW  YA, dp(calc)
+    BCS   _no_float_overflow_negative
+    DECW  dp(ch_current_pitch)
+  _no_float_overflow_negative:
+    MOVW  dp(ch_current_pitch_float), YA
+    
+    MOV   A, addr(Channel.ease_pitch_increment_word0, X)
+    MOV   Y, A
+    MOV   A, addr(Channel.ease_pitch_increment_word0+1, X)
+    MOVW  dp(calc), YA
+    MOVW  YA, dp(ch_current_pitch)
+    SUBW  YA, dp(calc)
+    MOVW  dp(ch_current_pitch), YA
+  end
+
+  ;; Processes the VIBRATO effect, if enabled
+  macro _test_process_vibrato_effect
+    BBC0  dp(ch_effect_flags), _no_vibrato_effect
+
+    MOV   X, dp(Channel.pointer)
+    MOV   A, addr(Channel.vibrato_current_delay, X)
+    BEQ   _delay_is_ok
+
+    DEC   A
+    MOV   addr(Channel.vibrato_current_delay, X), A
+    BRA   _no_vibrato_effect
+
+  _delay_is_ok:
+    _process_vibrato_effect
+    SET7  dp(ch_control_flags)
+
+  _no_vibrato_effect:
+  end
+
+  ;; Processes the EASE_PITCH effect, if enabled
+  macro _test_process_ease_pitch_effect
+    BBC6  dp(ch_control_flags), _no_ease_pitch_effect
+
+  _has_pitch_effect:
+    MOV   X, dp(Channel.pointer)
+    MOV   A, addr(Channel.ease_pitch_num_ticks, X)
+    BNE   _pitch_effect_is_enabled
+
+    CLR6  dp(ch_control_flags)
+    BRA   _no_ease_pitch_effect
+
+  _pitch_effect_is_enabled:
+    DEC   A
+    MOV   addr(Channel.ease_pitch_num_ticks, X), A
+    _process_ease_pitch_effect
+    SET7  dp(ch_control_flags)
+
+  _no_ease_pitch_effect:
+  end
+
+  ;; Updates the pitch, if necessary
+  macro _update_pitch_if_necessary
+    BBC7  dp(ch_control_flags), _no_pitch_update
+    CLR7  dp(ch_control_flags)
+
+    Script::Play.update_pitch
+
+  _no_pitch_update:
+  end
+
+  ;; Processes the TICK
+  macro process_tick(_loop)
+    _test_process_vibrato_effect
+    _test_process_ease_pitch_effect
+    _update_pitch_if_necessary
+
+    MOV   X, dp(Channel.pointer)
+    DEC   dp(Channel.timers, X)
+    BNZ   _timer_is_not_zero
+
+  _timer_is_zero:
+    BBS3  dp(ch_control_flags), _keep_playing
+    AND   dp(ch_control_flags), #$FF ^ (Channel.CTRL_IS_PLAYING | Channel.CTRL_IS_DELAY_ONLY)
+    MOV   A, dp(Channel.voice_bit_pointer)
+    AND   A, dp(Channel.enabled_voices)
+    MOV   dp(SPC.DSP_ADDR), #DSP.KOFF
+    MOV   dp(SPC.DSP_DATA), A
+
+  _timer_is_not_zero:
+    JMP   _loop
+
+  _keep_playing:
+    AND   dp(ch_control_flags), #$FF ^ (Channel.CTRL_IS_PLAYING | Channel.CTRL_IS_DELAY_ONLY)
+    JMP   _loop
+  end
+
+end

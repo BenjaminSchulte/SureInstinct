@@ -1,0 +1,279 @@
+module Aoba::Tilemap::Renderer
+  class ScrollTilemapRendererAxisY < ScrollTilemapRendererAxis
+    macro initialize(parent)
+      super parent
+
+      @_position_x = parent._scroll_buffer_pos_y_x
+      @_position_y = parent._scroll_buffer_pos_y_y
+
+      @update_width = parent.screen_tile_width
+      @axis_buffer_size = parent.screen_bgtile_width
+      
+      @scroll_buffer = parent._scroll_buffer_y
+      @scroll_buffer_size = parent.scroll_buffer_size_y
+
+      @_generated_axis_tile = parent.renderer._left_tile
+      @_scroll_axis_tile = parent.renderer._top_tile
+
+      @_num_bgtiles_other = parent.tile_format.num_bgtiles_x
+
+      @_num_tiles_to_generate = 17 ; TODO: Magic number!
+    end
+
+    routine :scroll do
+      __scroll
+    end
+
+    routine :_prepare_build_layer do
+      __prepare_build_layer
+    end
+
+    routine :_plot_tile do
+      __plot_tile
+    end
+
+    routine :_build_layer_cache do
+      __build_layer_cache
+    end
+
+    ;; Increments the read address in A
+    macro _increment_read_address_from_stack
+      @parent.storage.increment_bgtile_data_read_column_stack_to_Y
+    end
+
+    ;; Preconfigures the queue copy
+    macro _preconfigure_queue_copy(layer=nil)
+      STZ   dp(@parent.renderer._allocated_ram)
+      CPU.set A: 8
+      LDA   dp(@parent.renderer._top_tile)
+      LSR   A
+      ROR   dp(@parent.renderer._allocated_ram)
+      LSR   A
+      ROL   dp(@parent.renderer._allocated_ram + 1)
+      ASL   dp(@parent.renderer._allocated_ram + 1)
+      CPU.set A: 16
+    end
+
+    ;; Initializes copy start Y
+    macro _initialize_copy_start_y(two_layer)
+      STA   dp(@parent._copy_start)
+      if two_layer
+        LDA   #Aoba::VBlank::Target.VRAM_SCROLL_Y
+        JSL   Aoba::VBlank::Job.allocate_icb_long
+      else
+        Aoba::VBlank::Job.allocate_job_icb_long :vram
+      end
+      PHX
+      if two_layer
+        LDA   #Aoba::VBlank::Target.VRAM_SCROLL_Y
+        JSL   Aoba::VBlank::Job.allocate_icb_long
+      else
+        Aoba::VBlank::Job.allocate_job_icb_long :vram
+      end
+      PLY
+    end
+
+    ;; Build left copy 
+    macro _prepare_queue_copy_start_left(two_layer, layer)
+      _initialize_copy_start_y two_layer
+
+      _layer_index = @parent.index_of_layer(layer)
+
+      if two_layer || _layer_index == 0
+        Debug.access_8bit_through_16bit
+        LDA   @parent.renderer.vram_address.long
+        STA   dp(@parent.renderer._calc32a + 2)
+        LDA   #@scroll_buffer
+      else
+        Debug.access_8bit_through_16bit
+        LDA   @parent.renderer.vram_address.long
+        CLC
+        ADC   #_layer_index * 8
+        STA   dp(@parent.renderer._calc32a + 2)
+        LDA   #@scroll_buffer + _layer_index * single_bg_scroll_buffer_size
+      end
+    end
+
+    ;; @param A scroll buffer
+    routine :_queue_copy_start_shared_left do
+      X.is_a! Aoba::VBlank::Job::JobInstance
+      Y.is_a! Aoba::VBlank::Job::JobInstance
+
+      CLC
+      ADC   dp(@parent.renderer._allocated_ram)
+      ADC   dp(@parent._copy_start)
+      STA   X[:source_address]
+
+      ;; Data size (first part only. Other is calculated)
+      LDA   dp(@parent.renderer._left_tile)
+      AND   #$1F
+      EOR   #$1F
+      ASL   A
+      STA   dp(@parent.renderer._calc32a)
+      INC   A
+      INC   A
+      STA   X[:data_size]
+      CLC
+      ADC   X[:source_address]
+      STA   Y[:source_address]
+      LDA   dp(@parent.renderer._calc32a)
+      EOR   #$3E
+      INC   A
+      INC   A
+      STA   Y[:data_size]
+
+      ;; Target address
+      LDA   dp(@parent.renderer._left_tile)
+      AND   #$1F
+      STA   dp(@parent.renderer._calc32a)
+      LDA   dp(@parent.renderer._calc32a + 2)
+      AND   #$FF
+      XBA
+      ORA   dp(@parent.renderer._calc32a)
+      STA   dp(@parent.renderer._calc32a)
+      ; each row is 32 tiles a two bytes = 64 bytes
+      ; however. VRAM address is word address so divide by two
+      LDA   dp(@parent.renderer._top_tile)
+      32.multiplicated_register_A
+      AND   #(32 * 32).bitmask
+      ORA   dp(@parent.renderer._calc32a)
+      STA   X[:target_address]
+      AND   #$FFE0
+      CLC
+      ADC   #32 * 32
+      STA   Y[:target_address]
+
+      ;; Source address bank
+      CPU.set A: 8
+      LDA   #FIXED_RAM_BANK
+      STA   X[:source_address] + 2
+      STA   Y[:source_address] + 2
+      CPU.set A: 16
+      PHY
+      JSL   Aoba::VBlank::Job.try_queue_icb_long
+      PLX
+      JSL   Aoba::VBlank::Job.try_queue_icb_long
+      RTS
+    end
+
+    ;; Queues copy with left start
+    ;; @ignore-thread-safety
+    macro _queue_copy_start_left
+      _prepare_queue_copy_start_left true, @parent.layers.first
+      JSR   _queue_copy_start_shared_left
+    end
+
+    macro _queue_copy_start_left_layer(layer)
+      _prepare_queue_copy_start_left false, layer
+      JSR   _queue_copy_start_shared_left
+    end
+
+    ;; Queues copy with right start
+    ;; @ignore-thread-safety
+    routine :_queue_copy_start_right do
+      _initialize_copy_start_y true
+
+      X.is_a! Aoba::VBlank::Job::JobInstance
+      Y.is_a! Aoba::VBlank::Job::JobInstance
+
+      ;; Source address
+      ;; = RAM + copy_start
+      LDA   dp(@parent.renderer._allocated_ram)
+      CLC
+      ADC   dp(@parent._copy_start)
+      ADC   #@scroll_buffer
+      STA   X[:source_address]
+      AND   #$FF80
+      STA   Y[:source_address]
+
+      ;; Data size (first part only. Other is calculated)
+      LDA   dp(@parent.renderer._left_tile)
+      AND   #$1F
+      STA   dp(@parent.renderer._calc32a)
+      INC   A
+      ASL   A
+      STA   Y[:data_size]
+      LDA   dp(@parent.renderer._calc32a)
+      EOR   #$1F
+      INC   A
+      ASL   A
+      STA   X[:data_size]
+
+      ;; Calculate VRAM base address
+      LDA   dp(@parent.renderer._top_tile)
+      32.multiplicated_register_A
+      AND   #(32 * 32).bitmask
+      STA   dp(@parent.renderer._calc32a)
+      Debug.access_8bit_through_16bit
+      LDA   @parent.renderer.vram_address.long
+      AND   #$FF
+      XBA
+      ORA   dp(@parent.renderer._calc32a)   
+      STA   dp(@parent.renderer._calc32a)
+      STA   Y[:target_address]
+      LDA   dp(@parent.renderer._left_tile)
+      AND   #$1F
+      CLC
+      ADC   dp(@parent.renderer._calc32a)
+      ADC   #32 * 32
+      STA   X[:target_address]
+
+      ;; Source address bank
+      CPU.set A: 8
+      LDA   #FIXED_RAM_BANK
+      STA   X[:source_address] + 2
+      STA   Y[:source_address] + 2
+      CPU.set A: 16
+      PHY
+      JSL   Aoba::VBlank::Job.try_queue_icb_long
+      PLX
+      JSL   Aoba::VBlank::Job.try_queue_icb_long
+      RTS
+    end
+
+    macro __tmp_queue_copy(layer=nil)
+      ;; We need to calculate the left tilemap offset, and the size in left and right tilemap
+      LDA   dp(@parent.renderer._left_tile)
+      BIT   #$20
+      BZE   _starts_left
+
+    _starts_right:
+      AND   #$3F
+      ASL   A
+      if layer.nil?
+        _queue_copy_start_right
+      else
+        Debug.BRK
+      end
+      BRA   _after_copy
+
+      ;; --
+
+    _starts_left:
+      ;Debug.log "START LEFT"
+      AND   #$1F
+      ASL   A
+      if layer.nil?
+        _queue_copy_start_left
+      else
+        _queue_copy_start_left_layer layer
+      end
+
+    _after_copy:
+    end
+
+    ;; Plots the tile to the ram
+    macro _plot_tile_to_ram(x, y, bg)
+      ;; @TODO: Remove magic numbers in _plot_tile_to_ram"
+      STA   x * 2 + y * 128 + bg * (@scroll_buffer_size / @parent.renderer.num_bgs), Y
+    end
+
+    macro initialize_variables_for_scroll(layer)
+      TAY
+      STA   dp(@parent.renderer._top_tile)
+      LDA   @parent.renderer.rendered_area_left_tile[layer]
+      STA   dp(@parent.renderer._left_tile)
+      TYA
+    end
+  end
+end

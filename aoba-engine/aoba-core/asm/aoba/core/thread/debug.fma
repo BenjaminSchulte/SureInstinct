@@ -1,0 +1,98 @@
+module Aoba::Thread
+
+  ;; @ignore-thread-safety
+  def _test_thread_disabled
+    PHP
+    CPU.set A: 8
+    PHA
+    PHP
+    PLA
+    BIT   #CPU::FLAG_I
+    BZE   _die
+    PLA
+    PLP
+    RTS
+
+  _die:
+    Aoba.fatal_error "Thread is not disabled"
+  end
+
+  ;; @ignore-thread-safety
+  def _test_thread_disabled_long
+    _test_thread_disabled
+    RTL
+  end
+
+  ;; @ignore-thread-safety
+  def _test_thread_disabled_A16
+    PHA
+    PHP
+    PHP
+    PLA
+    BIT   #CPU::FLAG_I
+    BZE   _die
+    PLA
+    RTS
+
+  _die:
+    Aoba.fatal_error "Thread is not disabled"
+  end
+
+  ;; @ignore-thread-safety
+  def _test_thread_disabled_A16_long
+    _test_thread_disabled_A16
+    RTL
+  end
+
+  macro test_thread_disabled_SYSTEMBANK
+    Debug.only do
+      JSR   _test_thread_disabled
+    end
+  end
+
+  macro test_thread_disabled_A16_SYSTEMBANK
+    Debug.only do
+      JSR   _test_thread_disabled_A16
+    end
+  end
+
+  macro test_thread_disabled
+    Debug.only do
+      JSL   _test_thread_disabled_long
+    end
+  end
+
+  macro test_thread_disabled_A16
+    Debug.only do
+      JSL   _test_thread_disabled_A16_long
+    end
+  end
+
+  ;; @ignore-thread-safety
+  def _assert_thread
+    PHP
+    CPU.set A: 8
+    CMP   Memory.active_thread_id.long
+    BNE   _failed
+    PLP
+    RTL
+
+  _failed:
+    fatal_error "Local routine called from foreign thread"
+  end
+
+  macro assert_thread(RAM)
+    Debug.only do
+      PHA
+      Debug.access_8bit_through_16bit
+      LDA   RAM.long
+      JSL   _assert_thread
+      PLA
+    end
+  end
+
+  ;; Only used by linter
+  macro ignore_thread_safety
+  end
+
+end

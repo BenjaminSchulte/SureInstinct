@@ -1,0 +1,10 @@
+module Aoba
+  ;; The rom bank
+  IMAGE_ROM_BANK ||= $C0
+
+  locate_at bank: IMAGE_ROM_BANK
+end
+
+require "configuration"
+require "image_loader"
+require "tiles_loader"

@@ -1,0 +1,32 @@
+module Aoba
+
+  class SwitchEvent
+
+    macro initialize
+      @list = []
+    end
+
+    macro on(ram, goto)
+      @list << {ram: ram, goto: goto}
+    end
+
+    macro build
+      _self = self
+      @list.each do |item, index|
+        CMP  item[:ram]
+        BEQ  _list_start + index * 5
+      end
+      BRA   _else
+
+    _list_start:
+      @list.each do |item, index|
+        JSR  item[:goto]
+        BRA  _after
+      end
+
+    _else:
+    _after:
+    end
+  end
+
+end

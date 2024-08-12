@@ -1,0 +1,46 @@
+module Aoba::ScriptDebug
+
+  ;; Simple breakpoint
+  Aoba::Script.callback "Debug_BRK", bank: SYSTEM_ROM_BANK do
+    Debug.warn "Userscript breakpoint triggered"
+    NOP
+    Debug.BRK
+  end
+
+  ;; Simple breakpoint
+  Aoba::Script.callback "Debug_log", bank: SYSTEM_ROM_BANK do
+    LDA   dp(Aoba::Script.script_pointer) + 2
+    AND   dp(Aoba::Script.x00FF)
+    TAX
+    LDA   dp(Aoba::Script.script_pointer)
+    CLC
+    ADC   #3
+    Debug.log "{c_str(long(A,X))}"
+  end
+
+  ;; Simple breakpoint
+  Aoba::Script.callback "Debug_PrintRegisters", bank: SYSTEM_ROM_BANK do
+    LDA   dp(Aoba::Script.register_a)
+    LDY   dp(Aoba::Script.register_a + 2)
+    Debug.warn "Thread {byte(long(add(word(long(add(D,$FE),#{FIXED_RAM_BANK})),2),#{VARIABLE_RAM_BANK}))}: REGISTER A {Y}:{A}"
+    LDA   dp(Aoba::Script.register_x)
+    Debug.warn "Thread {byte(long(add(word(long(add(D,$FE),#{FIXED_RAM_BANK})),2),#{VARIABLE_RAM_BANK}))}: REGISTER X {A}"
+    LDA   dp(Aoba::Script.register_y)
+    Debug.warn "Thread {byte(long(add(word(long(add(D,$FE),#{FIXED_RAM_BANK})),2),#{VARIABLE_RAM_BANK}))}: REGISTER Y {A}"
+    LDA   dp(Aoba::Script.register_c0)
+    Debug.warn "Thread {byte(long(add(word(long(add(D,$FE),#{FIXED_RAM_BANK})),2),#{VARIABLE_RAM_BANK}))}: REGISTER C {A}"
+
+  end
+
+  ;; Simple breakpoint
+  Aoba::Script.callback "Debug_PrintUserdata", bank: SYSTEM_ROM_BANK do
+    LDX   dp(Aoba::Script.register_c0)
+    userdata = []
+    Aoba::Sprite.SCRIPT_USERDATA_SIZE.times do |i|
+      userdata << "{byte(long(add(X,#{Aoba::Sprite.Instance.offset_of(:userdata) + i}),#{VARIABLE_RAM_BANK}))}"
+    end
+    Debug.warn "Thread {byte(long(add(word(long(add(D,$FE),#{FIXED_RAM_BANK})),2),#{VARIABLE_RAM_BANK}))}: CHARACTER {X}: #{userdata.join(" ")}"
+  end
+
+
+end

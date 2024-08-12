@@ -1,0 +1,22 @@
+module Aoba::Audio::Event::LoadSong
+
+  ;; The event ID
+  ID = $01
+
+  ;; The event
+  class Event < Base
+    ;; The song to load
+    declare :song_id, as: :uint8
+  end
+
+  ;; Loads the tileset
+  ;; @ignore-thread-safety
+  event_handler = make_audio_event do
+    Y.is_a! Event
+
+    LDA   Y[:song_id]
+    INC   A
+    SNES_RAM_JMP Aoba::Audio::Action::LoadSong.invoke_icb, :JMP, :JMP
+  end
+
+end

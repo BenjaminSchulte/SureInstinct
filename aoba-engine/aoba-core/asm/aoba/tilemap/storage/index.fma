@@ -1,0 +1,3 @@
+require "base"
+require "ram_full_tilemap_storage"
+require "ram_large_tilemap_storage"

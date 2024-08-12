@@ -1,0 +1,10 @@
+module Command::UploadSong
+
+  def process
+    ; Copy song data to database
+    MOV   dp(IPC::Transfer.transfer_target_address), #Song::song_data
+    MOV   dp(IPC::Transfer.transfer_target_address + 1), #Song::song_data >> 8
+    Command::UploadSfxDatabase.general_upload_command
+  end
+
+end

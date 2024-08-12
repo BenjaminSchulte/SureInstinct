@@ -1,0 +1,324 @@
+module Aoba::Tilemap::Renderer
+
+  class SingleTilemapTileBufferHeader
+    declare :next_buffer, as: :uint16
+    declare :frame, as: :uint16
+    declare :offset, as: :uint16
+  end
+
+  class SingleTilemapTileEvent < Aoba::Thread::Event::Base
+    declare :event_id, as: :uint8
+    declare :x, as: :uint8
+    declare :y, as: :uint8
+  end
+
+  class SingleTilemapTileRendererBuilder < BaseBuilder
+    macro generate_events_for(list)
+      @renderer.__generate_events list
+    end
+  end
+
+  class SingleTilemapTileRenderer < Base
+    macro initialize
+      super
+
+      @_buffer = MemoryVariable.new("single_tilemap_tile_buffer", as: :uint16, in: @RAM)
+    end
+
+    macro configure_for_scene(scene)
+      scene.event.on :load16 do
+        STZ   @_buffer
+      end
+
+      scene.VariableRAM.include @RAM
+
+      super scene
+    end
+
+    macro finalize
+      super
+
+      @_in_tilemap_offset = @parent_tilemap_renderer._current_column
+      @_layer_addresses = {}
+
+      @layers.each do |layer|
+        _layer_addresses[layer] = MemoryVariable.new("_layer_write_address_#{layer}", as: :uint16, in: TempRAM)
+      end
+
+      @parent_tilemap_renderer.event.on :configure_for_scene do |scene|
+        configure_for_scene scene
+      end
+
+      @parent_tilemap_renderer.SharedTempRAM.include @TempRAM
+    end
+
+    macro _plot_tile_to_ram(x, y, bg)
+      STA   VARIABLE_RAM_BANK.as_bank(x * 2 + y * 4 + bg * 8).long, X
+    end
+
+    ;; Plots a tile flipped
+    macro _plot_tile_flipped(x, y, mask)
+      if @parent_tilemap_renderer.tileset_storage.nil?
+        raise "Todo: _plot_tile_flipped w/o tileset_storage"
+      end
+
+      @parent_tilemap_renderer.tileset_storage.generate_load_flipped_tile_code x, y, mask, :Y do |x, y, bg|
+        _plot_tile_to_ram x, y, bg
+      end
+    end
+
+    ;; Copies the tile to the VRAM
+    routine :_copy_tile_to_vram do
+      CPU.with_bank VARIABLE_RAM_BANK, from_bank: FIXED_RAM_BANK do
+        Aoba::VBlank::Job.allocate_job_icb_long :vram_tile
+        LDA   #VARIABLE_RAM_BANK
+        STA   X[:source_address] + 2
+        CPU.set A: 16
+        LDA   dp(@parent_tilemap_renderer._allocated_ram)
+        STA   X[:source_address]
+        CLC
+        ADC   #_required_bg_buffer_size
+        STA   dp(@parent_tilemap_renderer._allocated_ram)
+        LDA   dp(@parent_tilemap_renderer._write_target)
+        STA   X[:target_address]
+        LDA   #_required_bg_buffer_size
+        STA   X[:data_size]
+        JSL   Aoba::VBlank::Job.try_queue_icb_long
+      end
+      RTS
+    end
+
+    macro _render_tile(layer)
+      _self = self
+      LDA   _self.vram_address - 1
+      AND   #$FF00
+      CLC
+      ADC   dp(@_layer_addresses[layer])
+
+      _first_layer = true
+      tilemap_layer(layer).tileset_layer.num_bgs.times do |i|
+        unless _first_layer
+          LDA   dp(parent_tilemap_renderer._write_target)
+          CLC
+          ADC   #32 * 32 * 2 ; todo: replace magic numbers
+        end
+        _first_layer = false
+        STA   dp(parent_tilemap_renderer._write_target)
+        _copy_tile_to_vram
+      end
+    end
+
+    ;; Plots a single tile
+    routine :_plot_tile do
+      @parent_tilemap_renderer.storage.generate_load_tile_code @parent_tilemap_renderer.tileset_storage, dp(@parent_tilemap_renderer._calc32a), dp(@parent_tilemap_renderer._origin_tileset), :Y do |x, y, mask|
+        _plot_tile_flipped x, y, mask
+      end
+
+      RTS
+    end
+
+    macro _calculate_target_addresses
+      if @layers.count > 1
+        Debug.warn "OPTIMIZE THIS CODE: _calculate_target_addresses"
+      end
+
+      @layers.each do |layer|
+        LDA   dp(parent_tilemap_renderer._left_tile)
+        parent_tilemap_renderer.tilemap.any_tile_format.num_bgtiles_x.multiplicated_register_A
+        STA   dp(parent_tilemap_renderer._calc32a) + 2
+        AND   #$1F
+        STA   dp(parent_tilemap_renderer._calc32a)
+        LDA   dp(parent_tilemap_renderer._calc32a) + 2
+        BIT   #$20
+        BZE   _skip_second_map
+        LDA   #32 * 32
+        ORA   dp(parent_tilemap_renderer._calc32a)
+        STA   dp(parent_tilemap_renderer._calc32a)
+      _skip_second_map:
+        LDA   dp(parent_tilemap_renderer._top_tile)
+        (parent_tilemap_renderer.tilemap.any_tile_format.num_bgtiles_y * 32).multiplicated_register_A
+        AND   #(32 * 32).bitmask
+        ORA   dp(parent_tilemap_renderer._calc32a)
+        STA   dp(_layer_addresses[layer])
+      end
+    end
+
+    macro _test_layer_is_visible(layer)
+      LDA   dp(@parent_tilemap_renderer._left_tile)
+      @tilemap.any_tile_format.num_bgtiles_x.multiplicated_register_A
+      SEC
+      SBC   @parent_tilemap_renderer.rendered_area_left_tile[layer].long
+      BMI   _skip
+      CMP   #32
+      BGE   _skip
+
+      LDA   dp(@parent_tilemap_renderer._top_tile)
+      @tilemap.any_tile_format.num_bgtiles_y.multiplicated_register_A
+      SEC
+      SBC   @parent_tilemap_renderer.rendered_area_top_tile[layer].long
+      BMI   _skip
+      CMP   #32
+      BGE   _skip
+
+      yield
+
+    _skip:
+    end
+
+    ;; Redraws the layer
+    macro _plot_layer(layer)
+      _test_layer_is_visible layer do
+        unless @tileset_storage.nil?
+          LDA   #@tileset_storage.reference_index_for(@tilemap_layer(layer).layer.layer_id)
+          STA   dp(@parent_tilemap_renderer._origin_tileset)
+        end
+
+        LDX   dp(@parent_tilemap_renderer._origin_map)
+        LDA   FIXED_RAM_BANK.as_bank(0), X
+        LDX   dp(@parent_tilemap_renderer._allocated_ram)
+        _plot_tile
+
+        _render_tile layer
+      end
+    end
+
+    ;; Renders the tile in X/Y
+    routine :_invoke do
+      STX   dp(@parent_tilemap_renderer._left_tile)
+      STY   dp(@parent_tilemap_renderer._top_tile)
+
+      __allocate_ram
+      _calculate_target_addresses
+      CPU.with_bank FIXED_RAM_BANK, from_bank: VARIABLE_RAM_BANK do
+        __invoke_icb
+      end
+      __free_ram
+      RTS
+    end
+
+    macro _required_bg_buffer_size
+      return 8
+    end
+
+    macro _total_required_buffer_size
+      return _required_bg_buffer_size * 2
+    end
+
+    macro __allocate_ram
+      LDX   #@_buffer
+
+    _test_next_buffer:
+      LDY   0, X
+      BZE   _create_new_buffer
+      
+      Y.is_a! SingleTilemapTileBufferHeader
+      LDA   #$100
+      SEC   
+      SBC   Y[:offset]
+      CMP   #_total_required_buffer_size
+      BGE   _use_buffer
+      TYX
+      BRA   _test_next_buffer
+
+    _create_new_buffer:
+      STX   dp(@parent_tilemap_renderer._calc32a) ; pointer to buffer
+      LDX   #$100
+      SEI
+      JSL   Aoba::Memory.allocate_long
+      CLI
+      TXA
+      LDX   dp(@parent_tilemap_renderer._calc32a)
+      STA   0, X
+      TAX
+      X.is_a! SingleTilemapTileBufferHeader
+      LDA   #SingleTilemapTileBufferHeader.size
+      STA   X[:offset]
+      STZ   X[:next_buffer]
+      TXY
+
+    _use_buffer:
+      TYA
+      CLC
+      ADC   Y[:offset]
+      STA   dp(@parent_tilemap_renderer._allocated_ram)
+      LDA   Y[:offset]
+      CLC
+      ADC   #_total_required_buffer_size
+      STA   Y[:offset]
+      LDA   Aoba::Thread::Timer.current_frame_low
+      CLC
+      ADC   #16 ;lifetime
+      STA   Y[:frame]
+    end
+
+    macro __free_ram
+      LDX   @_buffer
+      BZE   _skip_free_buffer
+      X.is_a! SingleTilemapTileBufferHeader
+
+      LDA   X[:frame]
+      SEC
+      SBC   Aoba::Thread::Timer.current_frame_low
+      BPL   _skip_free_buffer
+
+      LDA   X[:next_buffer]
+      STA   @_buffer
+      LDY   #$100
+
+      SEI
+      JSL   Aoba::Memory.free_long
+      CLI
+
+    _skip_free_buffer:
+    end
+
+    macro __invoke_icb
+      @storage.data_read_offset dp(@parent_tilemap_renderer._left_tile), dp(@parent_tilemap_renderer._top_tile), 1, 1
+      STA   dp(@_in_tilemap_offset)
+      LDY   dp(@parent_tilemap_renderer._allocated_ram)
+
+      _self = self
+      _first_layer = true
+      @layers.each do |layer|
+        unless _first_layer
+          Debug.fatal "TODO: increment _allocated_ram address"
+          LDA   dp(_self._in_tilemap_offset)
+        end
+        _first_layer = false
+
+        CLC
+        ADC   _self.storage.layer_address(layer)
+        STA   dp(_self.parent_tilemap_renderer._origin_map)
+        
+        
+        _plot_layer layer
+      end
+    end
+
+    ;; Generates events
+    macro __generate_events(List)
+      _self = self
+
+      @plot_event_id = List.create "PlotSingleTile" do
+        Y.is_a! SingleTilemapTileEvent
+        LDA   Y[:x]
+        AND   #$FF
+        TAX
+        LDA   Y[:y]
+        AND   #$FF
+        TAY
+        JMP   _invoke
+      end
+    end
+
+    ;; Creates the renderer
+    macro self.create(&block)
+      renderer = SingleTilemapTileRenderer.new
+      builder = SingleTilemapTileRendererBuilder.new(renderer)
+      block.call with_context builder
+      renderer.finalize
+      return renderer
+    end
+  end
+
+end

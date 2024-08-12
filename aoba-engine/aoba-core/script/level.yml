@@ -1,0 +1,18 @@
+functions:
+  Level.LoadLevel:
+    external: __aobascript_{$Level}_LoadLevel
+    parameters:
+      level: {type: asset, asset_type: $Level}
+    registers:
+      A: {size: 16, value: {type: member, of: {type: parameter, id: level}, member: address}}
+
+  Level.WaitForLoadLevel:
+    external: __aobascript_{$Level}_WaitForLoadLevel
+
+groups:
+  Level:
+    asset_types:
+      Level: Level
+    members:
+      - Level.LoadLevel
+      - Level.WaitForLoadLevel

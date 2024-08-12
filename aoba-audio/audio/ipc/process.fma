@@ -1,0 +1,39 @@
+module IPC
+
+  ;; Reads the code from port 0
+  macro _read_code_from_port0
+  _receive_port_0:
+    MOV   A, dp(SPC.PORT0)
+    NOP
+    CMP   A, dp(SPC.PORT0)
+    BNE   _receive_port_0
+  end
+
+  ;; Processes a new code received on PORT0
+  def process_new_code
+    _read_code_from_port0
+
+    CMP   A, #$80
+    BGE   _is_stream
+
+    MOV   dp(last_ipc_value), A
+    AND   A, #$3F
+    DEC   A
+    ASL   A
+    MOV   X, A
+    JMP   addr(Command.command_table, X)
+
+  _is_stream:
+    JMP   Stream.update.process_stream
+  end
+
+  ;; Waits for ack
+  def wait_for_ack
+    MOV   A, dp(IPC.last_ipc_value)
+  _wait_for_ack:
+    CMP   A, dp(SPC.PORT0)
+    BEQ   _wait_for_ack
+    MOV   dp(IPC.last_ipc_value), dp(SPC.PORT0)
+  end
+
+end

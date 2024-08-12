@@ -1,0 +1,56 @@
+#!/usr/bin/node
+
+const fs = require('fs');
+
+const TARGET = process.argv[2];
+
+let isSymbol;
+let codeStart = 0xFFFF;
+let codeEnd = 0;
+let initStart = 0xFFFF;
+let initEnd = 0;
+let mainStart = 0;
+
+for (const row of fs.readFileSync(`./${TARGET}/obj/audioengine.spc.sym`, 'utf-8').split(/\n/g)) {
+  if (row === '[SYMBOL]') {
+    isSymbol = true;
+    continue;
+  } else if (row[0] === '[') {
+    isSymbol = false;
+    continue;
+  } else if (row === '') {
+    continue;
+  }
+
+  const match = row.match(/^([a-f0-9]+):([a-f0-9]+)\s+([^\s]+)\s+([^\s]+)(\s([a-f0-9]+)\s*)?$/);
+  if (!match) {
+    continue;
+  }
+
+  const [, bank, address, id, type,, size] = match;
+  if (type.toUpperCase() !== 'CODE') {
+    continue;
+  }
+
+  const start = (parseInt(bank, 16) << 16) | parseInt(address, 16);
+  const end = start + parseInt(size, 16) - 1;
+
+  if (id === 'init') {
+    initStart = start;
+    initEnd = end;
+    continue;
+  }
+
+  if (id === 'main') {
+    mainStart = start;
+  }
+
+  if (start < codeStart) { codeStart = start; }
+  if (end > codeEnd) { codeEnd = end; }
+}
+
+const engine = fs.readFileSync(`./${TARGET}/obj/audioengine.bin`);
+fs.writeFileSync(`./${TARGET}/obj/audioengine.code.bin`, engine.slice(codeStart, codeEnd + 1));
+fs.writeFileSync(`./${TARGET}/obj/audioengine.init.bin`, engine.slice(initStart, initEnd + 1));
+
+console.log(`Aoba::Audio.configure_driver "audioengine.code.bin", "audioengine.init.bin", ${codeStart}, ${codeEnd}, ${initStart}, ${initEnd}, ${mainStart}`)

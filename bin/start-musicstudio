@@ -1,0 +1,12 @@
+#!/bin/bash
+
+set -e
+
+clear
+( cd aoba-musicstudio && cmake --build ./build --config Debug --target audioeditor -j 7 ) 
+
+if [ "$?" -eq "0" ]; then
+  clear 
+  ( cd aoba-musicstudio && ./build/src/editor/audioeditor $1 )
+fi
+

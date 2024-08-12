@@ -1,0 +1,22 @@
+module Aoba::Palette::Api
+
+  ;; @param A address
+  ;; @param X target row
+  def load_palette_group_long
+    PHX
+    PHA
+    ;; Send the ready event request to the level thread
+    LDA   #Aoba::Thread::Event.USEREVENT_ID
+    JSL   Aoba::Thread::Event.allocate_icb_long
+    X.is_a! Aoba::Palette::Event::LoadPaletteGroup::Event
+    LDA   #Aoba::Palette::Event::LoadPaletteGroup::ID
+    STA   X[:event_id]
+    PLA
+    STA   X[:palette_address]
+    PLA
+    STA   X[:target_row]
+    LDA   Aoba::Palette.thread_id
+    JML   Aoba::Thread.send_event_icb_long
+  end
+
+end

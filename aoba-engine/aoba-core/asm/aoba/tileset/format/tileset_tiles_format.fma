@@ -1,0 +1,63 @@
+module Aoba::Tileset
+  class TilesetTilesFormatBuilder
+    macro initialize(format)
+      @format = format
+    end
+
+    macro num_bgtiles(count)
+      @format.num_bgtiles = count
+    end
+    
+    macro use(other)
+      other.include_to_tileset_tiles_format @format
+    end
+  end
+
+  class TilesetTilesFormatInstance < Aoba::EngineObjectInstance
+    macro initialize(tileset, tiles)
+      super tiles
+      @tileset = tileset
+      @tiles = tiles
+    end
+
+    macro tile_format
+      return @tiles.tile_format
+    end
+  end
+
+  class TilesetTilesFormat < Aoba::EngineObject
+    ;; Constructor
+    macro initialize(id)
+      super
+      @id = id
+      @tile_format = nil
+      @snes_bgs = []
+      @num_bgtiles = 256
+    end
+
+    ;; Parent objects
+    macro parent_objects
+      return [self.tile_format]
+    end
+
+    ;; Returns the size in bytes
+    macro size_in_bytes
+      return @num_bgtiles * @tile_format.size_in_bytes_per_bgtile
+    end
+
+    ;; Adds this tiles to a tileset
+    macro include_to_tileset_format(format)
+      ref = TilesetTilesFormatInstance.new(format, self)
+      format.tiles <<= ref
+      format.tiles_by_id[@id] = ref
+    end
+
+    ;; Creates a new tileset format  
+    macro self.create(id, &block)
+      format = TilesetTilesFormat.new(id)
+      builder = TilesetTilesFormatBuilder.new(format)
+      block.call with_context builder
+      return format
+    end
+  end
+end

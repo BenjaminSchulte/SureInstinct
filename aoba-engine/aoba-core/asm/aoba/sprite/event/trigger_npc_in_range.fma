@@ -1,0 +1,183 @@
+module Aoba::Sprite::Event::TriggerNpcInRange
+
+  ;; The event
+  class Event < Base 
+    ;; The own sprite ID
+    declare :sprite_id, as: :uint8
+  end
+
+  ;; Temporary RAM
+  scope :TempRAM, in: ActionRAM
+
+  ;; Counter
+  declare :sender_thread_id, as: :uint8, in: TempRAM
+
+  ;; Counter
+  declare :table_pointer, as: :uint16, in: TempRAM
+
+  ;; Counter
+  declare :counter, as: :uint16, in: TempRAM
+
+  ;; Current NPC
+  declare :owner_npc, as: :uint16, in: TempRAM
+
+  ;; Current NPC
+  declare :current_npc, as: :uint16, in: TempRAM
+
+  ;; Current NPC X
+  declare :npc_position, as: :uint16, in: TempRAM
+
+
+  ;; Tests whether the view direction between the two npcs match
+  ;; @param X npc1
+  ;; @param Y npc2
+  def _test_npc_view_direction
+    X.is_a! Instance
+    Y.is_a! Instance
+
+    LDA   X[:x]
+    SEC
+    SBC   Y[:x]
+    PHA
+    LDA   X[:y]
+    SEC
+    SBC   Y[:y]
+    PLX
+    TAY
+    JSL   Math.xy_to_direction_long
+
+    ;; Converts 45 degree angles to 90 degrees
+    CLC
+    ADC   #$20
+    ASL   A
+    ASL   A
+    CPU.set A: 8
+    XBA
+    AND   #3
+    LDY   dp(owner_npc)
+    Y.is_a! Instance
+    EOR   Y[:direction]
+    CPU.set A: 16
+    BZE   _ok
+    SEC
+    RTS
+
+  _ok:
+    CLC
+  end
+
+  ;; Creates the sprite
+  ;; @ignore-thread-safety
+  ID = List.create "TriggerNpcInRange" do
+    Y.is_a! Event
+
+    CPU.set A: 8
+    LDA   Y[:sender_thread_id]
+    STA   dp(sender_thread_id)
+    CPU.set A: 16
+    LDA   Y[:sprite_id]
+    Action::ManageSprite.find_sprite_by_sprite_id
+    TXY
+    STY   dp(owner_npc)
+    Y.is_a! Instance
+    LDA   num_npc_sprites
+    BZE   _rts
+
+    ;; Stores temporary configuration
+  _start:
+    LDX   #npc_sprite_index_table
+    LSR   A
+    STA   dp(counter)
+    BRA   _loop_start
+
+    ;; Returns
+  _rts:
+    RTS
+  
+    ;; Resumes with the next item
+  _loop_restore:
+    LDY   dp(owner_npc)
+  _loop:
+    DEC   dp(counter)
+    BZE   _rts
+    LDX   dp(table_pointer)
+    INX
+    INX
+
+  _loop_start:
+    ;; Reads the next NPC
+    STX   dp(table_pointer)
+    LDA   0, X
+    TAX
+    X.is_a! Instance
+
+    ;; Tests collision planes on both axis
+    LDA   Y[:collision_x_bitmask]
+    AND   X[:collision_x_bitmask]
+    BZE   _loop
+    LDA   Y[:collision_y_bitmask]
+    AND   X[:collision_y_bitmask]
+    BZE   _loop
+
+    ;; NPC is close enough
+    LDA   X[:hitbox_id]
+    STX   dp(current_npc)
+    AND   #$FF
+    TAX
+    STX   dp(_calc0)
+
+    ;; Tests the X axis hitbox
+    LDX   dp(current_npc)
+    X.is_a! Instance
+    LDA   X[:x]
+    LDX   dp(_calc0)
+    SEC
+    SBC   __asset_characterset_hitbox_left.long, X
+    CMP   Y[:boundingbox_right]
+    BGE   _loop
+    CLC
+    ADC   __asset_characterset_hitbox_width.long, X
+    CMP   Y[:boundingbox_left]
+    BLT   _loop
+
+    ;; Tests the Y axis hitbox
+    LDX   dp(current_npc)
+    X.is_a! Instance
+    LDA   X[:y]
+    LDX   dp(_calc0)
+    SEC
+    SBC   __asset_characterset_hitbox_top.long, X
+    CMP   Y[:boundingbox_bottom]
+    BGE   _loop
+    CLC
+    ADC   __asset_characterset_hitbox_height.long, X
+    CMP   Y[:boundingbox_top]
+    BLT   _loop
+
+    ;; The NPC is close enough, test whether the view direction is ok
+    LDX   dp(current_npc)
+    _test_npc_view_direction
+    BCS   _loop_restore
+
+    ;; The NPC is matching the request
+  _ok:
+    LDX   dp(current_npc)
+    X.is_a! Instance
+    LDA   X[:id]
+    STA   dp(_calc0)
+
+    CPU.set A: 8
+    LDA   #Thread::Event::USEREVENT_ID
+    JSL   Thread::Event.allocate_icb_long
+    X.is_a! Thread::Event::ReadyEvent
+    LDA   #Script::EventId::CLOSE_SPRITE_RESULT
+    STA   X[:event_id]
+    LDA   dp(_calc0)
+    STA   X[:userdata]
+    LDA   dp(sender_thread_id)
+
+    JSL   Thread.send_event_icb_long
+    CPU.set A: 16
+  end
+
+end

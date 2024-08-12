@@ -1,0 +1,16 @@
+module Aoba
+
+  ;; The ROM bank
+  TILEMAP_ROM_BANK ||= $C1
+
+end
+
+require "configuration"
+require "memory"
+
+require "format"
+require "storage"
+require "renderer"
+require "compression"
+require "loader"
+require "vram"

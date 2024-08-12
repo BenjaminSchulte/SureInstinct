@@ -1,0 +1,31 @@
+module Aoba::Audio::Event::SetSfxVolume
+
+  ;; The event ID
+  ID = $05
+
+  ;; The event
+  class Event < Base
+    declare :volume, as: :uint8
+  end
+
+  ;; Temporary RAM
+  scope :TempRAM, in: ActionRAM
+
+  ;; Loads the tileset
+  ;; @ignore-thread-safety
+  event_handler = make_audio_event do 
+    Y.is_a! Event
+
+    when_ready_SEI bank: VARIABLE_RAM_BANK do
+      LDA   Y[:volume]
+      STA   CPU.APUIO1.long
+
+      LDA   last_ipc_value
+      AND   #IPC.IPC_TOGGLE_BIT
+      EOR   #IPC.IPC_TOGGLE_BIT | IPC.CMD_SET_SFX_VOLUME
+      STA   CPU.APUIO0.long
+      STA   last_ipc_value
+    end
+  end
+
+end

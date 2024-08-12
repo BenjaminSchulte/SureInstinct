@@ -1,0 +1,15 @@
+module Aoba::Level::Loader
+ 
+  class ReservedParameter < Parameter
+    macro initialize(type)
+      super
+
+      @type = type
+    end
+
+    macro size_in_bytes
+      return @type.size_in_bytes
+    end
+  end
+
+end

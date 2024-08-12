@@ -1,0 +1,27 @@
+module Aoba::Level::Event::ScrollLevel
+
+  class Event < Base
+    ;; Relative scroll X 
+    declare :target_scroll_x, as: :uint16
+
+    ;; Relative scroll Y
+    declare :target_scroll_y, as: :uint16
+  end
+
+  ;; @ignore-thread-safety
+  macro create_for(tilemap_scroll_renderer)
+    List.create "ScrollLevel" do
+      Y.is_a! Event
+
+      LDA   Y[:target_scroll_x]
+      TAX
+      LDA   Y[:target_scroll_y]
+      TAY
+
+      tilemap_scroll_renderer.invoke_if_changed_icb
+
+      tilemap_scroll_renderer.camera.update_composer_scrolling
+    end
+  end
+
+end

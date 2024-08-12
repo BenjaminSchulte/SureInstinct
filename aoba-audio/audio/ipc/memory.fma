@@ -1,0 +1,6 @@
+module IPC
+
+  ;; The last value which has been received on PORT0
+  declare :last_ipc_value, as: :uint8, in: Memory.Page0
+
+end

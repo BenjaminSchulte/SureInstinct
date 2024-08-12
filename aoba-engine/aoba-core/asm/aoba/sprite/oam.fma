@@ -1,0 +1,700 @@
+module Aoba::Sprite::OAM
+
+  ;; Temporary RAM
+  scope :TempRAM, in: ActionRAM
+
+  ;; The current high-OAM table part
+  declare :current_high_part, as: :uint16, in: TempRAM
+
+  ;; The current high-OAM table offset
+  declare :current_high_offset, as: :uint16, in: TempRAM
+
+  ;; The current high-OAM table value
+  declare :current_high_value, as: :uint16, in: TempRAM
+
+  ;; The current offset within the OAM
+  declare :current_oam_offset, as: :uint16, in: TempRAM
+
+  ;; The current X position
+  declare :sprite_x, as: :int16, in: TempRAM
+
+  ;; The current Y position
+  declare :sprite_y, as: :int16, in: TempRAM
+
+  ;; The current X position
+  declare :original_sprite_x, as: :int16, in: TempRAM
+
+  ;; The current Y position
+  declare :original_sprite_y, as: :int16, in: TempRAM
+
+  ;; The sprite size bits
+  declare :sprite_size_bits, as: :uint16, in: TempRAM
+
+  ;; The sprite size bits
+  declare :sprite_num_parts, as: :uint16, in: TempRAM
+
+  ;; Render fixed
+  declare :render_fixed, as: :uint16, in: TempRAM
+
+  ;; The current flags
+  declare :sprite_flags_priority, as: :uint16, in: TempRAM
+
+  ;; The current flags
+  sprite_flags = sprite_flags_priority + 1
+
+  ;; The current flags
+  declare :current_sprite_flags, as: :uint8, in: TempRAM
+
+  ;; Temporary calc
+  declare :_temporary_calc0, as: :uint24, in: TempRAM
+
+  ;; Initializes the variables
+  macro __initialize_update_variables
+    LDA   #NUM_SPRITES_PER_HIGH_WORD
+    STA   dp(current_high_part)
+    STZ   dp(current_high_offset)
+    STZ   dp(current_oam_offset)
+  end
+
+  ;; Reorders the sprites
+  macro __reorder_sprites
+    Y.is_a! Instance
+    X.is_a! Instance
+
+    ; Y = next
+    ; X = current
+
+    ; Y.prev = X.prev
+    LDA   X[:previous_sprite]
+    STA   Y[:previous_sprite]
+
+    ; X.prev.next = Y
+    BZE   _is_first_pointer
+    PHX
+    TAX
+    TYA
+    X.is_a! Instance
+    STA   X[:next_sprite]
+    PLX
+    BRA   _is_not_first_pointer
+  _is_first_pointer:
+    STY   first_sprite
+
+  _is_not_first_pointer:
+    ; X.next = Y.next
+    LDA   Y[:next_sprite]
+    STA   X[:next_sprite]
+
+    ; Y.next.prev = X
+    BZE   _is_last_pointer
+    PHY
+    TAY
+    TXA
+    STA   Y[:previous_sprite]
+    PLY
+  _is_last_pointer:
+
+    ; X.prev = Y
+    ; Y.next = X
+    TXA
+    STA   Y[:next_sprite]
+    TYA
+    STA   X[:previous_sprite]
+
+    ; X = Y
+    TYX
+  end
+
+  ;; Reorders the sprite if required
+  macro __reorder_if_required
+    LDY   X[:next_sprite]
+    Y.is_a! Instance
+    BZE   _after_reorder
+
+    ;; Compares the Y position
+    CPU.set A: 8
+    LDA   X[:render_priority]
+    CMP   Y[:render_priority]
+    CPU.set A: 16
+    BEQ   _test_y
+    BCS   _reorder
+    BRA   _after_reorder
+
+    ;; Compares the Y position
+  _test_y:
+    LDA   X[:y]
+    CMP   Y[:y]
+    BGE   _after_reorder
+
+    ;; Reorder the sprites
+  _reorder:
+    __reorder_sprites
+
+  _after_reorder:
+  end
+
+  ;; Calculates the sprite position
+  macro _calculate_sprite_position
+    LDA   X[:renderable_configuration_flags] - 1
+    STA   dp(render_fixed)
+    BPL   _is_relative_position
+
+  _is_static_position:
+    LDA   X[:x]
+    STA   dp(sprite_x)
+    STA   dp(original_sprite_x)
+    LDA   X[:y]
+    STA   dp(sprite_y)
+    STA   dp(original_sprite_y)
+    BRA   _resume
+
+  _is_relative_position:
+    ;; Copies the screen X/Y position to DP
+    LDA   X[:x]
+    SEC
+    SBC   scroll_x
+    STA   dp(sprite_x)
+    STA   dp(original_sprite_x)
+
+    LDA   X[:y]
+    SEC
+    SBC   X[:rendering_offset_y]
+    SBC   scroll_y
+    STA   dp(sprite_y)
+    STA   dp(original_sprite_y)
+
+  _resume:
+  end
+
+  ;; Adds the reflection to the OAM
+  def _add_reflection_to_oam
+    X.is_a! Instance
+    PHX
+
+    CLC
+    ADC   dp(sprite_y)
+    STA   dp(sprite_y)
+
+    CPU.set A: 8
+    LDA   dp(sprite_flags)
+    EOR   #$80
+    AND   #$CE
+    STA   dp(sprite_flags)
+    STA   dp(sprite_flags_priority)
+    CPU.set A: 16
+
+    JMP   _add_sprite_to_oam.start_position_and_after_flags
+  end
+
+  ;; Adds sprite attachments if present
+  macro _add_sprite_attachments_to_oam
+    LDA   X[:attached_sprite_above]
+    BZE   _no_attached_sprite_above
+    PHX
+  _loop:
+    TAX
+    X.is_a! Aoba::Sprite::Instance
+    _add_relative_sprite_to_oam
+    LDA   X[:next_sprite]
+    BNZ   _loop
+    PLX
+
+    LDA   dp(original_sprite_x)
+    STA   dp(sprite_x)
+    LDA   dp(original_sprite_y)
+    STA   dp(sprite_y)
+
+  _no_attached_sprite_above:
+  end
+
+  ;; Adds a relative sprite to the OAM
+  def _add_relative_sprite_to_oam
+    X.is_a! Instance
+    PHX
+
+    LDA   dp(original_sprite_x)
+    CLC
+    ADC   X[:x]
+    STA   dp(sprite_x)
+    LDA   dp(original_sprite_y)
+    CLC
+    ADC   X[:y]
+    STA   dp(sprite_y)
+
+    JMP   _add_sprite_to_oam.start_position_flags
+  end
+
+  def _render_direct_oam_table
+    X.is_a! Aoba::Sprite::Instance
+    Debug.access_8bit_through_16bit
+    LDA   X[:direct_oam_record_table_size]
+    AND   #$FF
+    STA   dp(sprite_num_parts)
+
+    LDY   X[:direct_oam_record_table]
+    TYX
+    LDY   dp(current_oam_offset)
+    X.is_a! DirectOamRecord
+
+  _loop:
+    Debug.allow_invalid_ram_access 1
+    LDA   X[:flags] - 1
+    BMI   _skip
+    LDA   X[:x]
+    ;CLC
+    ADC   dp(sprite_x)
+    STA   0, Y
+    XBA
+    LSR   A
+    ROR   dp(current_high_value)
+    CLC
+    ROR   dp(current_high_value)
+    LDA   X[:y]
+    ;CLC
+    ADC   dp(sprite_y)
+    STA   1, Y
+    LDA   X[:configuration]
+    STA   2, Y
+
+    INY
+    INY
+    INY
+    INY
+
+    DEC   dp(current_high_part)
+    BZE   _save_high_table
+  _skip:
+  
+    TXA
+    CLC
+    ADC   #DirectOamRecord.size
+    TAX
+
+    DEC   dp(sprite_num_parts)
+    BNZ   _loop
+
+    STY   dp(current_oam_offset)
+    RTS
+
+    ;; --
+
+  _save_high_table:
+    PHY
+    _save_current_high_table_and_advance
+    PLY
+    BRA   _skip
+  end
+
+  ;; Adds the sprite to the OAM
+  def _add_sprite_to_oam
+    Thread.assert_thread thread_id
+    
+    X.is_a! Instance
+    PHX
+
+    _calculate_sprite_position
+    LDA   X[:direct_oam_record_table]
+    BZE   _no_direct_oam
+    JSR   _render_direct_oam_table
+    PLX
+    RTS
+    
+    ;; ---
+
+  _no_direct_oam:
+    X.is_a! Aoba::Sprite::Instance
+    _add_sprite_attachments_to_oam
+
+  start_position_flags:
+    ;; Loads the flags
+    CPU.set A: 8
+    X.is_a! Aoba::Sprite::Instance
+    LDA   X[:renderable_flags]
+    AND   #$FE
+    STA   dp(sprite_flags)
+    AND   #$CF
+    STA   dp(sprite_flags_priority)
+    LDA   X[:renderable_configuration_flags]
+    AND   #$30
+    ORA   dp(sprite_flags_priority)
+    STA   dp(sprite_flags_priority)
+    CPU.set A: 16
+
+  start_position_and_after_flags:
+
+    ;; Uses the slot owner for further rendering
+    LDA   X[:slot_pointer]
+    TAX
+    X.is_a! Slot::SlotAllocation
+
+    ;; Stores the sprite slot flags
+    LDA   X[:slot_size_bits]
+    STA   dp(sprite_size_bits)
+
+    ;; Remembers the number of slots
+    Debug.access_8bit_through_16bit
+    LDA   X[:used_slot_size]
+    AND   #$FF
+    BNZ   _start
+  
+  _end_of_loop:
+    PLX
+    RTS
+
+    ;; ---
+
+  _start:
+    STA   dp(sprite_num_parts)
+    LDY   dp(current_oam_offset)
+
+    LDA   dp(sprite_flags) - 1
+    EOR   X[:slot_oam_data] + 2 - 1
+    BMI   _is_y1
+  _is_y0:
+    ASL   A
+    BMI   _is_y0_x1
+  _is_y0_x0:
+    JMP   _far_is_y0_x0
+  _is_y0_x1:
+    JMP   _far_is_y0_x1
+  _is_y1:
+    ASL   A
+    BMI   _is_y1_x1
+  _is_y1_x0:
+    JMP  _far_is_y1_x0
+
+  _is_y1_x1:
+    __generate_render_code true, true, true
+    JMP   _after_loop
+
+  _far_is_y1_x0:
+    __generate_render_code true, false, true
+    JMP   _after_loop
+
+  _far_is_y0_x1:
+    __generate_render_code true, false, true
+    JMP   _after_loop
+
+  _far_is_y0_x0_static:
+    __generate_render_code false, false, false
+    JMP   _after_loop
+
+  _far_is_y0_x0:
+    LDA   dp(render_fixed)
+    BMI   _far_is_y0_x0_static
+    __generate_render_code false, false, true
+  _after_loop:
+    PLX
+    STY   dp(current_oam_offset)
+    RTS
+  end
+
+  macro __generate_render_code_flip_y
+    AND   #$FF
+    CPU.set A: 8
+
+    LDA   X[:slot_oam_data] + 1
+    EOR   #$FF
+    SEC
+    SBC   #15
+
+    CPU.set A: 16
+    BPL   _not_negative_y
+    ORA   #$FF00
+  _not_negative_y:
+  end
+
+  macro __generate_render_code_default_y
+    LDA   #$FF00
+    AND   X[:slot_oam_data]
+    BPL   _not_negative_y
+    ORA   #$FF
+  _not_negative_y:
+    XBA
+  end
+
+  macro __generate_render_code_flip_x
+    AND   #$FF
+    CPU.set A: 8
+    STA   dp(_calc0) + 1
+
+    ;; Calculates the X position
+    LDA   X[:slot_oam_data]
+    EOR   #$FF
+    SEC
+    SBC   #15
+    
+    CPU.set A: 16
+    BPL   _not_negative_x
+    ORA   #$FF00
+  _not_negative_x:
+  end
+
+  macro __generate_render_code_default_x
+    STA   dp(_calc0) + 1
+
+    LDA   #$FF00
+    AND   X[:slot_oam_data] - 1
+    BPL   _not_negative_x
+    ORA   #$FF
+  _not_negative_x:
+    XBA
+  end
+
+  macro __generate_render_code(flip_x, flip_y, test_range)
+  _loop:
+    if flip_y
+      __generate_render_code_flip_y
+    else
+      __generate_render_code_default_y
+    end
+
+    ;; Adds the sprite position to it
+    CLC
+    ADC   dp(sprite_y)
+    if test_range
+      CMP   #::SNES::Arch::SCREEN_HEIGHT
+      BPL   _continue_loop
+      CMP   #0 - 15
+      BMI   _continue_loop
+    end
+
+    if flip_x
+      __generate_render_code_flip_x
+    else
+      __generate_render_code_default_x
+    end
+
+    ;; Adds the sprite position to it
+    CLC
+    ADC   dp(sprite_x)
+    if test_range
+      CMP   #::SNES::Arch::SCREEN_WIDTH
+      BPL   _continue_loop
+      CMP   #0 - 15
+      BMI   _continue_loop
+    end
+    CPU.set A: 8
+    STA   dp(_calc0)
+    CPU.set A: 16
+    
+    ;; Store additional X position to high value
+    ASL   A
+    ROR   dp(current_high_value)
+
+    ;; Copy size flags
+    LDA   dp(sprite_size_bits)
+    LSR   A
+    ROR   dp(current_high_value)
+
+    ;; Copy other flags
+    LDA   X[:slot_oam_data] + 2
+    CPU.set A: 8
+    BIT   #$10
+    BZE   _no_priority
+  _with_priority:
+    AND   #$EF
+    EOR   dp(sprite_flags_priority)
+    BRA   _after_priority
+  _no_priority:
+    EOR   dp(sprite_flags)
+  _after_priority:
+    XBA
+    CPU.set A: 16
+    STA   oam + 2, Y
+    LDA   dp(_calc0)
+    STA   oam, Y
+
+    ;; Increment offsets
+    INY
+    INY
+    INY
+    INY
+
+    ;; Do we have ot update the high table
+    DEC   dp(current_high_part)
+    BZE   _save_high_table
+
+  _continue_loop:
+    ;; Did we reach the end?
+    DEC   dp(sprite_num_parts)
+    BZE   _end_of_loop_down
+    ;; Goto next item
+    INX
+    INX
+    INX
+    INX
+    JMP   _loop
+
+  _save_high_table:
+    PHY
+    _save_current_high_table_and_advance
+    PLY
+    BRA   _continue_loop
+
+  _end_of_loop_down:
+  end
+
+  ;; Update loop
+  macro __update_loop
+    LDX   first_sprite
+    X.is_a! Instance
+    BZE   _after_loop
+    
+    ;; Loops through all sprites
+  _loop:
+    ;; Tests whether the sprite is visible at all
+    LDA   X[:renderable_configuration_flags]
+    BIT   #RenderableConfigurationFlag::IS_VISIBLE_ON_SCREEN
+    BZE   _skip_rendering
+
+    ;; Renders the sprite
+  _render:
+    __reorder_if_required
+
+    Sprite.config.event.invoke :oam_test_renderable, _skip_rendering
+    _add_sprite_to_oam
+    LDA   X[:reflection_distance]
+    AND   #$FF
+    BZE   _no_reflection
+    _add_reflection_to_oam
+  _no_reflection:
+
+  _skip_rendering:
+    LDA   X[:next_sprite]
+    TAX
+    BNZ   _loop
+
+  _after_loop:
+  end
+
+  ;; Invalidates unused sprites
+  macro __invalidate_unused_sprites
+    LDY   dp(current_oam_offset)
+    CPY   dp(previous_oam_final_offset)
+    BGE   _end_of_loop
+
+    LDA   #(SNES::Arch::SCREEN_WIDTH - 1) | (SNES::Arch::SCREEN_HEIGHT << 8)
+  _loop:
+    STA   oam, Y
+    INY
+    INY
+    INY
+    INY
+    CPY   dp(previous_oam_final_offset)
+    BLT   _loop
+
+  _end_of_loop:
+    LDY   dp(current_oam_offset)
+    STY   dp(previous_oam_final_offset)
+  end
+
+  ;; Saves the current high table
+  macro __save_current_invalid_high_table
+    LDA   dp(current_high_part)
+    CMP   #NUM_SPRITES_PER_HIGH_WORD
+    BEQ   _is_already_saved
+
+  _loop:
+    LSR   dp(current_high_value)
+    LSR   dp(current_high_value)
+    DEC   A
+    BNZ   _loop
+
+    __save_current_high_table
+    INY
+    INY
+    STY   dp(current_high_offset)
+
+  _is_already_saved:
+    LDY   dp(current_high_offset)
+    CPY   dp(previous_oam_high_offset)
+    BGE   _no_force_override_high_table
+
+    LDA   #0
+  _loop_remove:
+    STA   oam + 512, Y
+    INY
+    INY
+    CPY   dp(previous_oam_high_offset)
+    BNE   _loop_remove
+
+    LDY   dp(current_high_offset)
+  _no_force_override_high_table:
+    STY   dp(previous_oam_high_offset)
+  end
+
+  ;; Saves the cuirrent high table and advances
+  macro _save_current_high_table_and_advance
+    __save_current_high_table
+    INY
+    INY
+    STY   dp(current_high_offset)
+    LDA   #NUM_SPRITES_PER_HIGH_WORD
+    STA   dp(current_high_part)
+  end
+
+  ;; Saves the current high table
+  macro __save_current_high_table
+    LDA   dp(current_high_value)
+    LDY   dp(current_high_offset)
+    STA   oam + 512, Y
+  end
+
+  ;; Triggers the OAM to be copied
+  macro __store_oam
+    CPU.set A: 8
+    LDA   #Aoba::VBlank::Target::OAM
+    JSL   Aoba::VBlank::Job.allocate_icb_long
+    X.is_a! Aoba::VBlank::Job::JobInstance
+    LDA   #VARIABLE_RAM_BANK
+    STA   X[:source_address] + 2
+    CPU.set A: 16
+    LDA   #oam
+    STA   X[:source_address]
+    LDA   #512 + 32
+    STA   X[:data_size]
+    JSL   Aoba::VBlank::Job.try_queue_icb_long
+  end
+
+  ;; Updates the OAM
+  def update
+    Thread.assert_thread thread_id
+
+Debug.profile_event_start $F0
+
+    ;; Adds all sprites to the OAM
+    __initialize_update_variables
+    __update_loop
+
+    ;; Deletes all sprites that are now invalid from OAM
+    __invalidate_unused_sprites
+
+    ; Saves the current high table
+    __save_current_invalid_high_table
+
+    ; Stores the OAM
+    __store_oam
+
+Debug.profile_event_stop
+
+  end
+
+  ;; Resets the OAM
+  def reset
+    Thread.assert_thread thread_id
+    LDX   #512 - 4
+    LDA   #(SNES::Arch::SCREEN_WIDTH - 1) | (SNES::Arch::SCREEN_HEIGHT << 8)
+  _loop:
+    STA   oam, X
+    DEX
+    DEX
+    DEX
+    DEX
+    BPL   _loop
+
+    STZ   dp(previous_oam_final_offset)
+    STZ   dp(previous_oam_high_offset)
+  end
+
+end

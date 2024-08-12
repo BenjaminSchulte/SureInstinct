@@ -1,0 +1,93 @@
+module Aoba::Sprite::Api
+
+  ;; Allocates a crowd memory
+  ;; @param A maximum number of members
+  ;; @param Y thread ID
+  ;; @returns X Crowd::List
+  def allocate_crowd_record_icb_long
+    PHP
+    CPU.set A: 8
+    PHA
+    CLC
+    ADC   #Crowd::List.size
+    TAX
+    TYA
+    SEI
+    JSL   Memory.allocate_miniblock_long
+    X.is_a! Crowd::List
+    CPU.set A: 8
+    PLA
+    STA   X[:max_members]
+    STZ   X[:num_members]
+    PLP
+    RTL
+  end
+
+  ;; Removes an item from the crowd
+  ;; @param A item to remove
+  ;; @param X Crowd::List
+  def remove_record_from_crowd_record_icb_long
+    X.is_a! Crowd::List
+
+    PHP
+    PHA
+
+    ;; Checks whether the are any records left
+    LDA   X[:num_members]
+    AND   #$FF
+    BZE   _empty_list
+    TAY
+    PLA
+
+    ;; Looks up for the NPC ID
+    CPU.set A: 8
+    PHX
+  _loop:
+    CMP   Crowd::List.size, X
+    BEQ   _found
+    INX
+    DEY
+    BNZ   _loop
+  
+    ;; The NPC could not be found
+  _not_found:
+    PLX
+    PLP
+    CLC
+    RTL
+
+    ;; --
+
+    ;; Found the NPC record
+  _found:
+    DEY
+    BZE   _skip_copy
+
+    ;; Shift list to remove current item
+  _loop_copy:
+    LDA   Crowd::List.size + 1, X
+    STA   Crowd::List.size, X
+    INX
+    DEY
+    BNZ   _loop_copy
+
+    ;; Decrement member count
+  _skip_copy:
+    PLX
+    DEC   X[:num_members]
+    BZE   _empty_list_after_delete
+    PLP
+    CLC
+    RTL
+    
+    ;; --
+
+  _empty_list:
+    PLA
+  _empty_list_after_delete:
+    PLP
+    SEC
+    RTL
+  end
+
+end

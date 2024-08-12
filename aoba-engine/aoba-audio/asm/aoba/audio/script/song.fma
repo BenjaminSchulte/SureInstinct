@@ -1,0 +1,67 @@
+module Aoba::Audio
+
+  ;; Loads a song
+  ;;
+  ;; @param REGA song address
+  Aoba::Script.callback "Audio_LoadSong", bank: AUDIO_ROM_BANK do
+
+    ;; Allocates and configures the event
+    LDA   #Aoba::Thread::Event::USEREVENT_ID
+    JSL   Aoba::Thread::Event.allocate_icb_long
+    X.is_a! Aoba::Audio::Event::LoadSong::Event
+    LDA   dp(Aoba::Script.register_a)
+    STA   X[:song_id]
+    CPU.set A: 8
+    LDA   #Aoba::Audio::Event::LoadSong::ID
+    STA   X[:event_id]
+    LDA   Aoba::Audio.thread_id
+    CPU.set A: 16
+
+    JML   Aoba::Thread::send_event_icb_long
+
+  end
+
+  ;; Plays a song
+  ;;
+  ;; @param REGA volume
+  Aoba::Script.callback "Audio_PlaySong", bank: AUDIO_ROM_BANK do
+    
+    ;; Allocates and configures the event
+    LDA   #Aoba::Thread::Event::USEREVENT_ID
+    JSL   Aoba::Thread::Event.allocate_icb_long
+    X.is_a! Aoba::Audio::Event::PlaySong::Event
+    CPU.set A: 8
+    LDA   dp(Aoba::Script.register_a)
+    STA   X[:volume]
+    LDA   #Aoba::Audio::Event::PlaySong::ID
+    STA   X[:event_id]
+    LDA   Aoba::Audio.thread_id
+    CPU.set A: 16
+
+    JML   Aoba::Thread::send_event_icb_long
+
+  end
+
+  ;; Fades out to a different song
+  ;;
+  ;; @param REGA same as FadeVolume::Event
+  Aoba::Script.callback "Audio_FadeToSong", bank: AUDIO_ROM_BANK do
+
+    ;; Send the ready event request to the level thread
+    CPU.set A: 8
+    LDA   #Aoba::Thread::Event.USEREVENT_ID
+    JSL   Aoba::Thread::Event.allocate_icb_long
+    X.is_a! Aoba::Audio::Event::FadeVolume::Event
+    LDA   #Aoba::Audio::Event::FadeVolume::ID
+    STA   X[:event_id]
+    CPU.set A: 16
+    LDA   dp(Aoba::Script.register_a)
+    STA   X[:target_volume]
+    LDA   dp(Aoba::Script.register_a) + 2
+    STA   X[:autoplay_song_id]
+    LDA   Audio.thread_id
+    JSL   Aoba::Thread.send_event_icb_long
+
+  end
+
+end

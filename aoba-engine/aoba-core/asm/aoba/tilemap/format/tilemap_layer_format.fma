@@ -1,0 +1,47 @@
+module Aoba::Tilemap
+  class TilemapLayerFormatBuilder
+    macro initialize(format)
+      @format = format
+    end
+
+    macro tileset_layer(id)
+      @format.layer_id = id
+    end
+  end
+
+  class TilemapLayerFormatInstance < Aoba::EngineObjectInstance
+    macro initialize(tilemap, layer)
+      super layer
+      @tilemap = tilemap
+      @layer = layer
+    end
+
+    macro tileset_layer
+      @tilemap.tileset.layers_by_id[@layer.layer_id]
+    end
+  end
+
+  class TilemapLayerFormat < Aoba::EngineObject
+    ;; Constructor
+    macro initialize(id)
+      super
+      @id = id
+      @layer_id = id
+    end
+
+    ;; Adds this layer to a tilemap
+    macro include_to_tilemap_format(format)
+      ref = TilemapLayerFormatInstance.new(format, self)
+      format.layers <<= ref
+      format.layers_by_id[@id] = ref
+    end
+
+    ;; Creates a new tilemap format  
+    macro self.create(id, &block)
+      format = TilemapLayerFormat.new(id)
+      builder = TilemapLayerFormatBuilder.new(format)
+      block.call with_context builder
+      return format
+    end
+  end
+end

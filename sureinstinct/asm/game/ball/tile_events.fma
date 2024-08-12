@@ -1,0 +1,466 @@
+module Game::Ball::TileEvent
+
+  ; -----------------------------------------------------
+  abyss = Aoba::Sprite::TileEvent.create :abyss do
+    LDA   Game::Level.global_ingame_flags
+    BIT   #Game::Level::GlobalIngameFlag::TIME_PAUSED
+    BZE   _can_die
+    RTS
+
+  _can_die:
+    LDA   #Aoba::Sprite::Action::Move::MOVE_PREVENT_DIAGONAL
+    TSB   dp(Aoba::Sprite::Action::Move.move_flags)
+    Abyss.on_enter
+  end
+
+  ; -----------------------------------------------------
+  goal = Aoba::Sprite::TileEvent.create :goal do
+    SEI
+    LDA   Game::Level.global_ingame_flags
+    BIT   #Game::Level::GlobalIngameFlag.CONTROLS_DISABLED | Game::Level::GlobalIngameFlag::TIME_PAUSED
+    BNZ   _skip_goal
+    ORA   #Game::Level::GlobalIngameFlag.CONTROLS_DISABLED | Game::Level::GlobalIngameFlag::TIME_PAUSED
+    STA   Game::Level.global_ingame_flags
+    CLI
+
+    LDA   #Aoba::Sprite::Action::Move::MOVE_PREVENT_DIAGONAL
+    TSB   dp(Aoba::Sprite::Action::Move.move_flags)
+
+    JSL   Game::Level::UserInterface::StageClear.trigger_long
+
+  _skip_goal:
+    CLI
+  end
+
+  ; -----------------------------------------------------
+  change_perspective = Aoba::Sprite::TileEvent.create :change_perspective do
+    LDA   #Aoba::Sprite::Action::Move::MOVE_PREVENT_DIAGONAL
+    Debug.access_8bit_through_16bit
+    TSB   dp(Aoba::Sprite::Action::Move.move_flags)
+
+    Game::Effect::Perspective.trigger_change
+  end
+
+  ; -----------------------------------------------------
+  ice = Aoba::Sprite::TileEvent.create :ice do
+    LDA   Y[:ball_flags]
+    ORA   #BallFlag::IS_ON_ICE
+    STA   Y[:ball_flags]
+    ;LDA   Y[:reflection_distance]
+    ;AND   #$FF00
+    ;ORA   #$3
+    ;STA   Y[:reflection_distance]
+  end
+
+  ; -----------------------------------------------------
+  @locate_at bank: Aoba::SPRITE_ROM_BANK
+  def __create_rotate_sprite
+    PHA
+
+    Aoba::Sprite::Action::ManageSprite.allocate
+    X.is_a! Aoba::Sprite::Instance
+
+    LDY   dp(Aoba::Sprite.current_sprite)
+    Y.is_a! Aoba::Sprite::Instance
+    LDA   Y[:last_tile_x]
+    AND   #$FFF0
+    STA   X[:x]
+    LDA   Y[:last_tile_y]
+    AND   #$FFF0
+    STA   X[:y]
+    CPU.set A: 8
+    LDA   #PRIORITY_BALL_BACK
+    STA   X[:render_priority]
+    CPU.set A: 16
+
+    LDA   #Aoba::Sprite::RenderableFlag.LAYER_FG
+    STA   X[:renderable_flags]
+    PLA
+    STA   X[:direction]
+    LDA   #Assets::Sprite::FloorRotate::BrightPaletteID
+    STA   X[:palette_group_id]
+    LDA   #Animation::Animation::stand
+    Aoba::Sprite::Action::ManageSprite.assign_animation_id
+    LDA   #Assets::Sprite::FloorRotate::ID
+    Aoba::Sprite::Action::ManageSprite.assign_sprite_id
+    Aoba::Sprite::Action::ManageSprite.recalculate_after_set_position
+    Aoba::Sprite::Action::ManageSprite.queue
+    
+    LDY   dp(Aoba::Sprite.current_sprite)
+  end
+
+  ; -----------------------------------------------------
+  rotate_oneside_h = Aoba::Sprite::TileEvent.create :rotate_oneside_h do
+    LDA   #Animation::Direction::down | Animation::Direction::down << 8
+    __create_rotate_sprite
+    LDA   #AssetConfig::TileList::ONESIDEWALL_HU
+    STA   dp(Change.front_tile)
+    LDA   #AssetConfig::TileList::ONESIDEWALL_HD
+    STA   dp(Change.back_tile)
+    JMP   Change.set_previous_tile
+  end
+
+  ; -----------------------------------------------------
+  rotate_oneside_v = Aoba::Sprite::TileEvent.create :rotate_oneside_v do
+    LDA   #Animation::Direction::right | Animation::Direction::right << 8
+    __create_rotate_sprite
+    LDA   #AssetConfig::TileList::ONESIDEWALL_VU
+    STA   dp(Change.front_tile)
+    LDA   #AssetConfig::TileList::ONESIDEWALL_VD
+    STA   dp(Change.back_tile)
+    JMP   Change.set_previous_tile
+  end
+
+  ; -----------------------------------------------------
+  make_broken2 = Aoba::Sprite::TileEvent.create :make_broken2 do
+    LDA   #Assets::Sfx::BreakFloor
+    JSL   Game::Level.play_sfx_long
+    LDY   dp(Aoba::Sprite.current_sprite)
+
+    LDA   #AssetConfig::TileList::BROKEN2
+    STA   dp(Change.front_tile)
+    STA   dp(Change.back_tile)
+    JMP   Change.set_previous_tile
+  end
+
+  ; -----------------------------------------------------
+  make_broken1 = Aoba::Sprite::TileEvent.create :make_broken1 do
+    LDA   #Assets::Sfx::BreakFloor
+    JSL   Game::Level.play_sfx_long
+    LDY   dp(Aoba::Sprite.current_sprite)
+
+    LDA   #AssetConfig::TileList::BROKEN1
+    STA   dp(Change.front_tile)
+    STA   dp(Change.back_tile)
+    JMP   Change.set_previous_tile
+  end
+
+  ; -----------------------------------------------------
+  make_abyss = Aoba::Sprite::TileEvent.create :make_abyss do
+    LDA   #Assets::Sfx::BreakFloor
+    JSL   Game::Level.play_sfx_long
+    LDY   dp(Aoba::Sprite.current_sprite)
+
+    LDA   #AssetConfig::TileList::ABYSS
+    STA   dp(Change.front_tile)
+    STA   dp(Change.back_tile)
+    JMP   Change.set_previous_tile
+  end
+
+  ; -----------------------------------------------------
+  key_red = Aoba::Sprite::TileEvent.create :key_red do
+    INC   Game::Level.num_keys_red
+    INC   Game::Level.score
+    __update_modified_attributes Game::Level::ModifiedAttribute.KEYS_RED | Game::Level::ModifiedAttribute.SCORE
+    LDA   #Assets::Sfx::ItemCollect
+    JSL   Game::Level.play_sfx_long
+    LDA   #AssetConfig::TileList::FLOOR
+    JMP   Change.set_current_layer_tile
+  end
+
+  ; -----------------------------------------------------
+  key_green = Aoba::Sprite::TileEvent.create :key_green do
+    INC   Game::Level.num_keys_green
+    INC   Game::Level.score
+    __update_modified_attributes Game::Level::ModifiedAttribute.KEYS_GREEN | Game::Level::ModifiedAttribute.SCORE
+    LDA   #Assets::Sfx::ItemCollect
+    JSL   Game::Level.play_sfx_long
+    LDA   #AssetConfig::TileList::FLOOR
+    JMP   Change.set_current_layer_tile
+  end
+
+  ; -----------------------------------------------------
+  key_blue = Aoba::Sprite::TileEvent.create :key_blue do
+    INC   Game::Level.num_keys_blue
+    INC   Game::Level.score
+    __update_modified_attributes Game::Level::ModifiedAttribute.KEYS_BLUE | Game::Level::ModifiedAttribute.SCORE
+    LDA   #Assets::Sfx::ItemCollect
+    JSL   Game::Level.play_sfx_long
+    LDA   #AssetConfig::TileList::FLOOR
+    JMP   Change.set_current_layer_tile
+  end
+
+  ; -----------------------------------------------------
+  key_yellow = Aoba::Sprite::TileEvent.create :key_yellow do
+    INC   Game::Level.num_keys_yellow
+    INC   Game::Level.score
+    __update_modified_attributes Game::Level::ModifiedAttribute.KEYS_YELLOW | Game::Level::ModifiedAttribute.SCORE
+    LDA   #Assets::Sfx::ItemCollect
+    JSL   Game::Level.play_sfx_long
+    LDA   #AssetConfig::TileList::FLOOR
+    JMP   Change.set_current_layer_tile
+  end
+
+  ; -----------------------------------------------------
+  gem_blue = Aoba::Sprite::TileEvent.create :gem_blue do
+    __increment_score 50
+    __update_modified_attributes Game::Level::ModifiedAttribute.SCORE
+    LDA   #Assets::Sfx::ItemCollect
+    JSL   Game::Level.play_sfx_long
+    LDA   #AssetConfig::TileList::FLOOR
+    JMP   Change.set_current_layer_tile
+  end
+
+  ; -----------------------------------------------------
+  gem_red = Aoba::Sprite::TileEvent.create :gem_red do
+    __increment_score 100
+    __update_modified_attributes Game::Level::ModifiedAttribute.SCORE
+    LDA   #Assets::Sfx::ItemCollect
+    JSL   Game::Level.play_sfx_long
+    LDA   #AssetConfig::TileList::FLOOR
+    JMP   Change.set_current_layer_tile
+  end
+
+  ; -----------------------------------------------------
+  gem_green = Aoba::Sprite::TileEvent.create :gem_green do
+    __increment_score 20
+    __update_modified_attributes Game::Level::ModifiedAttribute.SCORE
+    LDA   #Assets::Sfx::ItemCollect
+    JSL   Game::Level.play_sfx_long
+    LDA   #AssetConfig::TileList::FLOOR
+    JMP   Change.set_current_layer_tile
+  end
+
+  ; -----------------------------------------------------
+  gem_yellow = Aoba::Sprite::TileEvent.create :gem_yellow do
+    __increment_score 10
+    __update_modified_attributes Game::Level::ModifiedAttribute.SCORE
+    LDA   #Assets::Sfx::ItemCollect
+    JSL   Game::Level.play_sfx_long
+    LDA   #AssetConfig::TileList::FLOOR
+    JMP   Change.set_current_layer_tile
+  end
+
+  ; -----------------------------------------------------
+  macro __create_coin_event(value)
+    LDA   #value
+    CLC
+    ADC   Game::Level.num_coins
+    STA   Game::Level.num_coins
+    __update_modified_attributes Game::Level::ModifiedAttribute.COINS
+    LDA   #Assets::Sfx::ItemCollect
+    JSL   Game::Level.play_sfx_long
+    LDA   #AssetConfig::TileList::FLOOR
+    JMP   Change.set_current_layer_tile
+  end
+
+  coin_100 = Aoba::Sprite::TileEvent.create :coin_100 do
+    __create_coin_event 100
+  end
+  coin_200 = Aoba::Sprite::TileEvent.create :coin_200 do
+    __create_coin_event 200
+  end
+  coin_300 = Aoba::Sprite::TileEvent.create :coin_100 do
+    __create_coin_event 300
+  end
+  coin_500 = Aoba::Sprite::TileEvent.create :coin_100 do
+    __create_coin_event 500
+  end
+
+  ; -----------------------------------------------------
+  macro __create_door_event(key, attributes)
+    LDA   key
+    AND   #$FF
+    BZE   _rts
+    DEC   key
+    __update_modified_attributes attributes
+    LSR   dp(AssetConfig::Ingame.ball_collision_handler.ball_speed)
+
+    LDA   #Assets::Sfx::DoorOpen
+    JSL   Game::Level.play_sfx_long
+    LDY   dp(Aoba::Sprite.current_sprite)
+
+    LDA   #AssetConfig::TileList::FLOOR
+    JMP   Change.set_hit_tile
+
+  _rts:
+    LDA   #Assets::Sfx::BallHitWall
+    JSL   Game::Level.play_sfx_long
+  end
+
+  door_red = Aoba::Sprite::TileEvent.create :door_red do
+    __create_door_event Game::Level.num_keys_red, Game::Level::ModifiedAttribute.KEYS_RED
+  end
+
+  ; -----------------------------------------------------
+  door_green = Aoba::Sprite::TileEvent.create :door_green do
+    __create_door_event Game::Level.num_keys_green, Game::Level::ModifiedAttribute.KEYS_GREEN
+  end
+
+  ; -----------------------------------------------------
+  door_blue = Aoba::Sprite::TileEvent.create :door_blue do
+    __create_door_event Game::Level.num_keys_blue, Game::Level::ModifiedAttribute.KEYS_BLUE
+  end
+
+  ; -----------------------------------------------------
+  door_yellow = Aoba::Sprite::TileEvent.create :door_yellow do
+    __create_door_event Game::Level.num_keys_yellow, Game::Level::ModifiedAttribute.KEYS_YELLOW
+  end
+
+  ; -----------------------------------------------------
+  laser = Aoba::Sprite::TileEvent.create :laser do
+    LDA   Y[:movable_flags] - 1
+    BMI   _is_already_in_laser
+    ORA   #Aoba::Sprite::MovableFlag.FORCE_COLLISION_TEST << 8
+    STA   Y[:movable_flags] - 1
+
+    LDA   #-LASER_HP_DAMAGE
+    _modify_hp
+    TYX
+    STZ   X[:speed_x]
+    STZ   X[:speed_x_decimal]
+    STZ   X[:speed_y]
+    STZ   X[:speed_y_decimal]
+
+  _is_already_in_laser:
+  end
+
+  ; -----------------------------------------------------
+  switch1 = Aoba::Sprite::TileEvent.create :switch1 do
+    LDA   #1
+    JMP   LevelSwitch.invoke
+  end
+  switch2 = Aoba::Sprite::TileEvent.create :switch2 do
+    LDA   #2
+    JMP   LevelSwitch.invoke
+  end
+  switch3 = Aoba::Sprite::TileEvent.create :switch3 do
+    LDA   #3
+    JMP   LevelSwitch.invoke
+  end
+  switch4 = Aoba::Sprite::TileEvent.create :switch4 do
+    LDA   #4
+    JMP   LevelSwitch.invoke
+  end
+
+  ; -----------------------------------------------------
+  pricetag = Aoba::Sprite::TileEvent.create :pricetag do
+    ItemPurchase.enter_pricetag
+  end
+  item = Aoba::Sprite::TileEvent.create :item do
+    ItemPurchase.enter_item
+  end
+
+  ; -----------------------------------------------------
+  macro __create_brokenwall(axis, new_tile)
+    LDA   Y[:ball_flags]
+    BIT   #BallFlag.METALBALL_ACTIVE
+    BZE   _rts
+
+    if axis == :h
+      LDA   dp(Aoba::Sprite::Action::Move.speed_y - 1)
+    elsif axis == :v
+      LDA   dp(Aoba::Sprite::Action::Move.speed_x - 1)
+    end
+    BPL   _is_positive
+    EOR   #$FFFF
+    INC   A
+  _is_positive:
+    CMP   #BREAK_WALL_MIN_POWER
+    BLT   _rts
+
+    LDA   #Assets::Sfx::BreakWall
+    JSL   Game::Level.play_sfx_long
+    LDY   dp(Aoba::Sprite.current_sprite)
+
+    LDA   #new_tile
+    JMP   Change.set_hit_tile
+
+  _rts:
+    LDA   #Assets::Sfx::BallHitWall
+    JSL   Game::Level.play_sfx_long
+  end
+
+  ; -----------------------------------------------------
+  wall = Aoba::Sprite::TileEvent.create :wall do
+    LDA   #Assets::Sfx::BallHitWall
+    JSL   Game::Level.play_sfx_long
+  end
+
+  ; -----------------------------------------------------
+  brokenwall_3h = Aoba::Sprite::TileEvent.create :brokenwall_3h do
+    __create_brokenwall :h, AssetConfig::TileList.BROKENWALL_2H
+  end
+  brokenwall_2h = Aoba::Sprite::TileEvent.create :brokenwall_2h do
+    __create_brokenwall :h, AssetConfig::TileList.BROKENWALL_1H
+  end
+  brokenwall_1h = Aoba::Sprite::TileEvent.create :brokenwall_1h do
+    __create_brokenwall :h, AssetConfig::TileList.BROKENWALL_0H
+  end
+  brokenwall_3v = Aoba::Sprite::TileEvent.create :brokenwall_3v do
+    __create_brokenwall :v, AssetConfig::TileList.BROKENWALL_2V
+  end
+  brokenwall_2v = Aoba::Sprite::TileEvent.create :brokenwall_2v do
+    __create_brokenwall :v, AssetConfig::TileList.BROKENWALL_1V
+  end
+  brokenwall_1v = Aoba::Sprite::TileEvent.create :brokenwall_1v do
+    __create_brokenwall :v, AssetConfig::TileList.BROKENWALL_0V
+  end
+
+  ; -----------------------------------------------------
+  enter_events = Aoba::Sprite::TileEvent::Collection.create do
+    nop $00
+    add $01, abyss
+    nop $02
+    add $03, goal
+    add $04, change_perspective
+    add $05, key_red
+    add $06, key_blue
+    add $07, key_green
+    add $08, key_yellow
+    add $09, gem_red
+    add $0A, gem_blue
+    add $0B, gem_green
+    add $0C, gem_yellow
+    add $0D, coin_100
+    add $0E, coin_200
+    add $0F, coin_300
+    add $10, coin_500
+    add $11, ice
+    add $12, switch1
+    add $13, switch2
+    add $14, switch3
+    add $15, switch4
+    add $21, pricetag
+    add $22, pricetag
+    add $23, pricetag
+    add $24, pricetag
+    add $25, pricetag
+    add $26, pricetag
+    add $27, pricetag
+    add $31, item
+    add $32, item
+    add $33, item
+    add $34, item
+    add $35, item
+    add $36, item
+    add $37, item
+  end
+
+  leave_events = Aoba::Sprite::TileEvent::Collection.create do
+    nop $00
+    add $01, make_broken2
+    add $02, make_broken1
+    add $03, make_abyss
+    add $04, rotate_oneside_h
+    add $05, rotate_oneside_v
+  end
+
+  hit_events = Aoba::Sprite::TileEvent::Collection.create do
+    add $00, wall
+    add $01, laser
+    nop $02
+    nop $03
+    add $04, door_red
+    add $05, door_green
+    add $06, door_blue
+    add $07, door_yellow
+    add $08, brokenwall_3v
+    add $09, brokenwall_2v
+    add $0A, brokenwall_1v
+    add $0B, brokenwall_3h
+    add $0C, brokenwall_2h
+    add $0D, brokenwall_1h
+  end
+
+end

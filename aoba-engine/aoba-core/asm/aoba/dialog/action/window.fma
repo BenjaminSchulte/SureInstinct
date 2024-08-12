@@ -1,0 +1,280 @@
+module Aoba::Dialog::Action::Window
+
+  ;; RAM
+  scope :RAM, in: ScriptTempRAM
+
+  ;; The decompression
+  declare :current_dialog, as: :uint16, in: RAM
+
+  ;; The decompression
+  declare :decompress, as: Aoba::Compression::DialogTiles::State, in: RAM
+
+  ;; Maps the height to the tilemap variant
+  datablock window_height_to_tilemap_variant
+    db   3 ; 0
+    db   3 ; 1
+    db   3 ; 2
+    db   3 ; 3
+    db   0 ; 4
+    db   0 ; 5
+    db   0 ; 6
+    db   0 ; 7
+    db   0 ; 8
+  end
+
+  ;; Sets the composer HDMA mode
+  macro _set_composer_hdma_mode
+    CPU.set A: 8
+    STZ   X[:status]
+    LDA   #Aoba::Thread::Event.USEREVENT_ID
+    JSL   Aoba::Thread::Event.allocate_icb_long
+    X.is_a! Aoba::Composer::Event::SetHdmaMode::Event
+    
+    LDA   #Aoba::Composer::Event::SetHdmaMode.ID
+    STA   X[:event_id]
+    LDA   #Aoba::Dialog::Hdma::DialogMode.id
+    STA   X[:mode]
+
+    CPU.set A: 16
+    LDA   dp(current_dialog)
+    STA   X[:param]
+
+    LDA   Aoba::Composer.thread_id
+    JSL   Aoba::Thread::send_event_icb_long
+  end
+
+  ;; Waits for the HDMA mode to be confirmed
+  macro _wait_for_composer_hdma_mode
+  _wait_for_frame_address:
+    LDY   #1
+    JSL   Thread.delay_icb_long
+    LDX   dp(current_dialog)
+    X.is_a! Aoba::Dialog::Hdma::Configuration
+    LDA   X[:status]
+    BZE   _wait_for_frame_address
+  end
+
+  ;; Waits for the HDMA mode to be released
+  macro _wait_for_composer_hdma_mode_released
+  _wait_for_frame_address:
+    LDY   #1
+    JSL   Thread.delay_icb_long
+    LDX   dp(current_dialog)
+    X.is_a! Aoba::Dialog::Hdma::Configuration
+    LDA   X[:status]
+    AND   dp(Aoba::Script.x00FF)
+    CMP   #Aoba::Dialog::Hdma::Status::RELEASED
+    BNE   _wait_for_frame_address
+  end
+
+  ;; Clears the tilemap buffer
+  ;; @ignore-thread-safety
+  def clear_tilemap_buffer
+    ;; We decompressed the window. Let's try to upload it next VBLANK
+    Aoba::VBlank::Job.allocate_job_icb_long :vram, fixed_transfer: true, notify_sender: true
+    ;;;;;LDA   #Aoba::VBlank::Target::VRAM | Aoba::VBlank::Flag::DMA_FIXED_ADDRESS | Aoba::VBlank::Flag::NOTIFY_SENDER_THREAD
+    ;;;;;JSL   Aoba::VBlank::Job.allocate_icb_long
+
+    
+    ;; Configures the job
+    X.is_a! Aoba::VBlank::Job::JobInstance
+    LDA   #Aoba::Zero
+    STA   X[:source_address] ;used as data
+    CPU.set A: 8
+    LDA   #Aoba::Zero.bank
+    STA   X[:source_address] + 2
+    CPU.set A: 16
+
+    LDA   vram_text_tilemap_address
+    STA   X[:target_address]
+    LDA   vram_num_rows - 1
+    AND   #$FF00
+    LSR   A
+    STA   X[:data_size]
+
+    ;; Upload data and wait for it
+    JSL   Aoba::VBlank::Job.try_queue_and_wait_icb_long
+  end
+
+  ;; Uploads the tilemap to the VRAM
+  macro _upload_tilemap
+    ;; Calculate height in tiles and find variant ID
+    ;LDX   dp(current_dialog)
+    ;X.is_a! Aoba::Dialog::Hdma::Configuration
+    LDA   X[:target_height]
+    AND   dp(Aoba::Script.x00FF)
+    STA   dp(Aoba::Script.calc0 + 2)
+    LSR   A
+    LSR   A
+    LSR   A
+    TAX
+    LDA   window_height_to_tilemap_variant.long, X
+    AND   dp(Aoba::Script.x00FF)
+
+    ;; Loads the tilemap data pointer to register X
+    CLC
+    ADC   dialog_tilemap_header.long
+    TAX
+    LDA   DIALOG_TILEMAP_ROM_BANK.as_bank.long, X
+    STA   dp(Aoba::Script.calc0)
+    
+    ;; Allocates RAM for tilemap decompression
+    LDX   #TEXT_RENDERING_RAM_SIZE
+    JSL   Memory.waitfor_allocate_from_behind_long
+
+    ;; Prepares the decompression
+    LDA   #0
+    STA   dp(decompress.tile_index_offset)
+    TXY   ; Y = target RAM
+    LDX   dp(Aoba::Script.calc0)
+    STY   dp(Aoba::Script.calc0)
+    
+    ;; Decompress
+    TDC
+    CLC
+    ADC   #decompress
+    JSL   Aoba::Compression::DialogTiles.execute_icb_long
+
+    ;; We decompressed the window. Let's try to upload it next VBLANK
+    Aoba::VBlank::Job.allocate_job_icb_long :vram, notify_sender: true
+    
+    ;; Configures the job
+    X.is_a! Aoba::VBlank::Job::JobInstance
+    LDA   dp(Aoba::Script.calc0)
+    STA   X[:source_address]
+    CPU.set A: 8
+    LDA   #VARIABLE_RAM_BANK
+    STA   X[:source_address] + 2
+    CPU.set A: 16
+    LDA   vram_dialog_tilemap_address
+    STA   X[:target_address]
+    LDA   dp(Aoba::Script.calc0 + 2)
+    ASL   A
+    ASL   A
+    ASL   A
+    STA   X[:data_size]
+
+    ;; Upload data and wait for it
+    JSL   Aoba::VBlank::Job.try_queue_and_wait_icb_long
+
+    ;; Clears the text tilemap 
+    clear_tilemap_buffer
+
+    ;; Remember RAM
+    LDA   dp(Aoba::Script.calc0)
+    LDX   dp(current_dialog)
+    X.is_a! Aoba::Dialog::Hdma::Configuration
+    STA   X[:text_rendering_ram]
+  end
+
+  ;; Opens a dialog window
+  ;;
+  ;; @param X Configuration
+  ;; @returns X Configuration
+  ;; @ignore-thread-safety
+  def initialize_icb_long
+    _read_dialog_from_script current_dialog
+
+    _set_composer_hdma_mode
+    _wait_for_composer_hdma_mode
+    _upload_tilemap
+    ;_upload_cursor_tiles
+
+    RTL
+  end
+
+  ;; Disables the HDMA mode
+  macro _disable_hdma_mode
+    CPU.set A: 8
+    STZ   X[:status]
+    LDA   #Aoba::Thread::Event.USEREVENT_ID
+    JSL   Aoba::Thread::Event.allocate_icb_long
+    X.is_a! Aoba::Composer::Event::DisableHdmaMode::Event
+    
+    LDA   #Aoba::Composer::Event::DisableHdmaMode.ID
+    STA   X[:event_id]
+    LDA   #Aoba::Dialog::Hdma::DialogMode.id
+    STA   X[:mode]
+
+    CPU.set A: 16
+    LDA   dp(current_dialog)
+    STA   X[:param]
+
+    LDA   Aoba::Composer.thread_id
+    JSL   Aoba::Thread::send_event_icb_long
+  end
+
+  ;; Closes the dialog
+  ;; @ignore-thread-safety
+  def free_icb_long
+    ;; Removes the HDMA mode
+    _read_dialog_from_script current_dialog
+    _disable_hdma_mode
+    _wait_for_composer_hdma_mode_released
+
+    ;; Delete miniram
+    SEI
+    LDX   dp(current_dialog)
+    LDA   X[:text_rendering_ram]
+    TAX
+    LDY   #TEXT_RENDERING_RAM_SIZE
+    JSL   Memory.free_long
+
+    LDX   dp(current_dialog)
+    JSL   Memory.free_miniblock_long
+    CLI
+    RTL
+  end
+
+  ;; Waits for the dialog window to be opened
+  ;; @param X Configuration
+  ;; @ignore-thread-safety
+  def open_icb_long
+    _read_dialog_from_script current_dialog
+
+    CPU.set A: 8
+  _open_loop:
+    LDY   #1
+    JSL   Thread.delay_icb_long
+
+    LDX   dp(current_dialog)
+    LDA   X[:height]
+    CLC
+    ADC   X[:animation_speed]
+    CMP   X[:target_height]
+    BLT   _set_value
+    LDA   X[:target_height]
+  _set_value:
+    STA   X[:height]
+    CMP   X[:target_height]
+    BNE   _open_loop
+
+    CPU.set A: 16
+    RTL
+  end
+
+  ;; Close dialog
+  ;; @param X Configuration
+  ;; @ignore-thread-safety
+  def close_icb_long
+    _read_dialog_from_script current_dialog
+
+    CPU.set A: 8
+  _close_loop:
+    LDX   dp(current_dialog)
+    LDA   X[:height]
+    SEC
+    SBC   X[:animation_speed]
+    BMI   _end_of_loop
+    STA   X[:height]
+
+    LDY   #1
+    JSL   Thread.delay_icb_long
+    BRA   _close_loop
+
+  _end_of_loop:
+    CPU.set A: 16
+    RTL
+  end
+
+end

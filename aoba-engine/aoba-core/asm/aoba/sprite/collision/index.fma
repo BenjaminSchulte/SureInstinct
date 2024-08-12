@@ -1,0 +1,8 @@
+require "configuration"
+require "base"
+
+require "enter_event"
+require "npc"
+require "pixel"
+require "tile"
+require "group"

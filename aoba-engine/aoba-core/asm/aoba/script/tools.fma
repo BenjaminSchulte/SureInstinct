@@ -1,0 +1,185 @@
+module Aoba::Script
+
+  ;; Calls a subroutine script (Needs to be called from a script context)
+  ;;
+  ;; @param A address
+  ;; @param Y bank
+  ;; @ignore_thread_safety
+  def call_script_subroutine_icb
+    STA   dp(calc0)
+
+    LDX   dp(stack_pointer)
+    LDA   dp(script_pointer)
+    STA   0, X
+    CPU.set A: 8
+    LDA   dp(script_pointer) + 2
+    STA   2, X
+    STY   dp(script_pointer) + 2
+    CPU.set A: 16
+    LDA   dp(calc0)
+    STA   dp(script_pointer)
+    INX
+    INX
+    INX
+    STX   dp(stack_pointer)
+  end
+
+
+  ;; Execute script with context macro
+  macro __execute_script_with_context_macro(script_address, context, thread_id, flags)
+    STA   dp(context)
+    STX   dp(script_address)
+
+    CPU.set A: 8
+    TYA
+    STA   dp(script_address + 2)
+
+    ;; Allocates the script
+    Aoba::ScriptThread.allocate_and_queue
+    X.is_a! Aoba::Thread::Instance
+    LDA   X[:id]
+    STA   dp(thread_id)
+
+    ;; Creates the "script address" event
+    LDA   #Aoba::Thread::Event::USEREVENT_ID
+    JSL   Aoba::Thread::Event.allocate_icb_long
+    X.is_a! Aoba::Script::EventConfig
+    CPU.set A: 16
+    LDA   dp(script_address)
+    STA   X[:script_address]
+    LDA   dp(script_address + 2)
+    AND   #$00FF
+    ORA   #flags << 8
+    STA   X[:script_address] + 2
+    LDA   dp(thread_id)
+    JSL   Aoba::Thread.send_event_icb_long
+
+    ;; Sends the context
+    LDA   #Aoba::Thread::Event::USEREVENT_ID
+    JSL   Aoba::Thread::Event.allocate_icb_long
+    X.is_a! Aoba::Script::ContextConfig
+    LDA   dp(context)
+    STA   X[:context]
+    LDA   dp(thread_id)
+    JSL   Aoba::Thread.send_event_icb_long
+
+    LDX   dp(thread_id)
+  end
+
+  ;; Executes a script without context
+  ;; @param A flags
+  ;; @param X script address
+  ;; @param Y script bank
+  def execute_script_icb
+    routine do
+      is_thread_safe
+      input A
+
+      declare :script_address, as: :uint24
+      declare :flags, as: :uint8
+      declare :thread_id, as: :uint8
+
+      execute do |script_address, flags, thread_id|
+        STX   dp(script_address)
+
+        CPU.set A: 8
+        STA   dp(flags)
+        TYA
+        STA   dp(script_address + 2)
+
+        ;; Allocates the script
+        Aoba::ScriptThread.allocate_and_queue
+        X.is_a! Aoba::Thread::Instance
+        LDA   X[:id]
+        STA   dp(thread_id)
+
+        ;; Creates the "script address" event
+        LDA   #Aoba::Thread::Event::USEREVENT_ID
+        JSL   Aoba::Thread::Event.allocate_icb_long
+        X.is_a! Aoba::Script::EventConfig
+        CPU.set A: 16
+        LDA   dp(script_address)
+        STA   X[:script_address]
+        LDA   dp(script_address + 2)
+        CPU.set A: 8
+        XBA
+        LDA   dp(flags)
+        XBA
+        CPU.set A: 16
+
+        STA   X[:script_address] + 2
+        LDA   dp(thread_id)
+        JSL   Aoba::Thread.send_event_icb_long
+
+        LDX   dp(thread_id)
+      end
+    end
+  end
+
+  ;; Executes a script without context
+  ;; @param A flags
+  ;; @param X script address
+  ;; @param Y script bank
+  def execute_script_icb_long
+    execute_script_icb
+    RTL
+  end
+
+
+  ;; Executes a script with a context
+  ;;
+  ;; @param A context
+  ;; @param X script address
+  ;; @param Y script bank
+  ;; @return X thread ID
+  def execute_script_with_context_icb
+    routine do
+      is_thread_safe
+      input A
+
+      declare :script_address, as: :uint24
+      declare :context, as: :uint16
+      declare :thread_id, as: :uint8
+
+      execute do |script_address, context, thread_id|
+        __execute_script_with_context_macro script_address, context, thread_id, Aoba::Script::CreateFlag::RECEIVE_CONTEXT
+      end
+    end
+  end
+
+  def execute_script_with_context_icb_long
+    execute_script_with_context_icb
+    RTL
+  end
+
+  ;; Executes a script with a context
+  ;;
+  ;; @param A context
+  ;; @param X script address
+  ;; @param Y script bank
+  ;; @return X thread ID
+  def execute_script_with_context_and_wait_icb
+    routine do
+      is_thread_safe
+      input A
+
+      declare :script_address, as: :uint24
+      declare :context, as: :uint16
+      declare :thread_id, as: :uint8
+
+      execute do |script_address, context, thread_id|
+        __execute_script_with_context_macro script_address, context, thread_id, Aoba::Script::CreateFlag::RECEIVE_CONTEXT | Aoba::Script::CreateFlag::NOTIFY_FINISH
+      end
+    end
+
+    TXA
+    AND   #$00FF
+    ORA   #Aoba::Script::EventId.READYEVENT << 8
+    JSL   Aoba::Thread.wait_for_ready_icb_long
+  end
+
+  def execute_script_with_context_and_wait_icb_long
+    execute_script_with_context_and_wait_icb
+    RTL
+  end
+end

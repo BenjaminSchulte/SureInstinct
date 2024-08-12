@@ -1,0 +1,40 @@
+module Aoba::Tileset::Loader
+
+  class TileAnimationParameter < Parameter
+    macro initialize
+      super
+    end
+
+    macro size_in_bytes
+      return 3
+    end
+
+    macro unload
+      JSR   Action::Animation.unload_tileset_animation_list
+    end
+
+    macro load
+      LDA   dp(@loader._vram_address)
+      STA   dp(Action::Animation.vram_address)
+      PHA
+
+      @loader.read_header_at @offset
+      AND   #$FF
+      BZE   _skip_load_tileset_animations
+
+      STA   dp(Action::Animation.counter)
+      @loader.read_header_at @offset + 1
+      PHX
+      TAX
+
+      JSR   Action::Animation.load_animation_list
+
+      PLX
+      STX   dp(@loader._current_tileset)
+    _skip_load_tileset_animations:
+      PLA
+      STA   dp(@loader._vram_address)
+    end
+  end
+
+end

@@ -1,0 +1,102 @@
+module Aoba::Audio
+  ;; The event handler
+  ;; @ignore-thread-safety
+  def event_handler
+    PHX
+
+    ;; Tests how to handle the event
+    CPU.set A: 8
+    X.is_a! Event::Base
+    LDA   X[:event_bitmask]
+    ASL   A
+    BMI   _system_event
+    LDA   X[:sender_thread_id]
+    BMI   _test_special_event
+
+    ;; Invokes the thread by a default event handler
+  _invoke_custom_event:
+    TXY
+
+    TDC ; and dp(x00FF)
+    XBA
+    LDA   X[:event_id]
+    Debug.profile_event_start
+    CPU.set A: 16
+    DEC   A
+    Debug.test_A_less_than Event.MAX_EVENT_ID, "Audio Event ID out of range"
+    ASL   A
+    TAX
+    CPU.set A: 8
+    JSR   Event.routines.indirect, X
+    CPU.set A: 16
+    Debug.profile_event_stop
+    PLX
+    RTS
+
+    ;; --
+
+  _system_event:
+    Debug.warn "+++ Thread {byte(long(add(word(long(add(D,$FE),#{FIXED_RAM_BANK})),2),#{VARIABLE_RAM_BANK}))}: SKIP SYSTEM EVENT {X}"
+    PLX
+    CPU.set A: 16
+    RTS
+
+    ;; --
+
+  _test_special_event:
+    INC   A
+    BZE   _invoke_timer_event
+    fatal_error "Unexpected event in Audio handler"
+
+  _invoke_timer_event:
+    X.is_a! Thread::Timer::TimerEvent
+    CPU.set A: 16
+    LDA   X[:timer]
+    TAX
+    X.is_a! Thread::Timer::TimerInstance
+    CMP   fade_timer.long
+    BNE   _end_of_routine
+    CPU.set A: 8
+    JSR   Action::Volume.on_fade_timer
+    CPU.set A: 16
+
+  _end_of_routine:
+    PLX
+  end
+
+  ;; Thread entry point
+  ;; @ignore-thread-safety
+  def main
+    CPU.set A: 8
+    LDA   Memory::active_thread_id
+    STA   thread_id
+    Debug.profile_introduce 1
+    Debug.info "Thread {A}: Audio Thread"
+    CPU.set A: 16
+    CLI
+
+    JSR   initialize_ram
+
+  _loop:
+    LDA   #$FE
+    JSL   Thread.wait_for_event_icb_long
+    event_handler
+    JSL   Thread::Event.free_icb_long
+    BRA   _loop
+  end
+end
+
+module Aoba
+  AudioThread = Thread.new "Audio" do
+    locate_at bank: AUDIO_ROM_BANK
+    priority AUDIO_PRIORITY
+
+    execute do
+      Audio::main
+    end
+  end
+end
+
+Aoba::Event.on :system_initialize_A8_VARRAM do
+  STZ   Aoba::Audio.thread_id
+end

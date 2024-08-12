@@ -1,0 +1,129 @@
+module Aoba::Sprite
+
+  ;; Maximum map position
+  SPRITE_MAX_VISIBLE_POSITION_X ||= 64 * 16
+  
+  ;; Maximum map position
+  SPRITE_MAX_VISIBLE_POSITION_Y ||= 64 * 16
+
+  ;; The bank for the creature header
+  CREATURE_HEADER_ROM_BANK ||= $CC
+
+  ;; Frame reference bank
+  ANIMATION_SCRIPT_ROM_BANK ||= $C4
+
+  ;; Frame reference bank
+  FRAME_REFERENCE_ROM_BANK ||= $C4
+
+  ;; Viewbox configuration ROM BANK
+  VIEWBOX_HEADER_ROM_BANK ||= $CD
+
+  ;; Maximum number of sprites which can be queued for animation update
+  MAX_ANIMATION_QUEUE_SIZE = 32
+
+  ;; Maximum number of slots (512 8x8 tiles)
+  MAX_SLOTS = 512 / 4
+
+  ;; Maximum slots a single sprite can use
+  MAX_SLOTS_PER_DEFAULT_SPRITE = 8
+
+  ;; Maximum slots a single sprite can use
+  MAX_SLOTS_PER_LARGE_SPRITE = 32
+
+  ;; Number of sprites in a high word
+  NUM_SPRITES_PER_HIGH_WORD = 8
+
+  ;; Max sprites for camera following
+  MAX_CAMERA_SPRITES = 3
+
+  ;; Maximum camera speed
+  MAX_CAMERA_SPEED = 15
+
+  ;; Number of palette sprite slots
+  NUM_SPRITE_PALETTE_SLOTS = 8
+
+  ;; Maximum numbers of sprites
+  MAX_NUM_SPRITES = 32
+
+  ;; Maximum number of player sprites
+  MAX_NUM_PLAYER_SPRITES = 5
+
+  ;; If a move target is tested, this is the maximum distance in pixel to force jump to its goal
+  MAX_DISTANCE_TO_FORCE_SET_MOVE_GOAL = 3
+
+  ;; Script userdata size
+  SCRIPT_USERDATA_SIZE = 8
+
+  ;; Timer used by crowd control
+  CROWD_CONTROL_TIMER_ID = 3
+
+  ;; The sprite header
+  class SpriteRomHeader
+    ;; Points to the frame indices
+    declare :frame_index_pointer, as: :uint16
+
+    ;; Points the the animation indices
+    declare :animation_index_pointer, as: :uint16
+
+    ;; Points to the frame group indices
+    declare :frame_group_index_pointer, as: :uint16
+
+    ;; The default palette index
+    declare :default_palette_index, as: :uint8
+
+    ;; Maximum slots used
+    declare :max_frame_slot_size, as: :uint8
+
+    ;; The viewbox ID
+    declare :viewbox_id, as: :uint8
+  end
+
+  ;; Flags
+  module CreatureConfigurationFlag
+    IS_NPC_COLLISION_GROUP = $01
+    IS_PLAYER_COLLISION_GROUP = $02
+  end
+
+  ;; The creature header
+  class CreatureRomHeader
+    ;; The sprite ID
+    declare :sprite_id, as: :uint16
+
+    ;; The palette group
+    declare :palette_group_address, as: :uint16
+
+    ;; Several sprite related flags
+    declare :renderable_flags, as: :uint8
+
+    ;; Character configuration flags
+    declare :configuration_flags, as: :uint24
+
+    ;; Hitbox ID
+    declare :hitbox_id, as: :uint8
+
+    ;; Collision box ID
+    declare :collisionbox_id, as: :uint8
+  end
+
+  ;; The frame rom header
+  class FrameRomHeader
+    ;; The slot count
+    declare :num_parts, as: :uint8
+
+    ;; The number of rows 00.7F
+    ;; If the top most bit is set, a static image is included!
+    declare :rows_and_size, as: :uint8
+
+    ;; The image pointer
+    declare :image_address, as: :uint24
+
+    ;; ! A static image might be included depending on rows_and_size
+
+    ;; Per slot
+    declare :parts_index, as: :uint16
+  end
+
+  ;; The config
+  config = nil
+
+end

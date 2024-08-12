@@ -1,0 +1,206 @@
+module Aoba::Sprite::Event::CreateCharacter
+
+  ;; The flags
+  module MovementFlag
+    ;; Whether the sprite is nonmoving fixed
+    NO_MOVEMENT = $02
+
+    ;; Whether the sprite is scrolling
+    NO_SCROLLING = $80
+  end
+
+  ;; The event
+  class Event < Base 
+    ;; The config address
+    declare :config_address, as: :uint16
+  end
+
+  ;; The configuration
+  class EventConfig < CreateSprite::BaseEventConfig
+    ;; The creature address
+    declare :creature_address, as: :uint16
+
+    ;; Special movement flags
+    declare :movement_flags, as: :uint8
+  end
+
+  ;; Temporary RAM
+  scope :TempRAM, in: CreateSprite::TempRAM
+
+  ;; The creature header
+  declare :creature_header, as: CreatureRomHeader.pointer(:uint16), in: TempRAM
+
+  ;; The creature configuration flags
+  declare :creature_configuration_flags, as: :uint32, in: TempRAM
+
+  ;; Configures the creature
+  macro __configure_creature
+    ;; Reads the creature itself
+    LDY   dp(CreateSprite.config)
+    Y.is_a! EventConfig
+    X.is_a! Instance
+    LDA   Y[:creature_address]
+    STA   X[:creature_header]
+    STA   dp(creature_header)
+
+    TXY
+    TAX
+    X.is_a! CreatureRomHeader
+    Y.is_a! Instance
+
+    LDA   CREATURE_HEADER_ROM_BANK.as_bank(CreatureRomHeader.offset_of(:palette_group_address)).long, X
+    STA   Y[:palette_group_id]
+    LDA   CREATURE_HEADER_ROM_BANK.as_bank(CreatureRomHeader.offset_of(:configuration_flags)).long, X
+    STA   dp(creature_configuration_flags)
+    LDA   CREATURE_HEADER_ROM_BANK.as_bank(CreatureRomHeader.offset_of(:configuration_flags)).long + 2, X
+    STA   dp(creature_configuration_flags) + 2
+
+    CPU.set A: 8
+    LDA   CREATURE_HEADER_ROM_BANK.as_bank(CreatureRomHeader.offset_of(:hitbox_id)).long, X
+    STA   Y[:hitbox_id]
+    LDA   CREATURE_HEADER_ROM_BANK.as_bank(CreatureRomHeader.offset_of(:collisionbox_id)).long, X
+    STA   Y[:collisionbox_id]
+    LDA   CREATURE_HEADER_ROM_BANK.as_bank(CreatureRomHeader.offset_of(:renderable_flags)).long, X
+    STA   dp(_calc0)
+    AND   #$F1
+    PHA
+    ORA   Y[:renderable_flags]
+    STA   Y[:renderable_flags]
+    PLA
+    AND   #$30
+    STA   dp(_calc0) + 1
+    LDA   dp(_calc0)
+    LSR   A
+    AND   #$3
+
+    ORA   dp(_calc0) + 1
+    ORA   Y[:renderable_configuration_flags]
+    STA   Y[:renderable_configuration_flags]
+
+    LDA   dp(creature_configuration_flags)
+    AND   #$1C
+    STA   Y[:movable_flags]
+    LDA   dp(creature_configuration_flags) + 1
+    AND   #$83
+    ORA   Y[:collision_flags]
+    STA   Y[:collision_flags]
+    LDA   dp(creature_configuration_flags)
+    ASL   A
+    AND   #$C0
+    STA   Y[:render_priority]
+
+    LDA   dp(creature_configuration_flags) + 2
+    STA   Y[:basic_flags] + 1
+    CPU.set A: 16
+  end
+
+  ;; Queues the sprite to a sprite list
+  macro __queue_to_sprite_list
+    LDA   dp(creature_configuration_flags)
+    BIT   #CreatureConfigurationFlag::IS_NPC_COLLISION_GROUP
+    BZE   _skip_add_to_npc_group
+
+  _add_to_npc_group:
+    CPU.set A: 16
+    Collision::Group.add_to_npc_group
+    CPU.set A: 8
+    LDA   dp(creature_configuration_flags)
+
+  _skip_add_to_npc_group:
+    BIT   #CreatureConfigurationFlag::IS_PLAYER_COLLISION_GROUP
+    CPU.set A: 16
+    BZE   _skip_add_to_player_group
+
+  _add_to_player_group:
+    Collision::Group.add_to_player_group
+
+  _skip_add_to_player_group:
+  end
+
+  ;; Queues the sprite to the renderer list
+  macro __queue_to_renderer_list
+    LDA   Y[:flags]
+    BIT   #CreateSprite.Flag.VISIBLE
+    BZE   _skip_queue
+    Aoba::Sprite::Action::ManageSprite.queue
+  _skip_queue:
+  end
+
+  ;; Queue
+  macro __queue
+    CPU.set A: 8
+    LDA   Y[:movement_flags]
+    AND   #MovementFlag.NO_SCROLLING
+    ORA   X[:renderable_configuration_flags]
+    STA   X[:renderable_configuration_flags]
+
+    BIT   #MovementFlag.NO_SCROLLING
+    BZE   _skip_set_no_scrolling
+    LDA   #$FF
+    STA   X[:render_priority] 
+  _skip_set_no_scrolling:
+
+    __queue_to_renderer_list
+    __queue_to_sprite_list
+
+  end
+
+  ;; Configures the collision bitmask
+  macro __configure_collision_bitmask
+    LDX   dp(CreateSprite.sprite)
+    X.is_a! Instance
+
+    Action::ManageSprite.recalculate_after_set_position
+  end
+
+  ;; Configures the sprite
+  ;; @param Y Instance
+  def __configure_sprite
+    Y.is_a! Instance
+
+    LDA   Y[:renderable_configuration_flags]
+    BIT   #RenderableConfigurationFlag.NO_SPRITE
+    BZE   _has_sprite
+    RTS
+
+    ;; --
+
+  _has_sprite:
+    ;; Reads the sprite itself
+    LDA   CREATURE_HEADER_ROM_BANK.as_bank(CreatureRomHeader.offset_of(:sprite_id)).long, X
+    TYX
+    JMP   Action::ManageSprite.assign_sprite_id
+  end
+
+  ;; Creates the sprite
+  ;; @ignore-thread-safety
+  ID = List.create "CreateCharacter" do
+    Y.is_a! Event
+    CPU.set A: 8
+    LDA   Y[:sender_thread_id]
+    STA   dp(CreateSprite.sender_thread_id)
+    CPU.set A: 16
+
+    ;; Read the events configuration
+    LDX   Y[:config_address]
+    STX   dp(CreateSprite.config)
+
+    ;; Creates the sprite
+    CreateSprite._create_sprite_from_config
+    __configure_creature
+    __configure_sprite
+    CPU.set A: 8
+
+    LDY   dp(CreateSprite.config)
+    LDX   dp(CreateSprite.sprite)
+    X.is_a! Instance
+    Y.is_a! EventConfig
+    __queue
+
+    __configure_collision_bitmask
+
+    LDA   #ID
+    JMP   CreateSprite._free_and_notify
+  end
+
+end

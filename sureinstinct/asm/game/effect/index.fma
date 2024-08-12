@@ -1,0 +1,6 @@
+require "perspective_data"
+require "perspective"
+require "fade_data"
+require "fade"
+require "tiles_loader"
+require "mainmenu_perspective"

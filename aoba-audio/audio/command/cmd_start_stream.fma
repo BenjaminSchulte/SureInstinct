@@ -1,0 +1,95 @@
+module Command::StartStream
+
+  scope :StartStreamRAM, in: ::Memory.SharedPage0
+
+  declare :calculation_temp, as: :uint16, in: StartStreamRAM
+
+
+  ;; Sets the master volume
+  def process
+
+    ; Disable new playback on this channel
+    MOV   dp(Stream.stream_disabled_voices), #$FF ^ Stream.STREAM_CHANNEL_BIT
+    AND   dp(SFX.sfx_enabled_echo_voices), #$FF ^ Stream.STREAM_CHANNEL_BIT
+    AND   dp(SFX.sfx_enabled_noise_voices), #$FF ^ Stream.STREAM_CHANNEL_BIT
+    AND   dp(SFX.sfx_enabled_pitchmod_voices), #$FF ^ Stream.STREAM_CHANNEL_BIT
+
+    ; Set some test volume
+    MOV   A, #$7F
+    MOV   dp(SPC.DSP_ADDR), #Stream.STREAM_CHANNEL_BASE | DSP.VOL_L
+    MOV   dp(SPC.DSP_DATA), A
+    MOV   dp(SPC.DSP_ADDR), #Stream.STREAM_CHANNEL_BASE | DSP.VOL_R
+    MOV   dp(SPC.DSP_DATA), A
+
+    ; Disable voice
+    MOV   dp(SPC.DSP_ADDR), #DSP.KOFF
+    MOV   dp(SPC.DSP_DATA), #Stream.STREAM_CHANNEL_BIT
+    Script::Action::SetEcho.set_echo_on
+    Script::Action::SetNoise.set_noise_on
+    Script::Action::SetPitch.set_pitchmod_on
+
+    ; Copy pitch value
+    MOVW  YA, dp(SPC.PORT2)
+    MOV   dp(SPC.DSP_ADDR), #Stream.STREAM_CHANNEL_BASE | DSP.PITCH_L
+    MOV   dp(SPC.DSP_DATA), A
+    MOV   dp(SPC.DSP_ADDR), #Stream.STREAM_CHANNEL_BASE | DSP.PITCH_H
+    MOV   dp(SPC.DSP_DATA), Y
+
+    MOV   dp(SPC.DSP_ADDR), #Stream.STREAM_CHANNEL_BASE | DSP.ADSR_L
+    MOV   dp(SPC.DSP_DATA), #0
+    MOV   dp(SPC.DSP_ADDR), #Stream.STREAM_CHANNEL_BASE | DSP.GAIN
+    MOV   dp(SPC.DSP_DATA), #$3F
+
+    MOV   dp(SPC.DSP_ADDR), #Stream.STREAM_CHANNEL_BASE | DSP.SRCN
+    MOV   dp(SPC.DSP_DATA), #Stream.STREAM_SAMPLE_ID
+
+    ; Calculate the start offset of the
+    MOV   A, dp(SPC.PORT1)
+    MOV   dp(SPC.PORT0), dp(IPC.last_ipc_value)
+    LSR   A
+    MOV   dp(Stream.stream_block_size), A
+    ASL   A
+    ASL   A
+    ASL   A
+    CLRC
+    ADC   A, dp(Stream.stream_block_size)
+    MOV   dp(Stream.stream_block_size), A
+
+    ; Multiplate with 4
+    ASL   A
+    ASL   A
+    MOV   dp(Stream.stream_byte_size), A
+
+    ; Calculate the required buffer size
+    MOV   Y, #Stream.STREAM_BUFFER_TIMES
+    MUL   YA
+
+    ; Calculate the start of the offset
+    MOVW  dp(calculation_temp), YA
+    MOV   Y, dp(DSP.echo_buffer_offset)
+    MOV   A, #0
+    SUBW  YA, dp(calculation_temp)
+    MOVW  dp(Stream.stream_buffer_start), YA
+    MOVW  dp(Stream.stream_buffer_offset), YA
+
+    ; Write the stream address
+    MOV   addr(Sample.sample_directory + Stream.STREAM_SAMPLE_ID * 4), A
+    MOV   addr(Sample.sample_directory + Stream.STREAM_SAMPLE_ID * 4 + 2), A
+    MOV   A, Y
+    MOV   addr(Sample.sample_directory + Stream.STREAM_SAMPLE_ID * 4 + 1), Y
+    MOV   addr(Sample.sample_directory + Stream.STREAM_SAMPLE_ID * 4 + 3), Y
+
+    MOV   dp(Stream.number_of_blocks_till_loop), #Stream.STREAM_BUFFER_TIMES
+    MOV   dp(Stream.number_of_blocks_till_play), #Stream.STREAM_BUFFER_TIMES - 3
+
+    JMP   Stream.update_pointer_opcodes
+  end
+
+
+  def stop_stream
+    MOV   dp(SPC.PORT0), dp(IPC.last_ipc_value)
+    MOV   dp(Stream.stream_disabled_voices), #$FF
+    OR    dp(Channel.changed_sample_voices), #Stream.STREAM_CHANNEL_BIT
+  end
+
+end

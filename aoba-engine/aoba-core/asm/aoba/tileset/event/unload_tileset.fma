@@ -1,0 +1,14 @@
+module Aoba::Tileset::Event::UnloadTileset
+
+  ;; The event
+  class Event < Base
+  end
+
+  ;; Creates a load event for a tileset_loader
+  macro create_for(tileset_loader)
+    List.create "UnloadTileset" do
+      JMP   tileset_loader._unload
+    end
+  end
+
+end

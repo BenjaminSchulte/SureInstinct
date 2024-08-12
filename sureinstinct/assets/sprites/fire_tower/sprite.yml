@@ -1,0 +1,75 @@
+type: CommonSprite
+
+frames:
+  angle0: {images: [{image: 0}]}
+  angle1: {images: [{image: 1}]}
+  angle2: {images: [{image: 2}]}
+  angle3: {images: [{image: 3}]}
+  angle4: {images: [{image: 4}]}
+  angle5: {images: [{image: 5}]}
+  angle6: {images: [{image: 6}]}
+  angle7: {images: [{image: 7}]}
+  angle8: {images: [{image: 8}]}
+  angle9: {images: [{image: 9}]}
+  angle10: {images: [{image: 10}]}
+  angle11: {images: [{image: 11}]}
+  angle12: {images: [{image: 12}]}
+  angle13: {images: [{image: 13}]}
+  angle14: {images: [{image: 14}]}
+  angle15: {images: [{image: 15}]}
+  angle16: {images: [{image: 16}]}
+  angle17: {images: [{image: 17}]}
+  angle18: {images: [{image: 18}]}
+  angle19: {images: [{image: 19}]}
+  angle20: {images: [{image: 20}]}
+  angle21: {images: [{image: 21}]}
+  angle22: {images: [{image: 22}]}
+  angle23: {images: [{image: 23}]}
+  angle24: {images: [{image: 24}]}
+  angle25: {images: [{image: 25}]}
+  angle26: {images: [{image: 26}]}
+  angle27: {images: [{image: 27}]}
+  angle28: {images: [{image: 28}]}
+  angle29: {images: [{image: 29}]}
+  angle30: {images: [{image: 30}]}
+  angle31: {images: [{image: 31}]}
+
+frame_groups:
+  custom_frame_group:
+    - frame: angle0
+    - frame: angle31
+    - frame: angle30
+    - frame: angle29
+    - frame: angle28
+    - frame: angle27
+    - frame: angle26
+    - frame: angle25
+    - frame: angle24
+    - frame: angle23
+    - frame: angle22
+    - frame: angle21
+    - frame: angle20
+    - frame: angle19
+    - frame: angle18
+    - frame: angle17
+    - frame: angle16
+    - frame: angle15
+    - frame: angle14
+    - frame: angle13
+    - frame: angle12
+    - frame: angle11
+    - frame: angle10
+    - frame: angle9
+    - frame: angle8
+    - frame: angle7
+    - frame: angle6
+    - frame: angle5
+    - frame: angle4
+    - frame: angle3
+    - frame: angle2
+    - frame: angle1
+
+animations:
+  stand_down:
+    - frame: angle0
+      delay: 15

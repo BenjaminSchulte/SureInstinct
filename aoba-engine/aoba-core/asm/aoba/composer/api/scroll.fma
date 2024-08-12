@@ -1,0 +1,115 @@
+module Aoba::Composer::Api
+
+  macro __update_bg_scroll(index, hofs, vofs)
+    PHP
+    SEI
+
+    LDA   bg_scroll_x[index]
+    CLC
+    ADC   add_bg_scroll_x[index]
+    STA   Aoba::Screen::register[hofs]
+    LDA   bg_scroll_y[index]
+    CLC
+    ADC   add_bg_scroll_y[index]
+    STA   Aoba::Screen::register[vofs]
+
+    LDA   Aoba::Screen.update_registers_16
+    _value = 0
+    _value |= Aoba::Screen::Flag[hofs]
+    _value |= Aoba::Screen::Flag[vofs]
+    ORA   #_value
+    STA   Aoba::Screen.update_registers_16
+
+    PLP
+  end
+
+  def __update_bg_scroll0
+    __update_bg_scroll 0, :BG1HOFS, :BG1VOFS
+  end
+
+  def __update_bg_scroll1
+    __update_bg_scroll 1, :BG2HOFS, :BG2VOFS
+  end
+
+  ;; Sets the additional scrolling
+  ;;
+  ;; @param X scroll X
+  ;; @param Y scroll Y
+  def update_additional_scrolling_bg1_long
+    STX   add_bg_scroll_x[0]
+    STY   add_bg_scroll_y[0]
+    JSR   __update_bg_scroll0
+    RTL
+  end
+
+  ;; Sets the additional scrolling
+  ;;
+  ;; @param X scroll X
+  ;; @param Y scroll Y
+  def update_additional_scrolling_bg2_long
+    STX   add_bg_scroll_x[1]
+    STY   add_bg_scroll_y[1]
+    JSR   __update_bg_scroll1
+    RTL
+  end
+
+  ;; Sets the additional scrolling
+  ;;
+  ;; @param X scroll X
+  ;; @param Y scroll Y
+  def update_additional_scrolling_long
+    STX   add_bg_scroll_x[0]
+    STX   add_bg_scroll_x[1]
+    STY   add_bg_scroll_y[0]
+    STY   add_bg_scroll_y[1]
+    JSR   __update_bg_scroll0
+    JSR   __update_bg_scroll1
+    RTL
+  end
+
+  ;; Updates scrolling from X, Y register
+  ;;
+  ;; @param X scroll X
+  ;; @param Y scroll Y
+  ;; @ignore_thread_safety
+  def update_scrolling_bg1_long
+    STX   bg_scroll_x[0]
+    DEY
+    STY   bg_scroll_y[0]
+
+    JSR   __update_bg_scroll0
+    RTL
+  end
+
+  ;; Updates scrolling from X, Y register
+  ;;
+  ;; @param X scroll X
+  ;; @param Y scroll Y
+  ;; @ignore_thread_safety
+  def update_scrolling_bg2_long
+    STX   bg_scroll_x[1]
+    DEY
+    STY   bg_scroll_y[1]
+
+    JSR   __update_bg_scroll1
+    RTL
+  end
+
+  ;; Updates scrolling from X, Y register
+  ;;
+  ;; @param X scroll X
+  ;; @param Y scroll Y
+  ;; @ignore_thread_safety
+  def update_scrolling_long
+    STX   bg_scroll_x[0]
+    STX   bg_scroll_x[1]
+    DEY
+    STY   bg_scroll_y[0]
+    STY   bg_scroll_y[1]
+
+    JSR   __update_bg_scroll0
+    JSR   __update_bg_scroll1
+    RTL
+  end
+
+end

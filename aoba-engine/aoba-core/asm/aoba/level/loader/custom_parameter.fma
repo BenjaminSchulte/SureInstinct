@@ -1,0 +1,21 @@
+module Aoba::Level::Loader
+
+  class CustomParameter < Parameter
+    macro initialize(size_in_bytes, &block)
+      super
+
+      @block = block
+      @_size_in_bytes = size_in_bytes
+    end
+
+    macro size_in_bytes
+      return @_size_in_bytes
+    end
+
+    macro load
+      @block.call with_context self
+      LDX   dp(@loader._current_level)
+    end
+  end
+
+end

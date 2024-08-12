@@ -1,0 +1,56 @@
+module Aoba::Tilemap::Loader
+
+  class TilesetParameter < Parameter
+    macro initialize(tileset_loader)
+      super
+
+      @tileset_loader = tileset_loader
+    end
+
+    macro size_in_bytes
+      return 2
+    end
+
+    macro load
+      LDA   #Aoba::Thread::Event.USEREVENT_ID
+      JSL   Aoba::Thread::Event.allocate_icb_long
+      X.is_a! Aoba::Tileset::Event::LoadTileset::Event
+
+      CPU.set A: 8
+      LDA   #@tileset_loader.load_event_id
+      STA   X[:event_id]
+      LDA   Composer.vram_bg1_tileset.long
+      STA   X[:vram_address]
+      CPU.set A: 16
+
+      @loader.read_header_at @offset
+      STA   X[:tileset_address]
+
+      LDA   Tileset.thread_id
+      JSL   Aoba::Thread.send_event_icb_long
+
+      ;; Expect a ready event after the tileset has been loaded
+      CPU.set A: 8
+      LDA   #Aoba::Thread::Event.USEREVENT_ID
+      JSL   Aoba::Thread::Event.allocate_icb_long
+      X.is_a! Aoba::Thread::ReadyEvent::Event
+      LDA   #Aoba::Tileset::Event::ReadyEvent::ID
+      STA   X[:event_id]
+      LDA   #@tileset_loader.load_event_ready_id
+      STA   X[:response_id]
+      LDA   Tileset.thread_id
+      CPU.set A: 16
+      JSL   Aoba::Thread.send_event_icb_long
+    end
+
+    macro wait_for_ready
+      CPU.set A: 8
+      LDA   #@tileset_loader.load_event_ready_id
+      XBA
+      LDA   Aoba::Tileset.thread_id
+      CPU.set A: 16
+      JSL   Aoba::Thread.wait_for_ready_icb_long
+    end
+  end
+
+end

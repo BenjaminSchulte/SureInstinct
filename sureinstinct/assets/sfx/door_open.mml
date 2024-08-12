@@ -1,0 +1,14 @@
+.TRACK 0
+@"instrument02"
+v64
+
+pe3+6
+o1 d:3 r:3 pe3+6 a:3
+
+.TRACK 1
+@"instrument02"
+
+v50
+
+pe3+6
+o1 xne16 c:3 r:3 xne24 c:3

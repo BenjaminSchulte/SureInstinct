@@ -1,0 +1,33 @@
+module Aoba::Sprite::Event::AssignDirectOamTable
+
+  ;; The event
+  class Event < Base 
+    ;; The sprite ID
+    declare :sprite_id, as: :uint8
+
+    ;; The table size
+    declare :table_size, as: :uint8
+
+    ;; The table address (or 0)
+    declare :table_address, as: :uint16
+  end
+
+  ;; Creates the sprite
+  ;; @ignore-thread-safety
+  ID = List.create "AssignDirectOamTable" do
+    Y.is_a! Event
+
+    PHY
+    LDA   Y[:sprite_id]
+    Action::ManageSprite.find_sprite_by_sprite_id
+    PLY
+    X.is_a! Aoba::Sprite::Instance
+    CPU.set A: 8
+    LDA   Y[:table_size]
+    STA   X[:direct_oam_record_table_size]
+    CPU.set A: 16
+    LDA   Y[:table_address]
+    STA   X[:direct_oam_record_table]
+  end
+
+end

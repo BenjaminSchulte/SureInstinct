@@ -1,0 +1,508 @@
+module Aoba::Sprite::Collision::Pixel
+
+  datablock left_danger_bitmask
+    dw   $0000
+    dw   $8000
+    dw   $C000
+    dw   $E000
+    dw   $F000
+    dw   $F800
+    dw   $FC00
+    dw   $FE00
+    dw   $FF00
+    dw   $FF80
+    dw   $FFC0
+    dw   $FFE0
+    dw   $FFF0
+    dw   $FFF8
+    dw   $FFFC
+    dw   $FFFE
+    dw   $FFFF
+  end
+
+
+  class TestRow < StaticRoutineClass
+    locate_at bank: SPRITE_ROM_BANK
+    register A: 16, XY: 16
+
+    macro initialize(parent)
+      @parent = parent
+      setup_static_routines
+
+      @_current_row = _calc1
+      @_status = _calc1 + 2
+
+      @TempRAM = MemoryScope.new("TestCollisionTempRAM", in: @parent.parent.SharedTempRAM)
+
+      @_tile_danger_mask = MemoryVariable.new("_tile_danger_mask", as: :uint16, in: @TempRAM)
+      @_left_tile_flags = MemoryVariable.new("_left_tile_flags", as: :uint16, in: @TempRAM)
+      @_right_tile_flags = MemoryVariable.new("_right_tile_flags", as: :uint16, in: @TempRAM)
+
+      @_wall_collision_mask = @_right_tile_flags
+      @_full_collision_mask = @_left_tile_flags
+
+      @_left_tile_bitmask = MemoryVariable.new("_left_tile_bitmask", as: :uint16, in: @TempRAM)
+      @_right_tile_bitmask = MemoryVariable.new("_right_tile_bitmask", as: :uint16, in: @TempRAM)
+    end
+
+    macro root
+      return @parent.parent
+    end
+
+    ;; ---------------------------------------------------------------
+    routine :_load_next_collision_data do
+      INC   dp(@_status)
+      LDA   dp(@parent._collision_flags)
+      ORA   #Flag::COL_TILE_HAS_TOP
+      STA   dp(@parent._collision_flags)
+
+      LDX   dp(current_sprite)
+      X.is_a! Instance
+      LDA   dp(Action::Move.pos_y)
+      AND   #$F
+      BIT   #$8
+      BNE   _bottom_half
+      EOR   #$FFFF
+      TAY
+      JMP   _read_collision_data_pointer
+
+    _bottom_half:
+      EOR   #$000F
+      TAY
+      JMP   _read_collision_data_pointer
+    end
+
+    ;; Reads the pointer to the collision data into the registers
+    routine :_read_collision_data_pointer do
+      LDA   #root.sprite_offset_x + 16
+      PHY
+      CPU.with_bank VARIABLE_RAM_BANK, from_bank: FIXED_RAM_BANK do
+        @parent.read_relative_tile_data
+      end
+
+      ;; Stores the tile info
+      LDA   dp(@_status)
+      LSR   A
+      BCC   _top1
+      LDA   dp(@parent.parent.collision_index)
+      STA   dp(@parent._tile_index[1])
+      LDA   dp(@parent.parent.collision_tile_data)
+      STA   dp(@parent._tile_data[1])
+      BRA   _after1
+    _top1:
+      LDA   dp(@parent.parent.collision_index)
+      STA   dp(@parent._tile_index[3])
+      LDA   dp(@parent.parent.collision_tile_data)
+      STA   dp(@parent._tile_data[3])
+    _after1:
+
+      ;; Stores the collision pointer
+      LDA   dp(root.collision_tile)
+      AND   #$FF
+      ASL   A
+      TAX
+      CLC
+      LDA   root.collision_data, X
+      STA   dp(@_right_tile_flags)
+      AND   #$FFF
+      ADC   #root.collision_data
+      STA   dp(@parent._right_collision_pointer)
+
+      LDA   #root.sprite_offset_x
+      PLY
+      CPU.with_bank VARIABLE_RAM_BANK, from_bank: FIXED_RAM_BANK do
+        @parent.read_relative_tile_data
+      end
+
+      ;; Stores the tile info
+      LDA   dp(@_status)
+      LSR   A
+      BCC   _top2
+      LDA   dp(@parent.parent.collision_index)
+      STA   dp(@parent._tile_index[0])
+      LDA   dp(@parent.parent.collision_tile_data)
+      STA   dp(@parent._tile_data[0])
+      BRA   _after2
+    _top2:
+      LDA   dp(@parent.parent.collision_index)
+      STA   dp(@parent._tile_index[2])
+      LDA   dp(@parent.parent.collision_tile_data)
+      STA   dp(@parent._tile_data[2])
+    _after2:
+
+      ;; Stores the collision pointer
+      LDA   dp(root.collision_tile)
+      AND   #$FF
+      ASL   A
+      TAX
+      CLC
+      LDA   root.collision_data, X
+      STA   dp(@_left_tile_flags)
+      AND   #$FFF
+      ADC   #root.collision_data
+      STA   dp(@parent._left_collision_pointer)
+
+      ;; Calculates the mask for danger
+      LDA   #$FFFF
+      STA   dp(@_tile_danger_mask)
+
+      LDA   dp(@_left_tile_flags)
+      BPL   _has_collision_left
+
+      LDA   dp(@_right_tile_bitmask)
+      AND   dp(@_tile_danger_mask)
+      STA   dp(@_tile_danger_mask)
+
+    _has_collision_left:
+      LDA   dp(@_right_tile_flags)
+      BPL   _has_collision_right
+
+      LDA   dp(@_left_tile_bitmask)
+      AND   dp(@_tile_danger_mask)
+      STA   dp(@_tile_danger_mask)
+
+    _has_collision_right:
+      RTS
+    end
+
+    ;; Tests the current row
+    macro __load_collision_row
+      ;; Loads the current row pointer
+      LDA   dp(root.collision_pos_y)
+      DEC   dp(root.collision_pos_y)
+      AND   #$F
+      ASL   A
+      TAY
+
+      LDA   dp(root.collision_pos_x)
+      AND   #$3
+      PHA
+      LDA   dp(root.collision_pos_x)
+      BIT   #$8
+      BNZ   _load_content_from_register_34
+
+    _load_content_from_register_12:
+      BIT   #$4
+      BNZ   _load_content_from_register_2
+    
+      ; Mode 1: LLLL LLLL LLLL LLLL
+    _load_content_from_register_1:
+      LDA   @parent._left_collision_pointer.indirect, Y
+      BRA   _load_content_from_register_end
+
+      ; Mode 2: LLLL LLLL LLLL RRRR
+    _load_content_from_register_2:
+
+      LDA   @parent._left_collision_pointer.indirect, Y
+      4.times_lsr_A
+      AND   #$0FFF
+      STA   dp(_calc0)
+      LDA   @parent._right_collision_pointer.indirect, Y
+      XBA
+      4.times_asl_A
+      AND   #$F000
+      ORA   dp(_calc0)
+      BRA   _load_content_from_register_end
+
+    _load_content_from_register_34:
+      BIT   #$4
+      BNE   _load_content_from_register_4
+
+      ; Mode 3: LLLL LLLL RRRR RRRR
+    _load_content_from_register_3:
+      LDA   @parent._right_collision_pointer.indirect, Y
+      XBA
+      AND   #$FF00
+      STA   dp(_calc0)
+      INY
+      LDA   @parent._left_collision_pointer.indirect, Y
+      AND   #$00FF
+      ORA   dp(_calc0)
+      BRA   _load_content_from_register_end
+
+      ; Mode 4: LLLL RRRR RRRR RRRR
+    _load_content_from_register_4:
+      LDA   @parent._right_collision_pointer.indirect, Y
+      4.times_asl_A
+      AND   #$FFF0
+      STA   dp(_calc0)
+      INY
+      LDA   @parent._left_collision_pointer.indirect, Y
+      4.times_lsr_A
+      AND   #$000F
+      ORA   dp(_calc0)
+
+    _load_content_from_register_end:
+      ;; Shifts the value up to three times
+      PLX
+      BZE   _after_shift
+      LSR   A
+      DEX
+      BZE   _after_shift
+      LSR   A
+      DEX
+      BZE   _after_shift
+      LSR   A
+
+    _after_shift:
+      STA   dp(_calc0)
+      
+      LDA   dp(@_current_row)
+      ASL   A
+      TAX
+      LDA   dp(_calc0)
+      AND   root.sprite_mask.long, X
+      STA   dp(@_full_collision_mask)
+      AND   dp(@_tile_danger_mask)
+      STA   dp(@_wall_collision_mask)
+    end
+
+    macro _store_top_row
+      LDA   dp(@_wall_collision_mask)
+      AND   #$00E0
+      BZE   _no_collision_straight
+
+      TXA
+      BIT   #Flag::TOP_ROW_BITMASK
+      BNZ   _no_collision_straight
+      ORA   dp(@_current_row)
+      INC   A
+      TAX
+
+    _no_collision_straight:
+      LDA   dp(@_wall_collision_mask)
+      BIT   #$1E00
+      BZE   _no_collision_top_right
+
+      TXA
+      ORA   #Flag::COL_DIAG_TOPRIGHT
+      TAX
+      LDA   dp(@_wall_collision_mask)
+
+    _no_collision_top_right:
+      BIT   #$F
+      BZE   _no_collision_top_left
+
+      TXA
+      ORA   #Flag::COL_DIAG_TOPLEFT
+      TAX
+
+    _no_collision_top_left:
+    end
+
+    macro _store_bottom_row
+      LDA   dp(@_wall_collision_mask)
+      AND   #$00E0
+      BZE   _no_collision_straight
+
+      LDA   dp(@_current_row)
+      LDA   #root.sprite_size_y
+      SEC
+      SBC   dp(@_current_row)
+      XBA
+      STA   dp(@parent._collision_flags)
+      TXA
+      AND   #$FFFF ^ Flag::BOTTOM_ROW_BITMASK
+      ORA   dp(@parent._collision_flags)
+      TAX
+
+    _no_collision_straight:
+      LDA   dp(@_wall_collision_mask)
+      BIT   #$1E00
+      BZE   _no_collision_bottom_right
+
+      TXA
+      ORA   #Flag::COL_DIAG_BOTTOMRIGHT
+      TAX
+      LDA   dp(@_wall_collision_mask)
+
+    _no_collision_bottom_right:
+      BIT   #$F
+      BZE   _no_collision_bottom_left
+
+      TXA
+      ORA   #Flag::COL_DIAG_BOTTOMLEFT
+      TAX
+
+    _no_collision_bottom_left:
+    end
+
+    macro _store_mid_row
+      LDA   dp(@_wall_collision_mask)
+      AND   #$1E0F
+      ORA   dp(@parent._collision_left_right)
+      STA   dp(@parent._collision_left_right)
+    end
+
+
+    macro _load_next_collision_data_if_necessary
+      LDA   dp(root.collision_pos_y)
+      INC   A
+      AND   #$F
+      BNZ   _no_new_row
+      _load_next_collision_data
+    _no_new_row:
+    end
+
+    ;; Updates the hitbox
+    macro _update_hitbox
+      LDA   dp(@_wall_collision_mask)
+      ORA   dp(@parent._hitbox)
+      STA   dp(@parent._hitbox)
+
+      LDA   dp(@parent._hitbox_bottom)
+      BPL   _skip_bottom_update
+      LDA   dp(@_current_row)
+      XBA
+    _skip_bottom_update:
+      AND   #$FF00
+      ORA   dp(@_current_row)
+      STA   dp(@parent._hitbox_bottom)
+    end
+
+    macro _store_collided_sections
+      LDX   dp(@parent._collision_flags)
+      LDA   dp(@_current_row)
+      CMP   #4
+      BGE   _not_top
+
+    _is_top:
+      _store_top_row @_current_row
+      BRA   _skip_row
+
+    _not_top:
+      BEQ   _skip_row
+
+      CMP   #root.sprite_size_y - 5
+      BEQ   _skip_row
+      BLT   _is_mid_part
+
+    _is_bottom:
+      _store_bottom_row @_current_row
+      BRA   _skip_row
+
+    _is_mid_part:
+      _store_mid_row @_current_row
+
+    _skip_row:
+      STX   dp(@parent._collision_flags)
+    end
+
+    macro _prepare_left_right_bitmask
+      STZ   dp(@_status)
+
+      LDA   dp(Action::Move.pos_x)
+      CLC
+      ADC   #root.sprite_offset_x
+      AND   #16.bitmask
+      EOR   #16.bitmask
+      INC   A
+      ASL   A
+      TAX   
+      LDA   PowerOfTwoBitmask16.long, X
+      STA   dp(@_left_tile_bitmask)
+      EOR   #$FFFF
+      STA   dp(@_right_tile_bitmask)
+    end
+
+    macro _update_tile_collided
+      LDA   dp(@_status)
+      LSR   A
+      BCS   _is_top_part
+
+    _is_bottom_part:
+      LDA   dp(@_full_collision_mask)
+      BIT   dp(@_left_tile_bitmask)
+      BZE   _test_bottom_right_part
+
+      LDA   dp(@parent._collision_flags)
+      ORA   #Flag.COL_TILE_BOTTOMLEFT
+      STA   dp(@parent._collision_flags)
+      LDA   dp(@_full_collision_mask)
+
+    _test_bottom_right_part:
+      BIT   dp(@_right_tile_bitmask)
+      BZE   _rts
+
+      LDA   dp(@parent._collision_flags)
+      ORA   #Flag.COL_TILE_BOTTOMRIGHT
+      STA   dp(@parent._collision_flags)
+      LDA   dp(@_full_collision_mask)
+      BRA   _rts
+
+    _is_top_part:
+      LDA   dp(@_full_collision_mask)
+      BIT   dp(@_left_tile_bitmask)
+      BZE   _test_top_right_part
+
+      LDA   dp(@parent._collision_flags)
+      ORA   #Flag.COL_TILE_TOPLEFT
+      STA   dp(@parent._collision_flags)
+      LDA   dp(@_full_collision_mask)
+
+    _test_top_right_part:
+      BIT   dp(@_right_tile_bitmask)
+      BZE   _rts
+
+      LDA   dp(@parent._collision_flags)
+      ORA   #Flag.COL_TILE_TOPRIGHT
+      STA   dp(@parent._collision_flags)
+      LDA   dp(@_full_collision_mask)
+
+    _rts:
+    end
+
+    routine :iterate_all_rows do
+      ;; Prepares the left/right tile bitmask
+      _prepare_left_right_bitmask
+
+      ;; Reads the bottom collision position
+      LDY   #root.sprite_offset_y + root.sprite_size_y - 1
+      _read_collision_data_pointer
+
+      ;; Prepares the loop
+      LDA   #root.sprite_size_y - 1
+      STA   dp(@_current_row)
+      STZ   dp(@parent._hitbox)
+      STZ   dp(@parent._collision_flags)
+      STZ   dp(@parent._collision_left_right)
+      LDA   #$FF00
+      STA   dp(@parent._hitbox_bottom)
+      BRA   _start_loop
+
+      ;; ---
+    _end_of_loop:
+      RTS
+
+      ;; ---
+
+      ;; Loops through all rows
+    _loop:
+      DEC   dp(@_current_row)
+      BMI   _end_of_loop
+
+      ;; Reads the collision bitmask pointer of the tiles if necessary
+      _load_next_collision_data_if_necessary
+
+    _start_loop:
+      ;; Reads the X-pos aligned bitmask to the RAM
+      __load_collision_row
+
+      ;; Checks if there is any collision
+      LDA   dp(@_full_collision_mask)
+      BNZ   _has_collision
+      JMP   _loop
+    _has_collision:
+      ;; Updates the hitbox
+      _update_hitbox
+
+      ;; Test if we are at the top/mid/bottom part
+      _store_collided_sections
+
+      ;; Updates the tile collided left/right
+      _update_tile_collided
+      JMP   _loop
+    end
+  end
+
+end

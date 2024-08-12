@@ -1,0 +1,277 @@
+module Game::Scene::StageSelect::Hdma
+
+  module Flag
+    UPDATE_SCORE_TILES = 1
+  end
+
+  ;; Configuration class
+  class Configuration
+    declare :bg2_scroll1, as: :uint16
+    declare :bg2_scroll2, as: :uint16
+    declare :bg2_scroll3, as: :uint16
+    declare :bg2_scroll4, as: :uint16
+
+    declare :option_scroll_x, as: :uint16, length: 8
+    declare :option_scroll_y, as: :uint16, length: 8
+  end
+
+  declare :config, as: Configuration, in: SceneVariableRAM
+  declare :bg_scroll_x, as: :uint16, in: SceneVariableRAM
+  declare :bg_scroll_y, as: :uint16, in: SceneVariableRAM
+  declare :angle, as: :uint16, in: SceneVariableRAM
+  declare :angle2, as: :uint16, in: SceneVariableRAM
+
+  declare :flags, as: :uint16, in: SceneVariableRAM
+
+  ;; Updates the background 3 scrolling
+  macro _update_bg3_scrolling
+    LDA   angle
+    CLC
+    ADC   #$70
+    INC   A
+    STA   angle
+    XBA
+    AND   #$FF
+    ASL   A
+    TAX
+
+    LDA   Aoba::Math.sin_table.long, X
+    ASL   A
+    CLC
+    ADC   bg_scroll_x
+    STA   bg_scroll_x
+    XBA
+    AND   #$FF
+    STA   Aoba::Screen.register.BG3HOFS
+
+    LDA   angle2
+    CLC
+    ADC   #$30
+    INC   A
+    STA   angle2
+    XBA
+    AND   #$FF
+    ASL   A
+    TAX
+
+    LDA   Aoba::Math.cos_table.long, X
+    ASL   A
+    CLC
+    ADC   bg_scroll_y
+    STA   bg_scroll_y
+    XBA
+    AND   #$FF
+    STA   Aoba::Screen.register.BG3VOFS
+
+    LDA   Aoba::Screen.update_registers_16
+    ORA   #Aoba::Screen::Flag.BG3HOFS | Aoba::Screen::Flag.BG3VOFS
+    STA   Aoba::Screen.update_registers_16
+  end
+
+  @locate_at bank: Aoba::SYSTEM_ROM_BANK
+  def _update_score_tiles
+    A.pretend_size 8
+    AND   #$FF ^ Flag::UPDATE_SCORE_TILES
+    STA   flags
+
+    PHD
+    PEA   #$2100
+    PLD
+    LDA   #$80
+    STA   dp(PPU.VMAIN)
+    
+    Game::Level::UserInterface._plot_set_address 24, 22, base: $7800
+    Game::Level::UserInterface._plot_tile 497, 1, 3
+    Game::Level::UserInterface._plot_next_tile repeat: 4
+
+    Game::Level::UserInterface._plot_set_address 24, 25, base: $7800
+    Game::Level::UserInterface._plot_tile 505, 1, 3
+    Game::Level::UserInterface._plot_next_tile repeat: 4
+
+    PLD
+  end
+
+  HdmaMode = Aoba::Composer::Hdma::Mode.create do
+    configuration Configuration
+
+    enable_script_support "StageSelect"
+
+    load do
+      STZ   flags
+      STZ   bg_scroll_x
+      STZ   bg_scroll_x + 2
+      STZ   bg_scroll_y
+      STZ   bg_scroll_y + 2
+      STZ   angle
+      STZ   angle2
+
+      LDA   #5
+      STA   config.bg2_scroll1
+      INC   A
+      INC   A
+      STA   config.bg2_scroll2
+      LDA   #5+2+5
+      STA   config.bg2_scroll3
+      LDA   #5+2+5+5
+      STA   config.bg2_scroll4
+
+      LDX   #0
+      LDY   #8
+      LDA   #0-20
+      CLC
+    _loop_y:
+      STA   config.option_scroll_y, X
+      ADC   #5
+      INX
+      INX
+      DEY
+      BNZ   _loop_y
+
+      LDX   #0
+      LDY   #8
+      LDA   #0
+    _loop_x:
+      STA   config.option_scroll_x, X
+      SEC
+      SBC   #5
+      INX
+      INX
+      DEY
+      BNZ   _loop_x
+
+    end
+
+    release do
+      Debug.fatal "Unload stage select"
+    end
+    
+    enable8 do
+      LDA   #2 | 4 | 16 | $80
+      STA   CPU.HDMAEN.long
+    end
+
+    dma_setup do
+      LDX   #(PPU.BGOFFSET[1].vertical << 8) | DMA[0].configure_value(:transfer_1_twice, indirect: true)
+      STX   dp(DMA[1].control)
+      LDX   #(PPU.BGOFFSET[0].vertical << 8) | DMA[0].configure_value(:transfer_1_twice, indirect: true)
+      STX   dp(DMA[2].control)
+      LDX   #(PPU.BGOFFSET[0].horizontal << 8) | DMA[0].configure_value(:transfer_1_twice, indirect: true)
+      STX   dp(DMA[4].control)
+      LDX   #(PPU.WH[0].to_sym << 8) | DMA[0].configure_value(:transfer_2_once, indirect: true)
+      STX   dp(DMA[7].control)
+    end
+
+    table_setup8 do
+      STZ   6 * _header_size + 0, X
+      LDA   #127
+      STA   0 * _header_size + 0, X
+      LDA   #14
+      STA   0 * _header_size + 3, X
+      STA   0 * _header_size + 6, X
+      LDA   #56
+      STA   0 * _header_size + 9, X
+      LDA   #1
+      STA   0 * _header_size + 12, X
+      STZ   0 * _header_size + 15, X
+
+      LDA   #32 - 5 + 20
+      STA   1 * _header_size + 0, X
+      STA   3 * _header_size + 0, X
+      LDA   #32 - 5
+      STA   1 * _header_size + 3, X
+      STA   1 * _header_size + 6, X
+      STA   1 * _header_size + 9, X
+      STA   1 * _header_size + 12, X
+      STA   1 * _header_size + 15, X
+      STA   1 * _header_size + 18, X
+      STA   1 * _header_size + 21, X
+      STZ   1 * _header_size + 24, X
+      STA   3 * _header_size + 3, X
+      STA   3 * _header_size + 6, X
+      STA   3 * _header_size + 9, X
+      STA   3 * _header_size + 12, X
+      STA   3 * _header_size + 15, X
+      STA   3 * _header_size + 18, X
+      STA   3 * _header_size + 21, X
+      STZ   3 * _header_size + 24, X
+    end
+
+    table_setup16 do
+      LDA   #Aoba::Screen.ppu_register.WH0
+      STA   6 * _header_size + 1, X
+      LDA   #config.bg2_scroll1
+      STA   0 * _header_size + 1, X
+      STA   0 * _header_size + 4, X
+      INC   A
+      INC   A
+      STA   0 * _header_size + 7, X
+      INC   A
+      INC   A
+      STA   0 * _header_size + 10, X
+      INC   A
+      INC   A
+      STA   0 * _header_size + 13, X
+
+      LDA   #config.option_scroll_y
+      STA   1 * _header_size + 1, X
+      INC   A
+      INC   A
+      STA   1 * _header_size + 4, X
+      INC   A
+      INC   A
+      STA   1 * _header_size + 7, X
+      INC   A
+      INC   A
+      STA   1 * _header_size + 10, X
+      INC   A
+      INC   A
+      STA   1 * _header_size + 13, X
+      INC   A
+      INC   A
+      STA   1 * _header_size + 16, X
+      INC   A
+      INC   A
+      STA   1 * _header_size + 19, X
+      INC   A
+      INC   A
+      STA   1 * _header_size + 22, X
+
+      LDA   #config.option_scroll_x
+      STA   3 * _header_size + 1, X
+      INC   A
+      INC   A
+      STA   3 * _header_size + 4, X
+      INC   A
+      INC   A
+      STA   3 * _header_size + 7, X
+      INC   A
+      INC   A
+      STA   3 * _header_size + 10, X
+      INC   A
+      INC   A
+      STA   3 * _header_size + 13, X
+      INC   A
+      INC   A
+      STA   3 * _header_size + 16, X
+      INC   A
+      INC   A
+      STA   3 * _header_size + 19, X
+      INC   A
+      INC   A
+      STA   3 * _header_size + 22, X
+    end
+
+    update do
+      CPU.set A: 16
+      _update_bg3_scrolling
+      CPU.set A: 8
+
+      LDA   flags
+      BIT   #Flag::UPDATE_SCORE_TILES
+      BZE   _no_update_tiles
+      _update_score_tiles
+    _no_update_tiles:
+    end
+  end
+
+end

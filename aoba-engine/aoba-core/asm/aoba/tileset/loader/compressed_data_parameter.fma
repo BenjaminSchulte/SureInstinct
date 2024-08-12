@@ -1,0 +1,40 @@
+module Aoba::Tileset::Loader
+
+  class CompressedDataParameter < Parameter
+    macro initialize(target)
+      super
+
+      @TempRAM = MemoryScope.new("CompressedDataParameter", in: nil, for: ::SNES::MemoryMap::RAM)
+      @_lzw = MemoryVariable.new("_lzw", as: Aoba::Compression::LZW::State, in: @TempRAM)
+
+      @target = target
+    end
+
+    macro preconfigure
+      @loader.SharedTempRAM.include @TempRAM
+    end
+
+    macro size_in_bytes
+      return 3
+    end
+
+    macro load
+      @loader.read_header_at @offset
+      STA   dp(@_lzw.source_address)
+      LDA   #@target
+      STA   dp(@_lzw.target_address)
+      CPU.set A: 8
+      @loader.read_header_at @offset + 2
+      STA   dp(@_lzw.source_address + 2)
+      LDA   #@target.to_sym.bank
+      STA   dp(@_lzw.target_address + 2)
+      CPU.set A: 16
+
+      TDC
+      ORA   #@_lzw
+      JSL   Aoba::Compression::LZW.decompress_long
+      LDX   dp(@loader._current_tileset)
+    end
+  end
+
+end

@@ -1,0 +1,28 @@
+module Aoba::Audio::Action::PlaySfx
+
+  ;; Plays the song
+  ;;
+  ;; @param XL id
+  ;; @param XH panning
+  invoke_icb = create_sa1_ram_routine bank: AUDIO_ROM_BANK do
+    A.pretend_size 8
+    
+    when_ready_SEI VARIABLE_RAM_BANK do
+      ;; Set ID and panning
+      CPU.set A: 16
+      TXA
+      STA   CPU.APUIO1.long
+      CPU.set A: 8
+
+      ;; Send play command
+      LDA   last_ipc_value
+      AND   #IPC.IPC_TOGGLE_BIT
+      EOR   #IPC.IPC_TOGGLE_BIT | IPC.CMD_PLAY_SFX
+      STA   CPU.APUIO0.long
+      STA   last_ipc_value
+    end
+
+    RTS
+  end
+
+end

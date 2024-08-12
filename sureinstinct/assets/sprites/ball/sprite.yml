@@ -1,0 +1,354 @@
+type: BallSprite
+frames:
+  normal_00: {images: [{image: 0}]}
+  normal_10: {images: [{image: 1}]}
+  normal_20: {images: [{image: 2}]}
+  normal_30: {images: [{image: 3}]}
+  normal_40: {images: [{image: 4}]}
+  normal_50: {images: [{image: 5}]}
+  normal_60: {images: [{image: 6}]}
+  normal_01: {images: [{image: 7}]}
+  normal_11: {images: [{image: 8}]}
+  normal_21: {images: [{image: 9}]}
+  normal_31: {images: [{image: 10}]}
+  normal_41: {images: [{image: 11}]}
+  normal_51: {images: [{image: 12}]}
+  normal_61: {images: [{image: 13}]}
+  normal_02: {images: [{image: 14}]}
+  normal_12: {images: [{image: 15}]}
+  normal_22: {images: [{image: 16}]}
+  normal_32: {images: [{image: 17}]}
+  normal_42: {images: [{image: 18}]}
+  normal_52: {images: [{image: 19}]}
+  normal_62: {images: [{image: 20}]}
+  normal_03: {images: [{image: 21}]}
+  normal_13: {images: [{image: 22}]}
+  normal_23: {images: [{image: 23}]}
+  normal_33: {images: [{image: 24}]}
+  normal_43: {images: [{image: 25}]}
+  normal_53: {images: [{image: 26}]}
+  normal_63: {images: [{image: 27}]}
+  normal_04: {images: [{image: 28}]}
+  normal_14: {images: [{image: 29}]}
+  normal_24: {images: [{image: 30}]}
+  normal_34: {images: [{image: 31}]}
+  normal_44: {images: [{image: 32}]}
+  normal_54: {images: [{image: 33}]}
+  normal_64: {images: [{image: 34}]}
+  normal_05: {images: [{image: 35}]}
+  normal_15: {images: [{image: 36}]}
+  normal_25: {images: [{image: 37}]}
+  normal_35: {images: [{image: 38}]}
+  normal_45: {images: [{image: 39}]}
+  normal_55: {images: [{image: 40}]}
+  normal_65: {images: [{image: 41}]}
+  normal_06: {images: [{image: 42}]}
+  normal_16: {images: [{image: 43}]}
+  normal_26: {images: [{image: 44}]}
+  normal_36: {images: [{image: 45}]}
+  normal_46: {images: [{image: 46}]}
+  normal_56: {images: [{image: 47}]}
+  normal_66: {images: [{image: 48}]}
+  ice_00: {images: [{image: 50}]}
+  ice_10: {images: [{image: 51}]}
+  ice_20: {images: [{image: 52}]}
+  ice_30: {images: [{image: 53}]}
+  ice_40: {images: [{image: 54}]}
+  ice_50: {images: [{image: 55}]}
+  ice_60: {images: [{image: 56}]}
+  ice_01: {images: [{image: 57}]}
+  ice_11: {images: [{image: 58}]}
+  ice_21: {images: [{image: 59}]}
+  ice_31: {images: [{image: 60}]}
+  ice_41: {images: [{image: 61}]}
+  ice_51: {images: [{image: 62}]}
+  ice_61: {images: [{image: 63}]}
+  ice_02: {images: [{image: 64}]}
+  ice_12: {images: [{image: 65}]}
+  ice_22: {images: [{image: 66}]}
+  ice_32: {images: [{image: 67}]}
+  ice_42: {images: [{image: 68}]}
+  ice_52: {images: [{image: 69}]}
+  ice_62: {images: [{image: 70}]}
+  ice_03: {images: [{image: 71}]}
+  ice_13: {images: [{image: 72}]}
+  ice_23: {images: [{image: 73}]}
+  ice_33: {images: [{image: 74}]}
+  ice_43: {images: [{image: 75}]}
+  ice_53: {images: [{image: 76}]}
+  ice_63: {images: [{image: 77}]}
+  ice_04: {images: [{image: 78}]}
+  ice_14: {images: [{image: 79}]}
+  ice_24: {images: [{image: 80}]}
+  ice_34: {images: [{image: 81}]}
+  ice_44: {images: [{image: 82}]}
+  ice_54: {images: [{image: 83}]}
+  ice_64: {images: [{image: 84}]}
+  ice_05: {images: [{image: 85}]}
+  ice_15: {images: [{image: 86}]}
+  ice_25: {images: [{image: 87}]}
+  ice_35: {images: [{image: 88}]}
+  ice_45: {images: [{image: 89}]}
+  ice_55: {images: [{image: 90}]}
+  ice_65: {images: [{image: 91}]}
+  ice_06: {images: [{image: 92}]}
+  ice_16: {images: [{image: 93}]}
+  ice_26: {images: [{image: 94}]}
+  ice_36: {images: [{image: 95}]}
+  ice_46: {images: [{image: 96}]}
+  ice_56: {images: [{image: 97}]}
+  ice_66: {images: [{image: 98}]}
+  metal_00: {images: [{image: 100}]}
+  metal_10: {images: [{image: 101}]}
+  metal_20: {images: [{image: 102}]}
+  metal_30: {images: [{image: 103}]}
+  metal_40: {images: [{image: 104}]}
+  metal_50: {images: [{image: 105}]}
+  metal_60: {images: [{image: 106}]}
+  metal_01: {images: [{image: 107}]}
+  metal_11: {images: [{image: 108}]}
+  metal_21: {images: [{image: 109}]}
+  metal_31: {images: [{image: 110}]}
+  metal_41: {images: [{image: 111}]}
+  metal_51: {images: [{image: 112}]}
+  metal_61: {images: [{image: 113}]}
+  metal_02: {images: [{image: 114}]}
+  metal_12: {images: [{image: 115}]}
+  metal_22: {images: [{image: 116}]}
+  metal_32: {images: [{image: 117}]}
+  metal_42: {images: [{image: 118}]}
+  metal_52: {images: [{image: 119}]}
+  metal_62: {images: [{image: 120}]}
+  metal_03: {images: [{image: 121}]}
+  metal_13: {images: [{image: 122}]}
+  metal_23: {images: [{image: 123}]}
+  metal_33: {images: [{image: 124}]}
+  metal_43: {images: [{image: 125}]}
+  metal_53: {images: [{image: 126}]}
+  metal_63: {images: [{image: 127}]}
+  metal_04: {images: [{image: 128}]}
+  metal_14: {images: [{image: 129}]}
+  metal_24: {images: [{image: 130}]}
+  metal_34: {images: [{image: 131}]}
+  metal_44: {images: [{image: 132}]}
+  metal_54: {images: [{image: 133}]}
+  metal_64: {images: [{image: 134}]}
+  metal_05: {images: [{image: 135}]}
+  metal_15: {images: [{image: 136}]}
+  metal_25: {images: [{image: 137}]}
+  metal_35: {images: [{image: 138}]}
+  metal_45: {images: [{image: 139}]}
+  metal_55: {images: [{image: 140}]}
+  metal_65: {images: [{image: 141}]}
+  metal_06: {images: [{image: 142}]}
+  metal_16: {images: [{image: 143}]}
+  metal_26: {images: [{image: 144}]}
+  metal_36: {images: [{image: 145}]}
+  metal_46: {images: [{image: 146}]}
+  metal_56: {images: [{image: 147}]}
+  metal_66: {images: [{image: 148}]}
+
+  drop_0: {images: [{image: 150}]}
+  drop_1: {images: [{image: 151}]}
+  drop_2: {images: [{image: 152}]}
+  drop_3: {images: [{image: 153}]}
+  drop_4: {images: [{image: 154}]}
+  drop_5: {images: [{image: 155}]}
+  drop_6: {images: [{image: 156}]}
+  drop_7: {images: [{image: 157}]}
+  drop_8: {images: [{image: 158}]}
+  drop_9: {images: [{image: 159}]}
+  drop_10: {images: [{image: 160}]}
+  drop_11: {images: [{image: 161}]}
+
+  explode_0: {images: [{image: 162}]}
+  explode_1: {images: [{image: 163}]}
+  explode_2: {images: [{image: 164}]}
+  explode_3: {images: [{image: 165}]}
+  explode_4: {images: [{image: 166}]}
+
+frame_groups:
+  roll_normal:
+    - frame: normal_00
+    - frame: normal_10
+    - frame: normal_20
+    - frame: normal_30
+    - frame: normal_40
+    - frame: normal_50
+    - frame: normal_60
+    - frame: normal_01
+    - frame: normal_11
+    - frame: normal_21
+    - frame: normal_31
+    - frame: normal_41
+    - frame: normal_51
+    - frame: normal_61
+    - frame: normal_02
+    - frame: normal_12
+    - frame: normal_22
+    - frame: normal_32
+    - frame: normal_42
+    - frame: normal_52
+    - frame: normal_62
+    - frame: normal_03
+    - frame: normal_13
+    - frame: normal_23
+    - frame: normal_33
+    - frame: normal_43
+    - frame: normal_53
+    - frame: normal_63
+    - frame: normal_04
+    - frame: normal_14
+    - frame: normal_24
+    - frame: normal_34
+    - frame: normal_44
+    - frame: normal_54
+    - frame: normal_64
+    - frame: normal_05
+    - frame: normal_15
+    - frame: normal_25
+    - frame: normal_35
+    - frame: normal_45
+    - frame: normal_55
+    - frame: normal_65
+    - frame: normal_06
+    - frame: normal_16
+    - frame: normal_26
+    - frame: normal_36
+    - frame: normal_46
+    - frame: normal_56
+    - frame: normal_66
+
+    - frame: ice_00 # Double as spacer to align to 50
+    - frame: ice_00
+    - frame: ice_10
+    - frame: ice_20
+    - frame: ice_30
+    - frame: ice_40
+    - frame: ice_50
+    - frame: ice_60
+    - frame: ice_01
+    - frame: ice_11
+    - frame: ice_21
+    - frame: ice_31
+    - frame: ice_41
+    - frame: ice_51
+    - frame: ice_61
+    - frame: ice_02
+    - frame: ice_12
+    - frame: ice_22
+    - frame: ice_32
+    - frame: ice_42
+    - frame: ice_52
+    - frame: ice_62
+    - frame: ice_03
+    - frame: ice_13
+    - frame: ice_23
+    - frame: ice_33
+    - frame: ice_43
+    - frame: ice_53
+    - frame: ice_63
+    - frame: ice_04
+    - frame: ice_14
+    - frame: ice_24
+    - frame: ice_34
+    - frame: ice_44
+    - frame: ice_54
+    - frame: ice_64
+    - frame: ice_05
+    - frame: ice_15
+    - frame: ice_25
+    - frame: ice_35
+    - frame: ice_45
+    - frame: ice_55
+    - frame: ice_65
+    - frame: ice_06
+    - frame: ice_16
+    - frame: ice_26
+    - frame: ice_36
+    - frame: ice_46
+    - frame: ice_56
+    - frame: ice_66
+
+    - frame: metal_00 # Double as spacer to align to 100
+    - frame: metal_00
+    - frame: metal_10
+    - frame: metal_20
+    - frame: metal_30
+    - frame: metal_40
+    - frame: metal_50
+    - frame: metal_60
+    - frame: metal_01
+    - frame: metal_11
+    - frame: metal_21
+    - frame: metal_31
+    - frame: metal_41
+    - frame: metal_51
+    - frame: metal_61
+    - frame: metal_02
+    - frame: metal_12
+    - frame: metal_22
+    - frame: metal_32
+    - frame: metal_42
+    - frame: metal_52
+    - frame: metal_62
+    - frame: metal_03
+    - frame: metal_13
+    - frame: metal_23
+    - frame: metal_33
+    - frame: metal_43
+    - frame: metal_53
+    - frame: metal_63
+    - frame: metal_04
+    - frame: metal_14
+    - frame: metal_24
+    - frame: metal_34
+    - frame: metal_44
+    - frame: metal_54
+    - frame: metal_64
+    - frame: metal_05
+    - frame: metal_15
+    - frame: metal_25
+    - frame: metal_35
+    - frame: metal_45
+    - frame: metal_55
+    - frame: metal_65
+    - frame: metal_06
+    - frame: metal_16
+    - frame: metal_26
+    - frame: metal_36
+    - frame: metal_46
+    - frame: metal_56
+    - frame: metal_66
+
+animations:
+  stand_down:
+    - frame: normal_00
+      delay: 15
+  fall_down:
+    - {frame: drop_0, delay: 2, x: 0, y: 2}
+    - {frame: drop_1, delay: 2, x: 1, y: 2}
+    - {frame: drop_2, delay: 2, x: 1, y: 2}
+    - {frame: drop_3, delay: 2, x: 2, y: 2}
+    - {frame: drop_4, delay: 3, x: 2, y: 2}
+    - {frame: drop_5, delay: 3, x: 3, y: 2}
+    - {frame: drop_6, delay: 3, x: 3, y: 2}
+    - {frame: drop_7, delay: 3, x: 4, y: 2}
+    - {frame: drop_8, delay: 4, x: 4, y: 2}
+    - {frame: drop_9, delay: 4, x: 5, y: 3}
+    - {frame: drop_10, delay: 4, x: 5, y: 3}
+    - action: user_command
+      command: 0x90
+    - action: begin_loop
+    - {frame: drop_11, delay: 15, x: 6, y: 3}
+    - action: loop
+  explode_down:
+    - {frame: explode_0, delay: 4, x: 0, y: 0}
+    - {frame: explode_1, delay: 4, x: 0, y: 0}
+    - {frame: explode_2, delay: 4, x: 0, y: 0}
+    - {frame: explode_3, delay: 4, x: 0, y: 0}
+    - action: user_command
+      command: 0x92
+    - action: begin_loop
+    - {frame: explode_4, delay: 15, x: 0, y: 0}
+    - action: loop

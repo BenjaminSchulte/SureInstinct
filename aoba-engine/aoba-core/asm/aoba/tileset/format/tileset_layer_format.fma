@@ -1,0 +1,90 @@
+module Aoba::Tileset
+  class TilesetLayerFormatBuilder
+    macro initialize(format)
+      @format = format
+    end
+
+    macro bg(bg)
+      @format.bgs = [bg]
+    end
+
+    macro bgs(*bgs)
+      @format.bgs = bgs
+    end
+  end
+
+  class TilesetLayerFormatInstance < Aoba::EngineObjectInstance
+    macro initialize(tileset, layer)
+      super layer
+      @tileset = tileset
+      @layer = layer
+    end
+
+    macro has_uniform_tile_format?
+      last_tile_format = nil
+      is_unique = true
+      @bgs.each do |ref|
+        cur_tile_format = ref.tile_format
+        if last_tile_format.nil?
+          last_tile_format = ref.tile_format
+        elsif last_tile_format != ref.tile_format
+          is_unique = false
+        end
+      end
+      return is_unique
+    end
+
+    macro any_bg
+      return @tileset.bgs_by_id[@layer.bgs.first]
+    end
+
+    macro any_tile_format
+      return @any_bg.tile_format
+    end
+
+    macro num_bgs
+      return @layer.bgs.count
+    end
+
+    macro bgs
+      _self = self
+      result = @layer.bgs.map do |id|
+        _self.tileset.bgs_by_id[id]
+      end
+      return result
+    end
+
+    macro num_bgtiles
+      _self = self
+      result = 0
+      @layer.bgs.each do |id|
+        result = result + _self.tileset.bgs_by_id[id].tile_format.num_bgtiles
+      end
+      return result
+    end
+  end
+
+  class TilesetLayerFormat < Aoba::EngineObject
+    ;; Constructor
+    macro initialize(id)
+      super
+      @id = id
+      @bgs = []
+    end
+
+    ;; Adds this layer to a tileset
+    macro include_to_tileset_format(format)
+      ref = TilesetLayerFormatInstance.new(format, self)
+      format.layers <<= ref
+      format.layers_by_id[@id] = ref
+    end
+
+    ;; Creates a new tileset format  
+    macro self.create(id, &block)
+      format = TilesetLayerFormat.new(id)
+      builder = TilesetLayerFormatBuilder.new(format)
+      block.call with_context builder
+      return format
+    end
+  end
+end

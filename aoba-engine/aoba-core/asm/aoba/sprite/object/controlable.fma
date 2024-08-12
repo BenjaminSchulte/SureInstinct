@@ -1,0 +1,15 @@
+module Aoba::Sprite
+
+  class Controlable
+    ;; The current gamepad player assigned to this sprite
+    declare :gamepad, as: :uint16
+
+    ;; Configures the class when being included
+    macro self.configure(Instance)
+      Instance.event.on :reset16 do
+        STZ   X[:gamepad]
+      end
+    end
+  end
+
+end

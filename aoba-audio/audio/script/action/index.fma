@@ -1,0 +1,98 @@
+require "act_loop"
+require "act_set_ch_volume"
+require "act_set_octave"
+require "act_set_sample"
+require "act_set_speed"
+require "act_set_pitch"
+require "act_set_adsr"
+require "act_set_panning"
+require "act_set_echo"
+require "act_set_noise"
+require "act_ease_pitch"
+require "act_vibrato"
+
+module Script::Action
+
+  ;; List of all commands and their opcode
+  CMD_SET_SAMPLE        = $C4
+  CMD_SET_SPEED         = $C5
+  CMD_SET_CH_VOLUME     = $C6
+  CMD_DEC_OCTAVE        = $C7
+  CMD_INC_OCTAVE        = $C8
+  CMD_SET_OCTAVE        = $C9
+  CMD_STOP              = $CA
+  CMD_SET_PITCH         = $CB
+  CMD_SET_ADSR_SR       = $CC
+  CMD_SET_LOOP_POSITION = $CD
+  CMD_SET_PANNING       = $CE
+  CMD_BEGIN_REPEAT_LOOP = $CF
+  CMD_END_REPEAT_LOOP   = $D0
+  CMD_SET_ADSR_AR       = $D1
+  CMD_ENABLE_ECHO       = $D2
+  CMD_EASE_PITCH        = $D3
+  CMD_VIBRATO           = $D4
+  CMD_SET_PITCH_FINE    = $D5
+  CMD_SET_ADSR_DR       = $D6
+  CMD_SET_ADSR_SL       = $D7
+  CMD_ENABLE_NOISE      = $D8
+  CMD_ENABLE_PITCHMOD   = $D9
+  CMD_DISABLE_ECHO      = $DA
+
+  ;; Command table starting at $C4
+  datablock action_table
+    dw   SetSample.process
+    dw   SetSpeed.process
+    dw   SetChVolume.process
+    dw   SetOctave.decrement_octave
+    dw   SetOctave.increment_octave
+    dw   SetOctave.process
+    dw   Loop.stop_or_loop
+    dw   SetPitch.process_fine
+    dw   SetAdsr.cmd.set_sr
+    dw   Loop.set_loop_position
+    dw   SetPanning.process
+    dw   Loop.begin_repeat
+    dw   Loop.loop_repeat
+    dw   SetAdsr.cmd.set_ar
+    dw   SetEcho.enable_echo
+    dw   EasePitch.process
+    dw   Vibrato.process
+    dw   SetPitch.process
+    dw   SetAdsr.cmd.set_dr
+    dw   SetAdsr.cmd.set_sl
+    dw   SetNoise.enable_noise
+    dw   SetPitch.enable_pitchmod
+    dw   SetEcho.disable_echo
+    ; !! when adding new commands, don't forget the action_sizes below
+  end
+
+  ;; Countains a list of action sizes
+  ;; 0 = REPEAT COMMAND
+  ;; -1 = STOPS NOTE
+  datablock action_sizes
+    db   2    ; SetSample
+    db   2    ; SetSpeed
+    db   2    ; SetChVolume
+    db   1    ; SetOctave
+    db   1    ; SetOctave
+    db   2    ; SetOctave
+    db   0    ; Stop
+    db   2    ; SetPitch
+    db   2    ; SetAdsr
+    db   1    ; Loop
+    db   2    ; SetPanning
+    db   2    ; Loop
+    db   1    ; Loop
+    db   2    ; SetAdsr
+    db   1    ; SetEcho
+    db   3    ; EasePitch
+    db   3    ; Vibrato
+    db   2    ; SetPitch
+    db   1    ; SetAdsr
+    db   1    ; SetAdsr
+    db   1    ; SetNoise
+    db   1    ; SetPitchMod
+    db   1    ; SetEcho
+  end
+
+end

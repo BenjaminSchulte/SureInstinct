@@ -1,0 +1,296 @@
+module Aoba::GameVariable
+
+  write_variables = create_shared_routine_variables do
+    declare :address, as: :uint16
+    declare :address_base, as: :uint16
+    declare :config, as: :uint16
+    declare :value, as: :uint32
+    declare :calc, as: :uint16
+  end
+
+  ;; Stores a bit
+  ;; @ignore-thread-safety
+  def _store_bit
+    A.pretend_size 8
+    write_variables.use do |address, address_base, config, value, calc|
+      ;; Reads the bitshift
+      LDA   #0
+      XBA ;=config
+      AND   #7
+      TAX
+
+      LDA   dp(value)
+      AND   #1
+      BZE   _clear_bit
+
+    _set_bit:
+      LDA   Aoba::PowerOfTwo8.long, X
+      STA   dp(value)
+
+      LDX   dp(address_base)
+      LDA   dp(address + 1)
+      BPL   _set_in_saveslot
+      ASL   A
+      BMI   _set_in_global
+    _set_in_temporary:
+      LDA   TempSlotRAM.long, X
+      ORA   dp(value)
+      STA   TempSlotRAM.long, X
+      RTS
+
+    _set_in_global:
+      LDA   SRAM_ADDRESS.long, X
+      ORA   dp(value)
+      STA   SRAM_ADDRESS.long, X
+      RTS
+
+    _set_in_saveslot:
+      LDA   SaveSlotRAM.long, X
+      ORA   dp(value)
+      STA   SaveSlotRAM.long, X
+      RTS
+
+      ;; ---
+
+    _clear_bit:
+      LDA   Aoba::PowerOfTwo8.long, X
+      EOR   #$FF
+      STA   dp(value)
+
+      LDX   dp(address_base)
+      LDA   dp(address + 1)
+      BPL   _clear_in_saveslot
+      ASL   A
+      BMI   _clear_in_global
+    _clear_in_temporary:
+      LDA   TempSlotRAM.long, X
+      AND   dp(value)
+      STA   TempSlotRAM.long, X
+      RTS
+      
+    _clear_in_global:
+      LDA   SRAM_ADDRESS.long, X
+      AND   dp(value)
+      STA   SRAM_ADDRESS.long, X
+      RTS
+
+    _clear_in_saveslot:
+      LDA   SaveSlotRAM.long, X
+      AND   dp(value)
+      STA   SaveSlotRAM.long, X
+    end
+  end
+
+  ;; Stores byte
+  ;; @param AH bit shift
+  ;; @param AL size
+  ;; @ignore-thread-safety
+  def _store_byte
+    write_variables.use do |address, address_base, config, value, calc|
+
+      CPU.set A: 16
+      ;; Prepares the shift counter      
+      XBA
+      AND   #$FF
+      TAY
+
+      ;; Reads the shift amount
+      LDA   dp(config) + 1
+      AND   #$FF
+      ASL   A
+      TAX
+      LDA   PowerOfTwoBitmask16.to_sym.long + 2, X
+
+      ;; Shifts the values
+      CPY   #0
+      BEQ   _no_shift
+    _loop_shift:
+      ASL   dp(value)
+      ASL   A
+      DEY
+      BNZ   _loop_shift
+    _no_shift:
+      STA   dp(config)
+      AND   dp(value)
+      STA   dp(value)
+      LDA   #$FFFF
+      EOR   dp(config)
+      STA   dp(config)
+
+      ;; Prepares writing
+      LDX   dp(address_base)
+      LDA   dp(address)
+      BPL   _store_in_saveslot
+      ASL   A
+      BMI   _store_in_global
+
+    _store_in_temporary:
+      LDA   TempSlotRAM.long, X
+      AND   dp(config)
+      ORA   dp(value)
+      STA   TempSlotRAM.long, X
+      RTS
+      ;; --
+    _store_in_global:
+      LDA   SRAM_ADDRESS.long, X
+      AND   dp(config)
+      ORA   dp(value)
+      STA   SRAM_ADDRESS.long, X
+      RTS
+      ;; --
+    _store_in_saveslot:
+      LDA   SaveSlotRAM.long, X
+      AND   dp(config)
+      ORA   dp(value)
+      STA   SaveSlotRAM.long, X
+    end
+  end
+
+  ;; Stores medium
+  ;; @ignore-thread-safety
+  def _store_medium
+    write_variables.use do |address, address_base, config, value, calc|
+      CPU.set A: 16
+      ;; Reads the size to calc
+      XBA
+      AND   #$FF
+      TAY
+
+      ;; Reads the shift amount
+      LDA   dp(config) + 1
+      AND   #$FF
+      ASL   A
+      ;INC   A
+      TAX
+      LDA   PowerOfTwoBitmask16.to_sym.long + 2, X
+      STZ   dp(calc)
+
+      ;; Shifts the values
+      CPY   #0
+      BEQ   _no_shift
+    _loop_shift:
+      ASL   dp(value)
+      ROL   dp(value) + 2
+      ASL   A
+      ROL   dp(calc)
+      DEY
+      BNZ   _loop_shift
+    _no_shift:
+      STA   dp(config)
+      AND   dp(value)
+      STA   dp(value)
+      LDA   #$FFFF
+      EOR   dp(config)
+      STA   dp(config)
+
+      LDA   dp(calc)
+      AND   dp(value) + 2
+      STA   dp(value) + 2
+      LDA   #$FFFF
+      EOR   dp(calc)
+      STA   dp(calc)
+
+      ;; Prepares writing
+      LDX   dp(address_base)
+      LDA   dp(address)
+      BPL   _store_in_saveslot
+      ASL   A
+      BMI   _store_in_global
+
+    _store_in_temporary:
+      LDA   TempSlotRAM.long, X
+      AND   dp(config)
+      ORA   dp(value)
+      STA   TempSlotRAM.long, X
+      LDA   TempSlotRAM.long + 2, X
+      AND   dp(calc)
+      ORA   dp(value) + 2
+      STA   TempSlotRAM.long + 2, X
+      RTS
+      ;; --
+    _store_in_global:
+      LDA   SRAM_ADDRESS.long, X
+      AND   dp(config)
+      ORA   dp(value)
+      STA   SRAM_ADDRESS.long, X
+      LDA   SRAM_ADDRESS.long + 2, X
+      AND   dp(calc)
+      ORA   dp(value) + 2
+      STA   SRAM_ADDRESS.long + 2, X
+      RTS
+      ;; --
+    _store_in_saveslot:
+      LDA   SaveSlotRAM.long, X
+      AND   dp(config)
+      ORA   dp(value)
+      STA   SaveSlotRAM.long, X
+      LDA   SaveSlotRAM.long + 2, X
+      AND   dp(calc)
+      ORA   dp(value) + 2
+      STA   SaveSlotRAM.long + 2, X
+    end
+  end
+
+  ;; Writes the variable in register X
+  ;;
+  ;; @param A variable ID
+  ;; @param X low word
+  ;; @param Y high word
+  def write_number_long
+    routine do
+      is_thread_safe
+      input A
+      use_shared_variables write_variables
+
+      execute do |address, address_base, config, value, calc|
+        STX   dp(value)
+        STY   dp(value + 2)
+
+        ;; Calculates the offset within the variableschema index
+        ASL   A
+        TAX
+        LDA   VariableAddresses.long, X
+        STA   dp(address)
+        AND   #$3FFF
+        STA   dp(address_base)
+        LDA   VariableConfigs.long, X
+        STA   dp(config)
+
+        ;; Resume depending on size
+        CPU.set A: 8
+        XBA   ; AH is important! Don't overwrite it
+        BZE   _write_bit
+        CMP   #10 - 1
+        BLT   _write_byte
+        CMP   #26 - 1
+        BGE   _write_long
+
+        ;; Reads a variable between 10 and 25 bits
+      _write_medium:
+        CPU.set A: 16
+        JSR   _store_medium
+        BRA   _after_store
+
+        ;; Reads a variable with less or equal to 9 bits
+      _write_byte:
+        CPU.set A: 16
+        JSR   _store_byte
+        BRA   _after_store
+
+        ;; Reads a variable with at least 26 bits
+      _write_long:
+        fatal_error "read_long is not yet supported"
+
+        ;; Reads a single bit
+      _write_bit:
+        JSR   _store_bit
+
+      _after_store:
+        CPU.set A: 16
+      end
+    end
+
+    RTL
+  end
+
+end

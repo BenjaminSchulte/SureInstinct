@@ -1,0 +1,75 @@
+module Aoba::Sprite::Event::MoveSpriteRelative
+
+  ;; The event
+  class Event < Base 
+    ;; The sprite ID
+    declare :sprite_id, as: :uint8
+
+    ;; The speed ID
+    declare :speed_id, as: :uint8
+    
+    ;; The number of half fields X
+    declare :fields_x, as: :int8
+    
+    ;; The number of half fields Y
+    declare :fields_y, as: :int8
+  end
+
+  ;; Creates the sprite
+  ;; @ignore-thread-safety
+  ID = List.create "MoveSpriteRelative" do
+    Y.is_a! Event
+
+    LDA   Y[:sprite_id]
+    Action::ManageSprite.find_sprite_by_sprite_id
+    X.is_a! Instance
+    STX   dp(Action.MoveSprite.sprite)
+
+    ;; Relative distance int8 to int16
+    CPU.set A: 8
+    TDC
+    XBA   ; AH = 0
+    LDA   Y[:fields_x]
+    BPL   _no_zero_x
+    XBA
+    DEC   A
+    XBA
+  _no_zero_x:
+    CPU.set A: 16
+    8.multiplicated_register_A
+    STA   dp(Action.MoveSprite.relative_x)
+
+    ;; Relative distance int8 to int16
+    CPU.set A: 8
+    TDC
+    XBA   ; AH = 0
+    LDA   Y[:fields_y]
+    BPL   _no_zero_y
+    XBA
+    DEC   A
+    XBA
+  _no_zero_y:
+    CPU.set A: 16
+    8.multiplicated_register_A
+    STA   dp(Action.MoveSprite.relative_y)
+
+    CPU.set A: 8
+    LDA   Y[:sender_thread_id]
+    STA   X[:move_event_thread_id]
+
+    ;; Calculates the speed
+    TDC
+    XBA
+    LDA   Y[:speed_id]
+    CPU.set A: 16
+    ASL   A
+    TXY
+    TAX
+    LDA   CharacterSpeedTable.long, X
+    Y.is_a! Instance
+    STA   Y[:walk_speed]
+
+    JMP   Action.MoveSprite.move_sprite_relative
+  end
+
+end

@@ -1,0 +1,49 @@
+module Aoba::Sprite::AnimationCommand
+
+  class Action < BaseActionCollectionAction
+    macro initialize(id)
+      super id
+    end
+  end
+
+  macro create(id, &block)
+    action = Action.new(id)
+    result = _create_collection_action action, "sprite_animation_action_#{id}", SPRITE_ROM_BANK do
+      A.pretend_size 8
+      X.pretend_size 16
+      block.call
+      JMP   Aoba::Sprite::Action::Rendering._parse_script_loop
+    end
+  end
+
+  _nop = create :nop do
+  end
+  
+  class CollectionBuilder < BaseActionCollectionBuilder
+    macro initialize(instance)
+      super instance, _nop
+    end
+  end
+
+  _collection = nil
+
+  class Collection < BaseActionCollection
+    macro initialize
+      super "sprite_animation_action", SPRITE_ROM_BANK, $80
+    end
+
+    macro self.create(&block)
+      builder = CollectionBuilder.new(_collection)
+      builder.add $80, Aoba::Sprite::Action::Rendering.scriptcmd_80_BEGIN_LOOP
+      builder.add $81, Aoba::Sprite::Action::Rendering.scriptcmd_81_LOOP
+      builder.add $82, Aoba::Sprite::Action::Rendering.scriptcmd_82_STOP
+      builder.add $83, Aoba::Sprite::Action::Rendering.scriptcmd_83_DESTROY_SELF
+      block.call with_context builder
+      _collection.finalize
+      return _collection
+    end
+  end
+
+  _collection = Collection.new
+
+end

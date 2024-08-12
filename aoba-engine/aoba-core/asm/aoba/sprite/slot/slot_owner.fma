@@ -1,0 +1,54 @@
+module Aoba::Sprite::Slot
+
+  class SlotAllocation
+    ;; The pointer to the next slot
+    declare :next_slot, as: :uint16
+
+    ;; The pointer to the previous slot
+    declare :previous_slot, as: :uint16
+
+    ;; The number of slots free BEFORE this slot
+    declare :free_slots_before, as: :uint8
+
+    ;; The position of this slot in the index
+    declare :slot_index, as: :uint8
+
+    ;; The size of this slot
+    declare :allocated_slot_size, as: :uint8
+
+    ;; The current used amount of slots
+    declare :used_slot_size, as: :uint8
+
+    ;; The current static image loaded
+    declare :static_image_loaded, as: :uint24
+
+    ;; The size of each slot (bitmap)
+    declare :slot_size_bits, as: :uint32
+
+    ;; Slot OAM data
+    declare :slot_oam_data, as: :uint32, length: MAX_SLOTS_PER_DEFAULT_SPRITE
+  end
+
+  class LargeSlotAllocation < SlotAllocation
+    declare :slot_oam_data_ex, as: :uint32, length: MAX_SLOTS_PER_LARGE_SPRITE - MAX_SLOTS_PER_DEFAULT_SPRITE
+  end
+
+  class SlotOwner < SlotAllocation
+    ;; Pointer to the own slot (this start address)
+    declare :slot_pointer, as: SlotAllocation.pointer(:uint16)
+
+    ;; Configures this instance
+    macro self.configure(Instance)
+      Instance.event.on :reset16 do
+        TXA
+        ORA   #Instance.offset_of(:next_slot)
+        STA   X[:slot_pointer]
+      end
+
+      Instance.event.on :reset8 do
+        STZ   X[:allocated_slot_size]
+      end
+    end
+  end
+
+end

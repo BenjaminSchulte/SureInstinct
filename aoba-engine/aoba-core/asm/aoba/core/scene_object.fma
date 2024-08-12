@@ -1,0 +1,13 @@
+module Aoba
+  class SceneObject
+    macro initialize(engine_object)
+      @engine_object = engine_object
+    end
+
+    macro include_to_scene_mode(scene, as=nil)
+      @scene = scene
+      scene._all_objects << self
+      scene.objects[as] = self unless as.nil?
+    end
+  end
+end

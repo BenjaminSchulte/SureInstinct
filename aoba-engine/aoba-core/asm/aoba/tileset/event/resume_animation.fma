@@ -1,0 +1,52 @@
+module Aoba::Tileset::Event::ResumeAnimation
+
+  ;; The event
+  class Event < Base
+  end
+
+  ;; Temporary RAM
+  scope :TempRAM, in: ActionRAM
+
+  declare :counter, as: :uint16, in: TempRAM
+
+  ID = List.create "ResumeAnimation" do
+    Y.is_a! Event
+
+    SEI
+    LDA   global_flags
+    BIT   #GlobalFlag::ANIMATION_PAUSED
+    BZE   _rts
+    AND   #$FFFF ^ GlobalFlag::ANIMATION_PAUSED
+    STA   global_flags
+
+    LDA   #MAX_TILE_ANIMATIONS
+    STA   dp(counter)
+
+    LDY   #tile_animation_index
+    Y.is_a! TileAnimation
+  _loop:
+    LDX   Y[:timer]
+    BZE   _skip
+
+    X.is_a! Aoba::Thread::Timer::TimerInstance
+    PHY
+    LDA   Y[:duration_left]
+    AND   #$FF
+    TAY
+    LDA   X[:flags]
+    JSL   Aoba::Thread::Timer.queue_long
+    PLY
+
+  _skip:
+    TYA
+    CLC
+    ADC   #TileAnimation.size
+    TAY
+    DEC   dp(counter)
+    BNZ   _loop
+
+  _rts:
+    CLI
+  end
+
+end

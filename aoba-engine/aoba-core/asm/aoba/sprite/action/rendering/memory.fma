@@ -1,0 +1,64 @@
+module Aoba::Sprite::Action::Rendering
+
+  ;; The temporary RAM
+  scope :TempRAM, in: ActionRAM
+
+  ;; The new last ID
+  declare :old_animation_last, as: :uint16, in: TempRAM
+
+  ;; The script pointer
+  declare :sprite_instance, as: Instance.pointer(:uint16), in: TempRAM
+
+  ;; The script pointer
+  declare :sprite_header_pointer, as: :uint16, in: TempRAM
+
+  ;; The script pointer
+  declare :sprite_script_pointer, as: :uint16, in: TempRAM
+
+  ;; The frame pointer
+  declare :frame_pointer, as: :uint16, in: TempRAM
+
+  ;; Relative slot X position
+  declare :relative_slot_x, as: :int16, in: TempRAM
+  relative_slot_y = relative_slot_x + 1
+
+  ;; The index flags
+  declare :index_flag, as: :uint16, in: TempRAM
+
+  ;; The slot flags
+  declare :slot_flag, as: :uint8, in: TempRAM
+
+  ;; The slot flags
+  declare :priority_flag, as: :uint8, in: TempRAM
+
+  ;; The slot flags
+  declare :priority_counter, as: :uint8, in: TempRAM
+
+  ;; The loop counter
+  declare :loop_counter, as: :uint16, in: TempRAM
+
+  ;; The target slot index
+  declare :target_slot_index, as: :uint16, in: TempRAM
+
+  ;; Sprite size per row
+  declare :sprite_size_per_row, as: :uint16, in: TempRAM
+
+  ;; Sprite size per row
+  declare :sprite_rows, as: :uint16, in: TempRAM
+  
+  ;; The sprite row address
+  declare :sprite_row_address, as: :uint16, in: TempRAM
+  
+  ;; The sprite source address
+  declare :sprite_source_address, as: :uint24, in: TempRAM
+
+  ;; The sprite reference pointer
+  declare :sprite_frame_reference_pointer, as: :uint16, in: TempRAM
+
+  ;; The sprite reference pointer
+  declare :vram_address, as: :uint16, in: TempRAM
+
+  ;; Requires allocation, so include it
+  TempRAM.include Slot::TempAllocRAM
+
+end

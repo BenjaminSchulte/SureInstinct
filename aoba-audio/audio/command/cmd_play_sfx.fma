@@ -1,0 +1,66 @@
+module Command::PlaySfx
+
+  ;; Include RAM
+  scope :RAM, in: Memory.SharedPage0
+
+  RAM.include Channel::ChannelControl
+  RAM.include Channel::InitializeChannelControl
+
+  declare :sfx_pointer, as: :uint16, in: RAM
+
+  ;; Processes the reset command
+  def process
+    ; Store panning
+    ;MOV   dp(SFX.panning), dp(SPC.PORT2)
+    MOV   dp(Channel.default_panning), dp(SPC.PORT2)
+
+    ; Read sample ID and answer
+    MOV   A, dp(SPC.PORT1)
+    MOV   dp(SPC.PORT0), dp(IPC.last_ipc_value)
+    SFX.get_sfx_address_in_YA
+    MOVW  dp(sfx_pointer), YA
+
+    ; Sets up the SFX timer
+    MOV   A, #DEFAULT_SFX_SPEED
+    MOV   dp(SPC.TIMER0), A
+
+    ; Select the channel
+    MOV   A, #SFX_CHANNEL_INDEX
+    Channel.channel_index_to_channel_pointer
+
+    ; Copy the script pointers
+    MOV   Y, #0
+    MOV   X, dp(Channel.pointer_2x)
+  _copy_script_pointers:
+    MOV   A, indirect(sfx_pointer, Y)
+    MOV   addr(Channel.script_offsets, X), A
+    INC   X
+    INC   Y
+    CMP   Y, #4
+    BNE   _copy_script_pointers
+
+    ; Stop current playback on channels
+    MOV   dp(Channel.num_channels), #NUM_SFX_CHANNELS
+    MOV   dp(Channel.default_control_flags), #Channel.CTRL_IS_SFX_CHANNEL
+    Channel.initialize_channels
+
+    ; Stop channels which have been initialized
+    MOV   dp(SPC.DSP_ADDR), #DSP.KOFF
+    MOV   A, dp(SFX.sfx_active_channels)
+    MOV   dp(SPC.DSP_DATA), A
+    AND   A, dp(Channel.processed_channels)
+    OR    A, dp(Channel.processed_channels)
+    MOV   dp(SFX.sfx_active_channels), A
+
+    ; Disable echo for the new active channels
+    MOV   A, #0
+    MOV   dp(SFX.sfx_enabled_echo_voices), A
+    MOV   dp(SFX.sfx_enabled_noise_voices), A
+    MOV   dp(SFX.sfx_enabled_pitchmod_voices), A
+    
+    Script::Action::SetEcho.set_echo_on
+    Script::Action::SetNoise.set_noise_on
+    Script::Action::SetPitch.set_pitchmod_on
+  end
+
+end

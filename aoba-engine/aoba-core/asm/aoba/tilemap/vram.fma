@@ -1,0 +1,18 @@
+module Aoba::Tilemap
+  class VramObject < Aoba::VramObject
+    macro initialize(format)
+      super
+
+      @format = format
+      @align = $800
+    end
+
+    macro layer_size_in_bytes
+      return @format.screen_bgtile_width * @format.screen_bgtile_height * 2
+    end
+
+    macro size_in_bytes
+      return @layer_size_in_bytes * @format.num_bgs
+    end
+  end
+end

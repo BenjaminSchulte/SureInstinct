@@ -1,0 +1,44 @@
+module Game::Level::UserInterface
+
+  module MenuState
+    NONE = 0
+    READY = 1
+    GO = 2
+    TUTORIAL_TEXT = 3
+
+    KILL = $80
+  end
+
+  locate_at bank: Aoba::EFFECT_ROM_BANK
+
+  ;; Special screens
+  scope :SubScreenRAM, in: IngameSceneVariableRAM, shared: true
+
+
+  declare :font_rendering_buffer, as: :uint16, in: IngameSceneVariableRAM
+
+  declare :text_decompress_buffer, as: :uint16, in: IngameSceneVariableRAM
+
+  declare :font_rendering_state, as: :uint16, in: IngameSceneVariableRAM
+
+  declare :ui_hdma_scroll_buffer, as: :uint16, in: IngameSceneVariableRAM
+
+  ;; Grid sprite
+  declare :grid_sprite, as: :uint16, in: IngameSceneVariableRAM
+
+  ;; Grid sprite
+  declare :item_sprite, as: :uint16, in: IngameSceneVariableRAM
+
+  ;; List of tiles for the statusbar
+  declare :statusbar_tiles, as: :uint16, length: 9+1, in: IngameSceneVariableRAM
+
+  ;; Current tilebar for HP
+  declare :hp_statusbar, as: :uint16, length: 6, in: IngameSceneVariableRAM
+
+  ;; Current tilebar for HP
+  declare :ball_power_statusbar, as: :uint16, length: 6, in: IngameSceneVariableRAM
+
+  ;; The current menu state
+  declare :menu_state, as: :uint16, in: IngameSceneVariableRAM
+
+end

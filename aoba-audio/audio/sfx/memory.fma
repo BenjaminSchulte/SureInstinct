@@ -1,0 +1,36 @@
+module SFX
+
+  ;; The offset of the first sample
+  scope :sfx_directory, at: SFX_DIRECTORY_OFFSET, length: SFX_DIRECTORY_SIZE, in: Memory.RAM
+
+  ;; The current panning
+  ;declare :panning, as: :uint8, in: Memory.Page0
+
+  ;; The current volume
+  declare :volume, as: :uint8, in: Memory.Page0
+
+  ;; The active channels used by SFX
+  declare :sfx_active_channels, as: :uint8, in: Memory.Page0
+
+  ;; Channels which have echo enabled
+  declare :sfx_enabled_echo_voices, as: :uint8, in: Memory.Page0
+
+  ;; Channels which have echo enabled
+  declare :sfx_enabled_noise_voices, as: :uint8, in: Memory.Page0
+
+  ;; Channels which have echo enabled
+  declare :sfx_enabled_pitchmod_voices, as: :uint8, in: Memory.Page0
+
+
+  ;; Returns the sfx address in YA from the sfx A
+  def get_sfx_address_in_YA
+    MOV   Y, #4
+    MUL   YA
+    PUSH  A
+    MOV   A, Y
+    CLRC
+    ADC   A, #SFX_DIRECTORY_OFFSET >> 8
+    MOV   Y, A
+    POP   A
+  end
+end

@@ -1,0 +1,14 @@
+module Game::Effect::TilesLoader
+
+  ;; Temporary RAM for calculations
+  scope :TempRAM, in: Aoba::Effect::ActionRAM
+
+  Loader = Aoba::Image::TilesLoader.create TempRAM
+
+  scope :SharedTempRAM, in: TempRAM, shared: true
+
+  macro load
+    Loader.load
+  end
+
+end

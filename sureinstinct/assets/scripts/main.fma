@@ -1,0 +1,493 @@
+require "data_levels"
+
+import __aobascript_Debug_Crash
+import __aobascript_Audio_LoadSong
+import __aobascript_Audio_PlaySong
+import __aobascript_Audio_StopSong
+import __aobascript_Audio_FadeSongToVolume
+import __aobascript_Composer_DisableHdmaMode
+
+import __aobascript_PPU_SetObjAddress
+import __aobascript_PPU_SetObjSize
+import __aobascript_MainMenuPerspective_StartParticleEffect
+import __aobascript_MainMenuPerspective_StopParticleEffect
+import __aobascript_Debug_BRK
+import __aobascript_Ingame_EnableSceneMode
+import __aobascript_MainMenu_EnableHdmaMode
+import __aobascript_Ingame_EnableHdmaMode
+import __aobascript_Level_LoadLevel
+import __aobascript_Level_WaitForLoadLevel
+import __aobascript_Composer_FadeScreen
+import __aobascript_Composer_WaitForFadeReady
+import __aobascript_GameControls_Setup
+import __aobascript_Character_Spawn
+import __aobascript_Character_CameraAddCharacter
+import __aobascript_Image_LoadTiles
+import __aobascript_Image_LoadTilemap
+import __aobascript_Palette_LoadTilemapPalette
+import __aobascript_Palette_LoadPaletteGroup
+import __aobascript_Script_Delay
+import __aobascript_Ingame_Start
+import __aobascript_Ingame_Kill
+import __aobascript_Audio_PlayStream
+import __aobascript_Audio_WaitForReadyEvent
+import __aobascript_Audio_StopSong
+import __aobascript_Character_CameraDisable
+import __aobascript_Mouse_StartThread
+import __aobascript_Mouse_WaitForThreadReady
+import __aobascript_Mouse_Enable
+import __aobascript_Effect_FadeIn
+import __aobascript_Effect_FadeOut
+
+def start_ingame
+  INVOKE __aobascript_Ingame_EnableSceneMode
+  LDA16  #__engine_variable("AssetConfig.Ingame.ingame_hdma_config")
+  TAC0
+  INVOKE __aobascript_Ingame_EnableHdmaMode
+  INVOKE __aobascript_GameControls_Setup
+
+  LDA8   #__asset("Song", "snippers", "id")
+  INVOKE __aobascript_Audio_LoadSong 
+
+  PUSH16 #0
+  PUSH16 #0
+  PUSH16 #__asset("Character", "ball/stand", "animation_id")
+  PUSH8  #__asset("Character", "ball/down", "direction_id")
+  PUSH8  #3 | (3 << 4)
+  LDA16  #__asset("Character", "ball", "address")
+  INVOKE __aobascript_Character_Spawn
+  TC0A
+  STA16  __engine_variable("Game.Ball.Movement.player")
+  INVOKE __aobascript_Character_CameraAddCharacter
+  LDA16  __engine_variable("Game.level_to_load_address")
+  INVOKE __aobascript_Level_LoadLevel
+  INVOKE __aobascript_Level_WaitForLoadLevel
+
+_wait_for_userinterface_ready:
+  LDA    #1
+  INVOKE __aobascript_Script_Delay
+  LDA8   __engine_variable("Game.Level.global_ingame_flags")
+  BBC    1, _wait_for_userinterface_ready
+
+  INVOKE __aobascript_Effect_FadeIn
+
+  INVOKE __aobascript_Audio_WaitForReadyEvent
+  LDA    #96
+  INVOKE __aobascript_Audio_PlaySong
+
+  INVOKE __aobascript_Ingame_Start
+end
+
+def unload_level
+  INVOKE __aobascript_Composer_DisableHdmaMode
+  INVOKE __aobascript_Character_CameraDisable
+  INVOKE __aobascript_Audio_StopSong
+  INVOKE __aobascript_Ingame_Kill
+  LDA    #10
+  INVOKE __aobascript_Script_Delay
+end
+
+export def ingame_to_stageselect
+  INVOKE __aobascript_Effect_FadeOut
+  JSR    unload_level
+  JMP    start_stageselect
+end
+
+export def ingame_restart
+  INVOKE __aobascript_Effect_FadeOut
+  INVOKE __aobascript_MainMenu_EnableSceneMode
+  JSR    unload_level
+  JMP    start_ingame
+end
+
+import __aobascript_MainMenu_EnableSceneMode
+import __aobascript_PPU_SetBgMode
+import __aobascript_PPU_SetBgLarge
+import __aobascript_PPU_SetBg1TilemapAddress
+import __aobascript_PPU_SetBg1TileAddress
+import __aobascript_PPU_SetBg1TilemapSize
+import __aobascript_PPU_SetBg2TilemapAddress
+import __aobascript_PPU_SetBg2TileAddress
+import __aobascript_PPU_SetBg2TilemapSize
+import __aobascript_PPU_SetBg3TilemapAddress
+import __aobascript_PPU_SetBg3TileAddress
+import __aobascript_PPU_SetBgMainScreen
+import __aobascript_PPU_SetBgSubScreen
+import __aobascript_PPU_SetBg1ScrollX
+import __aobascript_PPU_SetBg1ScrollY
+import __aobascript_PPU_SetBg2ScrollX
+import __aobascript_PPU_SetBg2ScrollY
+import __aobascript_PPU_SetBg3ScrollX
+import __aobascript_PPU_SetBg3ScrollY
+import __aobascript_MainMenu_StartThread
+import __aobascript_MainMenu_WaitForThreadReady
+
+def start_boot
+  INVOKE __aobascript_MainMenu_EnableSceneMode
+
+  LDA    #10
+  INVOKE __aobascript_Script_Delay
+  LDA    #1
+  INVOKE __aobascript_PPU_SetBgMode
+  LDA    #0
+  INVOKE __aobascript_PPU_SetBgLarge
+
+  LDA16  #__asset("Image16", "intro", "address")
+  LDX    #$8000
+  INVOKE __aobascript_Image_LoadTiles
+  LDX    #$7800
+  INVOKE __aobascript_Image_LoadTilemap
+  LDA    #$8000
+  INVOKE __aobascript_PPU_SetBg1TileAddress
+  LDA    #$7800
+  INVOKE __aobascript_PPU_SetBg1TilemapAddress
+
+  LDA16  #__asset("LevelPalettes", "logo", "address")
+  INVOKE __aobascript_Palette_LoadTilemapPalette
+
+  LDA    #1
+  INVOKE __aobascript_PPU_SetBgMainScreen
+  INVOKE __aobascript_PPU_SetBgSubScreen
+
+  LDA   #0
+  INVOKE __aobascript_PPU_SetBg1ScrollX
+  INVOKE __aobascript_PPU_SetBg2ScrollX
+
+  LDA   #255
+  INVOKE __aobascript_PPU_SetBg1ScrollY
+  INVOKE __aobascript_PPU_SetBg2ScrollY
+
+  LDA    #15 | (1 << 8)
+  INVOKE __aobascript_Composer_FadeScreen
+  INVOKE __aobascript_Composer_WaitForFadeReady
+
+  LDA16  #__asset("Image16", "mainmenu", "address")
+  LDX    #$7000
+  INVOKE __aobascript_Image_LoadTilemap
+  LDX    #$0000
+  INVOKE __aobascript_Image_LoadTiles
+  LDA    #$7000
+  INVOKE __aobascript_PPU_SetBg2TilemapAddress
+  LDA    #0
+  INVOKE __aobascript_PPU_SetBg2TileAddress
+
+  JSR   boot_engine
+
+  LDA   #75
+  INVOKE __aobascript_Script_Delay
+
+  LDA    #0 | (1 << 8)
+  INVOKE __aobascript_Composer_FadeScreen
+  INVOKE __aobascript_Composer_WaitForFadeReady
+end
+
+def fastboot_hotfix
+  INVOKE __aobascript_MainMenu_EnableSceneMode
+
+  LDA    #10
+  INVOKE __aobascript_Script_Delay
+
+  LDA16  #__asset("Image16", "intro", "address")
+  LDX    #$8000
+  INVOKE __aobascript_Image_LoadTiles
+  LDX    #$7800
+  INVOKE __aobascript_Image_LoadTilemap
+
+  LDA16  #__asset("LevelPalettes", "logo", "address")
+  INVOKE __aobascript_Palette_LoadTilemapPalette
+
+  LDA16  #__asset("Image16", "mainmenu", "address")
+  LDX    #$7000
+  INVOKE __aobascript_Image_LoadTilemap
+  LDX    #$0000
+  INVOKE __aobascript_Image_LoadTiles
+  JSR   boot_engine
+
+  LDA    #0 | 0
+  INVOKE __aobascript_Composer_FadeScreen
+  INVOKE __aobascript_Composer_WaitForFadeReady
+end
+
+def boot_engine
+  INVOKE __aobascript_Game_Initialize
+  INVOKE __aobascript_GameVar_Initialize
+  INVOKE __aobascript_GameVar_ResetPersistent
+
+  LDA16  #level_list
+  STA16  __engine_variable("Game.Scene.StageSelect.level_list_pointer")
+  LDA8   #level_list.to_sym >> 16
+  STA8   __engine_variable("Game.Scene.StageSelect.level_list_pointer") + 2
+
+  Audio.Initialize
+  Audio.SetupEcho delay: 5, feedback: $38, volume: $DC
+  
+  LDA    #25
+  INVOKE __aobascript_Script_Delay
+
+  Audio.SetDefaultSfx :menu_select, :menu_select
+  Audio.SetMasterVolume 127
+  Audio.SetSfxVolume 127
+  Audio.SetSfxLibrary "default"
+end
+
+export def start_mainmenu
+  INVOKE __aobascript_MainMenu_EnableHdmaMode
+  INVOKE __aobascript_MainMenu_EnableSceneMode
+;  INVOKE __aobascript_Composer_SetScreenMode
+
+;  LDA    #10
+;  INVOKE __aobascript_Script_Delay
+
+  LDA    #$C000
+  INVOKE __aobascript_PPU_SetObjAddress
+
+  LDA    #$7000
+  INVOKE __aobascript_PPU_SetBg2TilemapAddress
+  LDA    #0
+  INVOKE __aobascript_PPU_SetBg2TileAddress
+  INVOKE __aobascript_PPU_SetObjSize
+  INVOKE __aobascript_PPU_SetBgMainScreen
+  INVOKE __aobascript_PPU_SetBgSubScreen
+
+  LDA   #0
+  INVOKE __aobascript_PPU_SetBg1ScrollX
+  INVOKE __aobascript_PPU_SetBg2ScrollX
+  INVOKE __aobascript_PPU_SetBg1TilemapSize
+  INVOKE __aobascript_PPU_SetBg2TilemapSize
+
+  LDA   #255
+  INVOKE __aobascript_PPU_SetBg1ScrollY
+  INVOKE __aobascript_PPU_SetBg2ScrollY
+
+  LDA    #1
+  INVOKE __aobascript_PPU_SetBgMode
+  LDA    #0
+  INVOKE __aobascript_PPU_SetBgLarge
+  
+  LDA16  #__asset("Image16", "logo", "address")
+  LDX    #$8000
+  INVOKE __aobascript_Image_LoadTiles
+  LDX    #$7800
+  INVOKE __aobascript_Image_LoadTilemap
+  LDA    #$8000
+  INVOKE __aobascript_PPU_SetBg1TileAddress
+  LDA    #$7800
+  INVOKE __aobascript_PPU_SetBg1TilemapAddress
+
+  LDA16  #mainmenu_close
+  STA16  __engine_variable("Game.Scene.MainMenu.after_scene_script")
+  LDA8   #mainmenu_close.to_sym >> 16
+  STA8   __engine_variable("Game.Scene.MainMenu.after_scene_script_bank")
+
+  INVOKE __aobascript_MainMenuPerspective_StartParticleEffect
+
+  INVOKE __aobascript_Effect_FadeIn
+
+  LDA16  #__asset("Stream", "welcome", "address")
+  INVOKE __aobascript_Audio_PlayStream
+
+  LDA   #32
+  INVOKE __aobascript_Script_Delay
+
+  INVOKE __aobascript_MainMenu_StartThread
+  INVOKE __aobascript_MainMenu_WaitForThreadReady
+end
+
+export def mainmenu_close
+  INVOKE __aobascript_Effect_FadeOut
+  INVOKE __aobascript_MainMenuPerspective_StopParticleEffect
+  INVOKE __aobascript_Composer_DisableHdmaMode
+  JMP    start_stageselect
+end
+
+export def stageselect_startlevel
+  ;LDA16  #0
+  ;INVOKE __aobascript_Audio_FadeSongToVolume
+  INVOKE __aobascript_Audio_StopSong
+
+  LDA16  #__asset("Stream", "start", "address")
+  INVOKE __aobascript_Audio_PlayStream
+
+  LDA   #32
+  INVOKE __aobascript_Script_Delay
+
+  INVOKE __aobascript_Effect_FadeOut
+  JMP    start_ingame
+end
+
+export def feedback_close
+  LDA    #0 | (1 << 8)
+  INVOKE __aobascript_Composer_FadeScreen
+  INVOKE __aobascript_Composer_WaitForFadeReady
+  JMP    start_stageselect
+end
+
+export def stageselect_feedback
+  INVOKE __aobascript_Audio_StopSong
+
+  INVOKE __aobascript_Effect_FadeOut
+
+  INVOKE __aobascript_Composer_DisableHdmaMode
+
+  LDA16  #__asset("Image16", "feedback", "address")
+  JMP    _show_stageselect_submenu
+end
+
+export def stageselect_challenge
+  INVOKE __aobascript_Audio_StopSong
+
+  INVOKE __aobascript_Effect_FadeOut
+
+  INVOKE __aobascript_Composer_DisableHdmaMode
+
+  LDA16  #__asset("Image16", "challenge", "address")
+  JMP    _show_stageselect_submenu
+end
+
+def _show_stageselect_submenu
+  LDX    #$8000
+  INVOKE __aobascript_Image_LoadTiles
+  LDX    #$7800
+  INVOKE __aobascript_Image_LoadTilemap
+  LDA    #$8000
+  INVOKE __aobascript_PPU_SetBg1TileAddress
+  LDA    #$7800
+  INVOKE __aobascript_PPU_SetBg1TilemapAddress
+
+  LDA    #1
+  INVOKE __aobascript_PPU_SetBgMainScreen
+  INVOKE __aobascript_PPU_SetBgSubScreen
+
+  LDA   #0
+  INVOKE __aobascript_PPU_SetBg1ScrollX
+  INVOKE __aobascript_PPU_SetBg2ScrollX
+
+  LDA   #255
+  INVOKE __aobascript_PPU_SetBg1ScrollY
+  INVOKE __aobascript_PPU_SetBg2ScrollY
+
+  LDA    #15 | (1 << 8)
+  INVOKE __aobascript_Composer_FadeScreen
+  INVOKE __aobascript_Composer_WaitForFadeReady
+
+  LDA16  #feedback_close
+  STA16  __engine_variable("Game.Scene.MainMenu.after_scene_script")
+  LDA8   #feedback_close.to_sym >> 16
+  STA8   __engine_variable("Game.Scene.MainMenu.after_scene_script_bank")
+  INVOKE __aobascript_MainMenu_StartThread
+  INVOKE __aobascript_MainMenu_WaitForThreadReady
+end
+
+import __aobascript_StageSelect_EnableSceneMode
+import __aobascript_StageSelect_EnableHdmaMode
+import __aobascript_StageSelect_StartThread
+import __aobascript_Composer_SetScreenMode
+import __aobascript_StageSelect_WaitForThreadReady
+
+export def start_stageselect
+  INVOKE __aobascript_StageSelect_EnableHdmaMode
+  INVOKE __aobascript_StageSelect_EnableSceneMode
+  INVOKE __aobascript_Composer_SetScreenMode
+  
+  LDA8   #__asset("Song", "stageselect", "id")
+  INVOKE __aobascript_Audio_LoadSong 
+
+  LDA    #10
+  INVOKE __aobascript_Script_Delay
+
+  LDA24  #level_list
+
+  LDA    #1
+  INVOKE __aobascript_PPU_SetBgMode
+  LDA    #0
+  INVOKE __aobascript_PPU_SetBgLarge
+  INVOKE __aobascript_PPU_SetBg1TilemapSize
+  INVOKE __aobascript_PPU_SetBg2TilemapSize
+
+  LDA16  #__asset("UserInterfaceImage", "stageselect_bg", "address")
+  LDX    #$6800
+  INVOKE __aobascript_Image_LoadTilemap
+  LDX    #$8000
+  INVOKE __aobascript_Image_LoadTiles
+  LDA    #$6800
+  INVOKE __aobascript_PPU_SetBg3TilemapAddress
+  LDA    #$8000
+  INVOKE __aobascript_PPU_SetBg3TileAddress
+
+  LDA24  #(__asset("Image16", "stageselect", "address") & $FFFF) | (1 << 16)
+  LDX    #$7000
+  INVOKE __aobascript_Image_LoadTilemap
+  
+  LDA16  #__asset("Image16", "stageselect", "address")
+  LDX    #$7800
+  INVOKE __aobascript_Image_LoadTilemap
+  
+  LDX    #$0000
+  INVOKE __aobascript_Image_LoadTiles
+  LDA    #$7000
+  INVOKE __aobascript_PPU_SetBg1TilemapAddress
+  LDA    #$7800
+  INVOKE __aobascript_PPU_SetBg2TilemapAddress
+  LDA    #0
+  INVOKE __aobascript_PPU_SetBg1TileAddress
+  INVOKE __aobascript_PPU_SetBg2TileAddress
+
+  LDA16  #__asset("Palettes16", "stageselect_bg", "address")
+  LDX    #0
+  INVOKE __aobascript_Palette_LoadPaletteGroup
+
+  LDA16  #__asset("LevelPalettes", "stageselect", "address")
+  INVOKE __aobascript_Palette_LoadTilemapPalette
+
+  LDA    #$17
+  INVOKE __aobascript_PPU_SetBgMainScreen
+  INVOKE __aobascript_PPU_SetBgSubScreen
+
+  LDA   #0
+  INVOKE __aobascript_PPU_SetBg1ScrollX
+  INVOKE __aobascript_PPU_SetBg2ScrollX
+  INVOKE __aobascript_PPU_SetBg3ScrollX
+
+  LDA   #255
+  INVOKE __aobascript_PPU_SetBg1ScrollY
+  INVOKE __aobascript_PPU_SetBg2ScrollY
+  INVOKE __aobascript_PPU_SetBg3ScrollY
+
+  INVOKE __aobascript_StageSelect_StartThread
+  INVOKE __aobascript_StageSelect_WaitForThreadReady
+
+  ;LDA    #15 | (1 << 8)
+  ;INVOKE __aobascript_Composer_FadeScreen
+  ;INVOKE __aobascript_Composer_WaitForFadeReady
+  INVOKE __aobascript_Effect_FadeIn
+
+  INVOKE __aobascript_Audio_WaitForReadyEvent
+  LDA    #96
+  INVOKE __aobascript_Audio_PlaySong
+
+  LDA16  #__asset("Stream", "stageselect", "address")
+  INVOKE __aobascript_Audio_PlayStream
+
+  LDA    #0
+  STA16  __engine_variable("Game.Scene.StageSelect.wait_before_confirm")
+end
+
+import __aobascript_Game_Initialize
+import __aobascript_GameVar_Initialize
+import __aobascript_GameVar_ResetPersistent
+
+export def boot
+; temp;
+;  JSR   boot_engine
+;  LDA16 #__asset("Level", "debug", "address")
+;  LDA16 #__asset("Level", "tutorial", "address")
+;  STA16 __engine_variable("Game.level_to_load_address")
+;  JMP   start_ingame
+; /temp
+
+  ;JSR   fastboot_hotfix
+  ;JMP   start_stageselect
+
+  JSR   start_boot
+  JMP   start_mainmenu
+end

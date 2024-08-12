@@ -1,0 +1,26 @@
+module Aoba::Sprite::Collision::Pixel
+
+  module Flag
+    TOP_ROW_BITMASK      = $0007
+    COL_DIAG_TOPLEFT     = $0010
+    COL_DIAG_TOPRIGHT    = $0020
+    COL_DIAG_BOTTOMLEFT  = $0040
+    COL_DIAG_BOTTOMRIGHT = $0080
+    COL_DIAG_TOP         = $0030
+    COL_DIAG_BOTTOM      = $00C0
+    COL_DIAG_LEFT        = $0050
+    COL_DIAG_RIGHT       = $00A0
+    BOTTOM_ROW_BITMASK   = $0700
+
+    COL_TILE_HAS_TOP     = $0800
+    COL_TILE_TOPLEFT     = $1000
+    COL_TILE_TOPRIGHT    = $2000
+    COL_TILE_BOTTOMLEFT  = $4000
+    COL_TILE_BOTTOMRIGHT = $8000
+    COL_TILE_TOP         = $3000
+    COL_TILE_BOTTOM      = $C000
+    COL_TILE_LEFT        = $5000
+    COL_TILE_RIGHT       = $A000
+  end
+
+end

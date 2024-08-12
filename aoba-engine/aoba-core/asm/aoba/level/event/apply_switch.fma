@@ -1,0 +1,195 @@
+module Aoba::Level::Event::ApplySwitch
+
+  ;; The event
+  class Event < Base
+    ;; The address of the switch
+    declare :address, as: :uint16
+  end
+
+  ;; Temporary RAM
+  scope :TempRAM, in: ActionRAM
+
+  ;; Number of tiles
+  declare :num_tiles, as: :uint8, in: TempRAM
+
+  ;; Tile X position
+  declare :tile_x, as: :uint16, in: TempRAM
+
+  ;; Tile Y position
+  tile_y = tile_x + 1
+
+  ;; Tile index (top two bits are XY flip)
+  declare :tile_index, as: :uint16, in: TempRAM
+
+  ;; Current amount of bits left in layer bitmask
+  declare :layer_bits_left, as: :uint8, in: TempRAM
+
+  ;; Current layer bitmask
+  declare :layer_bitmask, as: :uint16, in: TempRAM
+
+  ;; Current script offset
+  declare :script_offset, as: :uint16, in: TempRAM
+
+  ;; The sender thread
+  declare :sender_thread_id, as: :uint8, in: TempRAM
+
+  macro create_for(tilemap_storage)
+    List.create "ApplySwitch" do |id|
+      Y.is_a! Event
+
+      LDX   Y[:address]
+
+      ;; Switches the to back which contains the switch configuration
+      CPU.set A: 8
+      LDA   Y[:sender_thread_id]
+      STA   dp(sender_thread_id)
+      PHB
+      LDA   level_switch_bank.long
+      PHA
+      PLB
+
+      ;; Reads the number of tiles
+      LDA   0, X
+      STA   dp(num_tiles)
+      CPU.set A: 16
+      AND   dp(x00FF)
+      PHX
+      Action::Modify.start
+      PLX
+      CPU.set A: 8
+      STZ   dp(layer_bits_left)
+
+    _loop:
+      ;; Tests the layer bitmask
+      DEC   dp(layer_bits_left)
+      BPL   _skip_read_layer_bitmask
+
+      ;; Reads the layer bitmask every 8 tiles
+    _read_layer_bitmask:
+      LDA   1, X
+      STA   dp(layer_bitmask)
+      LDA   #7
+      STA   dp(layer_bits_left)
+      INX
+
+    _skip_read_layer_bitmask:
+      ;; Read position depending on bit $80
+      LDA   1, X
+      BMI   _tile_position_relative
+
+      ;; Position is absolute
+    _tile_position_absolute:
+      STA   dp(tile_x)
+      LDA   2, X
+      PHA
+      AND   #$7F
+      STA   dp(tile_y)
+      INX
+      INX
+      PLA
+      BRA   _decompress_tile
+
+    _tile_position_relative:
+      ;; Position is relative
+      ;; 0rxxxyyy (where r defines whether)
+      STA   dp(calc0)
+      AND   #$7
+      CLC
+      ADC   dp(tile_y)
+      STA   dp(tile_y)
+
+      LDA   dp(calc0)
+      LSR   A
+      LSR   A
+      LSR   A
+      AND   #$7
+      BIT   #$04
+      BZE   _is_positive_x
+      ORA   #$F8
+    _is_positive_x:
+      CLC
+      ADC   dp(tile_x)
+      STA   dp(tile_x)
+      INX
+      LDA   dp(calc0)
+      ASL   A
+
+    _decompress_tile:
+      BMI   _tile_index_relative
+
+      ;; Tile index is absolute
+    _tile_index_absolute:
+      CPU.set A: 16
+      LDA   1, X
+      STA   dp(tile_index)
+      INX
+      INX
+      BRA   _write_tile_to_ram
+
+      ;; Tile index is relative
+      ;; XYrrrrrr
+    _tile_index_relative:
+      LDA   1, X
+      INX
+      STA   dp(calc0) + 1
+      CPU.set A: 16
+      AND   #$3F
+      BIT   #$20
+      BZE   _tile_index_relative_positive
+      ORA   #$FFC0
+    _tile_index_relative_positive:
+      CLC
+      ADC   dp(tile_index)
+      AND   #$3FFF
+      STA   dp(tile_index)
+      LDA   dp(calc0)
+      AND   #$C000
+      ORA   dp(tile_index)
+      
+    _write_tile_to_ram:
+      TAY
+      STX   dp(script_offset)
+      
+      ;; Reads the layer
+      LSR   dp(layer_bitmask)
+      BCC   _layer0
+    _layer1:
+      LDX   #tilemap_storage.tiles[tilemap_storage.layers_to_create.last]
+      BRA   _after_set_layer
+    _layer0:
+      LDX   #tilemap_storage.tiles[tilemap_storage.layers_to_create.first]
+    _after_set_layer:
+
+      ;; Commits the change
+      LDA   dp(tile_x)
+      Action::Modify.add
+
+      ;; Resumes with the next item
+      CPU.set A: 8
+      LDX   dp(script_offset)
+      DEC   dp(num_tiles)
+      BZE   _end_of_data
+      JMP   _loop
+
+    _end_of_data:
+      PLB
+
+      ;; Sends the ready event
+      LDA   #Aoba::Thread::Event::READYEVENT_ID
+      JSL   Aoba::Thread::Event.allocate_icb_long
+      X.is_a! Aoba::Thread::Event::ReadyEvent
+      LDA   #id | $80
+      STA   X[:event_id]
+      LDA   dp(sender_thread_id)
+      JSL   Aoba::Thread.send_event_icb_long
+      CPU.set A: 16
+
+      ;; Releases the buffer someday~
+      Action::Modify.finish
+    end
+  end
+
+  ;; The ready ID
+  ;READY_ID = ID | $80
+
+end

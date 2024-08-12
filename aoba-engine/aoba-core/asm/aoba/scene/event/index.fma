@@ -1,0 +1,20 @@
+module Aoba::Scene::Event
+  class Base < Aoba::Thread::Event::Base
+    declare :event_id, as: :uint8
+  end
+
+  List = Aoba::Thread::EventHandlerList.new(SCENE_ROM_BANK)
+end
+
+require "execute_script"
+require "set_scene_mode"
+
+module Aoba::Scene::Event
+
+  datablock routines
+    dw   ExecuteScript.event_handler ; 1
+    dw   SetSceneMode.event_handler  ; 2
+  end
+  
+  MAX_EVENT_ID = 2
+end

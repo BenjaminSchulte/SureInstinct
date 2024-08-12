@@ -1,0 +1,16 @@
+module Aoba::Composer::Hdma
+
+  macro __create_hdma_script_commands(name, mode)
+    Aoba::Script.callback "#{name}_EnableHdmaMode", bank: COMPOSER_ROM_BANK do
+      LDA   #mode.id
+      Debug.allow_invalid_ram_access 2
+      LDX   dp(Aoba::Script.register_c0)
+      JSL   Api.set_hdma_mode_long
+    end
+  end
+
+  Aoba::Script.callback "Composer_DisableHdmaMode", bank: COMPOSER_ROM_BANK do
+    LDA   #DisabledMode.id
+    JSL   Api.set_hdma_mode_long
+  end
+end

@@ -1,0 +1,108 @@
+module Aoba::Scene
+  ;; The event handler
+  ;; @ignore-thread-safety
+  def event_handler
+    PHX
+    
+    ;; Tests how to handle the event
+    CPU.set A: 8
+    X.is_a! Event::Base
+    LDA   X[:event_bitmask]
+    ASL   A
+    BMI   _system_event
+    BCS   _system_event
+    LDA   X[:sender_thread_id]
+    BPL   _invoke_custom_event
+
+    ;; The event has been sent from a timer or other
+    Debug.BRK
+    CPU.set A: 16
+    BRA   _end_of_routine
+
+    ;; --
+
+  _system_event:
+    Debug.warn "+++ Thread {byte(long(add(word(long(add(D,$FE),#{FIXED_RAM_BANK})),2),#{VARIABLE_RAM_BANK}))}: SKIP SYSTEM EVENT {X}"
+    PLX
+    CPU.set A: 16
+    RTS
+
+    ;; --
+
+    A.pretend_size 8
+
+    ;; Invoke the thread by a default event handler
+  _invoke_custom_event:
+    TXY
+    LDA   X[:event_id]
+    CPU.set A: 16
+    AND   dp(x00FF)
+    DEC   A
+    Debug.test_A_less_than Event::List.max_event_id, "IngameScene Event ID out of range"
+    ASL   A
+    TAX
+    JSR   Event::List.routines.indirect, X
+
+  _end_of_routine:
+    PLX
+  end
+
+
+  ;; Thread entry point
+  ;; @ignore-thread-safety
+  def main
+    CLI
+
+    ;; Marks this thread to be ready
+    CPU.set A: 8
+    LDA   Memory::active_thread_id
+    STA   thread_id
+    Debug.profile_introduce 8
+    Debug.info "Thread {A}: IngameScene Thread"
+    CPU.set A: 16
+
+    ;; Start dependend threads
+    ;; TODO: Refactor this to Event.invoke :...
+    Aoba::TilesetThread.allocate_and_queue
+    Aoba::PaletteThread.allocate_and_queue
+    Aoba::ComposerThread.allocate_and_queue
+    Aoba::SpriteThread.allocate_and_queue
+    Aoba::FontThread.allocate_and_queue
+    Aoba::LevelThread.allocate_and_queue
+    Aoba::EffectThread.allocate_and_queue
+
+    ;; Initializes the thread
+    JSR   initialize_ram
+
+    ;; Wait for all threads
+    Aoba::Thread.wait_for_thread Aoba::Tileset.thread_id
+    Aoba::Thread.wait_for_thread Aoba::Palette.thread_id
+    Aoba::Thread.wait_for_thread Aoba::Composer.thread_id
+    Aoba::Thread.wait_for_thread Aoba::Sprite.thread_id
+    Aoba::Thread.wait_for_thread Aoba::Font.thread_id
+    Aoba::Thread.wait_for_thread Aoba::Level.thread_id
+    Aoba::Thread.wait_for_thread Aoba::EffectThread.thread_id
+
+  _loop:
+    LDA   #$FE
+    JSL   Thread.wait_for_event_icb_long
+    event_handler
+    JSL   Thread::Event.free_icb_long
+    BRA   _loop
+  end
+end
+
+module Aoba
+  SceneThread = Thread.new "Scene" do
+    locate_at bank: SCENE_ROM_BANK
+    priority SCENE_PRIORITY
+
+    execute do
+      Scene::main
+    end
+  end
+end
+
+Aoba::Event.on :system_initialize_A8_VARRAM do
+  STZ   Aoba::Scene.thread_id
+end

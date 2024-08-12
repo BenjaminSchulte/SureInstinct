@@ -1,0 +1,6 @@
+require "registers"
+require "vram"
+require "palette"
+require "background"
+require "oam"
+require "screen"

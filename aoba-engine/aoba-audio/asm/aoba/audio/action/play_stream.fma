@@ -1,0 +1,277 @@
+module Aoba::Audio::Action::PlayStream
+
+  ;; Stream flags
+  declare :stream_flags, as: :uint8, in: ::Memory::VariableRAM
+
+  ;; Blocks per frame
+  declare :blocks_per_frame, as: :uint8, in: ::Memory::VariableRAM
+
+  ;; The number of blocks to write
+  declare :num_stream_blocks, as: :uint16, in: ::Memory.VariableRAM
+
+  ;; The stream pointer
+  declare :stream_pointer, as: :uint24, in: ::Memory::VariableRAM
+
+  ;; Temporary RAM
+  scope :TempRAM, in: ActionRAM
+
+  ;; Plays the stream
+  ;;
+  ;; @param X stream address
+  ;; @param YL panning
+  ;; @param YH volume
+  invoke_icb = create_sa1_ram_routine bank: AUDIO_ROM_BANK do
+    A.pretend_size 8
+
+    when_ready_SEI VARIABLE_RAM_BANK do
+      ;; TODO: volume and padding is being ignored yet
+
+      ;; Configures the start stream command
+      LDA   STREAM_DATA_BANK.as_bank(0).long, X
+      STA   blocks_per_frame
+      STA   CPU.APUIO1.long
+      CPU.set A: 16
+      LDA   STREAM_DATA_BANK.as_bank(1).long, X
+      STA   CPU.APUIO2.long
+      CPU.set A: 8
+      LDA   #1
+      STA   stream_flags
+      
+      ;; Starts the stream
+      LDA   last_ipc_value
+      AND   #IPC.IPC_TOGGLE_BIT
+      EOR   #IPC.IPC_TOGGLE_BIT | IPC.CMD_START_STREAM
+      STA   CPU.APUIO0.long
+      STA   last_ipc_value
+
+      LDA   STREAM_DATA_BANK.as_bank(7).long, X
+      STA   stream_pointer + 2
+      CPU.set A: 16
+      LDA   STREAM_DATA_BANK.as_bank(3).long, X
+      STA   num_stream_blocks
+      LDA   STREAM_DATA_BANK.as_bank(5).long, X
+      STA   stream_pointer
+
+      CPU.set A: 8
+      unsafe_wait_for_ready VARIABLE_RAM_BANK
+      CPU.set A: 16
+    end
+    RTS
+  end
+
+  ;; Copy 4 byte data to audio engine
+  macro __copy_data(offset)
+    LDA   offset, Y
+    STA   dp(CPU.APUIO0)
+    LDA   offset+1, Y
+    STA   dp(CPU.APUIO1)
+    LDA   offset+2, Y
+    STA   dp(CPU.APUIO2)
+    LDA   offset+3, Y
+    STA   dp(CPU.APUIO3)
+  end
+
+  ;; Adjusts the stream pointer for the next frame
+  macro _adjust_stream_pointer(size)
+    CPU.set A: 16
+    LDA   stream_pointer.long
+    CLC
+    ADC   #size
+    STA   stream_pointer.long
+    CPU.set A: 8
+  end
+
+  ;; Waits for a positive response
+  macro _wait_for_positive
+  _loop:
+    LDA   dp(CPU.APUIO0)
+    BMI   _loop
+  end
+
+  ;; Waits for a negative response
+  macro _wait_for_negative
+  _loop:
+    LDA   dp(CPU.APUIO0)
+    BPL   _loop
+  end
+
+  ;; Sends after waiting for positive
+  macro _send_when_positive(offset)
+    _wait_for_positive
+    __copy_data offset
+  end
+
+  ;; Sends after waiting for negative
+  macro _send_when_negative(offset)
+    _wait_for_negative
+    __copy_data offset
+  end
+
+  ;; Copy 16 blocks of data to the APU
+  @locate_at bank: SYSTEM_ROM_BANK
+  def _copy_144_bytes
+    9.times do |i|
+      _send_when_negative $00 * 4 + i * $10
+      _send_when_positive $01 * 4 + i * $10
+      _send_when_negative $02 * 4 + i * $10
+      _send_when_positive $03 * 4 + i * $10
+    end
+
+    _adjust_stream_pointer $24 * 4
+
+    _wait_for_negative
+  end
+
+  ;; Copy 12 blocks of data to the APU
+  @locate_at bank: SYSTEM_ROM_BANK
+  def _copy_108_bytes
+    6.times do |i|
+      _send_when_negative $00 * 4 + i * $10
+      _send_when_positive $01 * 4 + i * $10
+      _send_when_negative $02 * 4 + i * $10
+      _send_when_positive $03 * 4 + i * $10
+    end
+
+    ; Final block
+    _send_when_negative $18 * 4
+    _send_when_positive $19 * 4
+    _send_when_negative $1A * 4
+
+    _adjust_stream_pointer $1B * 4
+
+    _wait_for_positive
+  end
+
+  ;; Copy 8 blocks of data to the APU
+  @locate_at bank: SYSTEM_ROM_BANK
+  def _copy_72_bytes
+    4.times do |i|
+      _send_when_negative $00 * 4 + i * $10
+      _send_when_positive $01 * 4 + i * $10
+      _send_when_negative $02 * 4 + i * $10
+      _send_when_positive $03 * 4 + i * $10
+    end
+
+    ; Final block
+    _send_when_negative $10 * 4
+    _send_when_positive $11 * 4
+
+    _adjust_stream_pointer $12 * 4
+
+    _wait_for_negative
+  end
+
+  ;; Copy 4 blocks of data to the APU
+  @locate_at bank: SYSTEM_ROM_BANK
+  def _copy_36_bytes
+    2.times do |i|
+      _send_when_negative $00 * 4 + i * $10
+      _send_when_positive $01 * 4 + i * $10
+      _send_when_negative $02 * 4 + i * $10
+      _send_when_positive $03 * 4 + i * $10
+    end
+
+    ; Final block
+    _send_when_negative $08 * 4
+
+    _adjust_stream_pointer $09 * 4
+
+    _wait_for_positive
+  end
+
+  ;; Addresses of copy commands
+  @locate_at bank: SYSTEM_ROM_BANK
+  datablock _copy_data_pointers
+    dw   0
+    dw   _copy_36_bytes
+    dw   _copy_72_bytes
+    dw   _copy_108_bytes
+    dw   _copy_144_bytes
+  end
+
+  ;; Updates the stream on VBLANK
+  @locate_at bank: SYSTEM_ROM_BANK
+  def vblank_update
+    LDA   stream_flags
+    BMI   _end_of_stream
+    BNZ   _send_stream_data
+    RTS
+
+    ;; Ends the stream
+  _end_of_stream:
+    unsafe_wait_for_ready VARIABLE_RAM_BANK
+
+    LDA   last_ipc_value
+    AND   #IPC.IPC_TOGGLE_BIT
+    EOR   #IPC.IPC_TOGGLE_BIT | IPC.CMD_STOP_STREAM
+    STA   CPU.APUIO0.long
+    STA   last_ipc_value
+
+    STZ   stream_flags
+  _rts:
+    RTS
+
+    ;; Sends the next stream data
+  _send_stream_data:
+    ;; Checks whether the mutex is locked
+    LDA   Mutex.state
+    BNZ   _rts
+
+    Debug.only do
+      LDA   Audio.thread_id
+      Debug.profile_thread_enter
+    end
+
+    unsafe_wait_for_ready VARIABLE_RAM_BANK
+    
+    ;; Sets up stream address
+    CPU.set A: 16
+    LDA   stream_pointer
+    TAY
+    CPU.set A: 8
+
+    ;; X = blocks per frame
+    LDA   #0
+    XBA
+    LDA   blocks_per_frame
+    TAX
+
+    ;; Sets up stream source bank for copy
+    PHB
+    LDA   stream_pointer + 2
+    PHA
+    PLB
+
+    ;; Stream command
+    LDA   #$80
+    STA   dp(CPU.APUIO0)
+    JSR   _copy_data_pointers.indirect, X
+
+    ;; Reset APUIO
+    LDA   dp(CPU.APUIO0)
+    AND   #$7F
+    STA   dp(CPU.APUIO0)
+    PLB
+    STA   last_ipc_value
+
+    ;; Tests blocks to continue
+    CPU.set A: 16
+    DEC   num_stream_blocks
+    CPU.set A: 8
+    BNZ   _return
+
+  _stop_next_time:
+    LDA   #$80
+    STA   stream_flags
+
+  _return:
+  end
+
+
+
+  ;; Clear stream flags on initialize
+  Aoba::Event.on :system_initialize_A8_VARRAM do
+    STZ   stream_flags
+  end
+
+end

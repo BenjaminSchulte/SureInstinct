@@ -1,0 +1,386 @@
+
+
+# --------------------------------------------------------
+samples:
+  Sample:
+    stream_bytes_per_frame:
+      - 36
+      - 72
+      - 108
+      - 144
+
+# --------------------------------------------------------
+instruments:
+  Instrument:
+    samples: Sample
+    instrument_bank: 0xC4
+
+# --------------------------------------------------------
+streams:
+  Stream:
+    samples: Sample
+    stream_bank: 0xC4
+
+# --------------------------------------------------------
+songs:
+  Song:
+    instruments: Instrument
+
+
+# --------------------------------------------------------
+sfx:
+  Sfx:
+    instruments: Instrument
+
+# --------------------------------------------------------
+sfx_library:
+  SfxLib:
+    sfx: Sfx
+
+palettes:
+  Palette4:
+    num_colors: 4
+    rom_data_bank: 0xC4
+  Palette16:
+    num_colors: 16
+    rom_data_bank: 0xC4
+  IcePalette:
+    num_colors: 224
+    transparence: false
+    compression: simple_palette
+
+palette_groups:
+  LevelPalettes:
+    palette: Palette16
+    palette_base: 2
+    components:
+      - component: animation
+        id: animations
+  Palettes4:
+    palette: Palette4
+  Palettes16:
+    palette: Palette16
+  SpritePalettes:
+    palette: Palette16
+
+tile_flag_groups:
+  CollisionProperties:
+    data_size: 16
+    generate:
+      - numeric_parameter: collidable
+    parameter:
+      collidable:
+        type: boolean
+        name: Collidable
+        defaults_to: true
+        true_value: 0
+        false_value: 0x8000
+
+  TileFlagGroup:
+    data_size: 8
+    generate:
+      - numeric_parameter: field_type
+    parameter:
+      field_type:
+        type: enum
+        name: Floor type
+        defaults_to: none
+        values:
+          # Hit events + Special events
+          none:           {id: 0x00, name: Floor}
+          laser:          {id: 0x01, name: Laser}
+          door_red:       {id: 0x04, name: door red}
+          door_green:     {id: 0x05, name: door green}
+          door_blue:      {id: 0x06, name: door blue}
+          door_yellow:    {id: 0x07, name: door yellow}
+          brokenwall_3v:  {id: 0x08, name: broken wall 3 vertical}
+          brokenwall_2v:  {id: 0x09, name: broken wall 2 vertical}
+          brokenwall_1v:  {id: 0x0A, name: broken wall 1 vertical}
+          brokenwall_3h:  {id: 0x0B, name: broken wall 3 horizontal}
+          brokenwall_2h:  {id: 0x0C, name: broken wall 2 horizontal}
+          brokenwall_1h:  {id: 0x0D, name: broken wall 1 horizontal}
+
+
+          # Enter events
+          abyss:         {id: 0x40, name: abyss}
+          switch:        {id: 0x41, name: switch}
+          exit:          {id: 0x42, name: exit}
+          perspective:   {id: 0x43, name: change perspective}
+          key_red:       {id: 0x44, name: key red}
+          key_blue:      {id: 0x45, name: key blue}
+          key_green:     {id: 0x46, name: key green}
+          key_yellow:    {id: 0x47, name: key yellow}
+          gem_red:       {id: 0x48, name: gem red}
+          gem_blue:      {id: 0x49, name: gem blue}
+          gem_green:     {id: 0x4A, name: gem green}
+          gem_yellow:    {id: 0x4B, name: gem yellow}
+          coin100:       {id: 0x4C, name: coin 100}
+          coin200:       {id: 0x4D, name: coin 200}
+          coin300:       {id: 0x4E, name: coin 300}
+          coin500:       {id: 0x4F, name: coin 500}
+          ice:           {id: 0x50, name: Ice}
+          switch1:       {id: 0x51, name: Switch 1}
+          switch2:       {id: 0x52, name: Switch 2}
+          switch3:       {id: 0x53, name: Switch 3}
+          switch4:       {id: 0x54, name: Switch 4}
+          pricetagfree:  {id: 0x60, name: Price free}
+          pricetag100:   {id: 0x61, name: Price 100}
+          pricetag200:   {id: 0x62, name: Price 200}
+          pricetag300:   {id: 0x63, name: Price 300}
+          pricetag500:   {id: 0x64, name: Price 500}
+          pricetag900:   {id: 0x65, name: Price 900}
+          pricetag1000:  {id: 0x66, name: Price 1000}
+          itembomb:      {id: 0x70, name: Item bomb}
+          itemparachute: {id: 0x71, name: Item parachute}
+          itembridge:    {id: 0x72, name: Item bridge}
+          itemspeed:     {id: 0x73, name: Item speed}
+          itemiceball:   {id: 0x74, name: Item ice ball}
+          itemmetalball: {id: 0x75, name: Item metal ball}
+
+          # Leave events
+          broken_3:      {id: 0x80, name: Broken 3}
+          broken_2:      {id: 0x81, name: Broken 2}
+          broken_1:      {id: 0x82, name: Broken 1}
+          onesidewall_h: {id: 0x83, name: Onesidewall H}
+          onesidewall_v: {id: 0x84, name: Onesidewall V}
+
+          # Sprite-generators
+          fan:           {id: 0xA0, name: Fan}
+          fire_tower:    {id: 0xA1, name: Fire tower}
+          
+          # Move events
+          arrow_left:     {id: 0xC1, name: Arrow left}
+          arrow_right:    {id: 0xC2, name: Arrow right}
+          arrow_up:       {id: 0xC3, name: Arrow up}
+          arrow_down:     {id: 0xC4, name: Arrow down}
+          item_speed:     {id: 0xC5, name: Item speed}
+          item_wall:      {id: 0xC6, name: Item wall}
+          item_bomb:      {id: 0xC7, name: Item bomb}
+          item_ice:       {id: 0xC8, name: Item ice}
+          item_parachute: {id: 0xC9, name: Item parachute}
+          item_pickaxe:   {id: 0xCA, name: Item pickaxe}
+          item_cost100:   {id: 0xCB, name: Cost 100}
+          item_cost300:   {id: 0xCC, name: Cost 300}
+          item_cost500:   {id: 0xCD, name: Cost 500}
+          item_cost900:   {id: 0xCE, name: Cost 900}
+          acid:           {id: 0xCF, name: Acid}
+          spikes:         {id: 0xD0, name: Spikes}
+          bomb_field:     {id: 0xD1, name: bomb field}
+
+images:
+  UserInterfaceImage:
+    header_rom_bank: 0xC3
+    tilemap: UserInterfaceTilemap4
+    variants:
+      - id: default
+      - id: additional
+  Image16:
+    header_rom_bank: 0xC3
+    tilemap: UserInterfaceTilemap16
+    variants:
+      - id: default
+
+raw_images:
+  AbyssImage:
+    header_rom_bank: 0xC3
+    bg_tile_size: {x: 8, y: 8}
+    palette_group: LevelPalettes
+
+tilesets:
+  UserInterfaceTileset4:
+    header_rom_bank: 0xC3
+    max_bytes_per_compression_chunk: 0x1000
+    tile_size: {x: 8, y: 8}
+    bg_tile_size: {x: 8, y: 8}
+    tiles:
+      - id: main
+        palette_group: Palettes4
+        max_tiles: 320
+    layers:
+      - id: main
+        tiles: main
+        max_tiles: 320
+        type: direct
+
+  UserInterfaceTileset16:
+    header_rom_bank: 0xC3
+    max_bytes_per_compression_chunk: 0x1000
+    tile_size: {x: 8, y: 8}
+    bg_tile_size: {x: 8, y: 8}
+    tiles:
+      - id: main
+        palette_group: LevelPalettes
+        max_tiles: 1024
+    layers:
+      - id: main
+        tiles: main
+        type: direct
+        max_tiles: 1024
+
+  LevelTileset:
+    header_rom_bank: 0xC3
+    animation_rom_bank: 0xC3
+    max_bytes_per_compression_chunk: 0x1000
+    tile_size: {x: 16, y: 16}
+    bg_tile_size: {x: 8, y: 8}
+    tiles:
+      - id: main
+        palette_group: LevelPalettes
+        max_tiles: 768
+    layers:
+      - id: main
+        tiles: main
+        num_bgs: 2
+        type: tile_index
+        max_tiles: 256
+    modules:
+      - module: tile_flag_group
+        group: TileFlagGroup
+      - module: tile_bitplane2d
+        name: collision
+        max_size_in_bytes: 2048
+        properties: CollisionProperties
+
+      - module: tile_list
+        name: replacement_tiles
+        list_rom_bank: 0xC3
+        bytes_per_tile: 1
+      - module: tileset_animation
+
+tilemaps:
+  UserInterfaceTilemap4:
+    tileset: UserInterfaceTileset4
+    max_size: {x: 32, y: 64}
+    compression: lzw
+    layers:
+      - id: main
+        tileset_layer: main
+
+  UserInterfaceTilemap16:
+    tileset: UserInterfaceTileset16
+    max_size: {x: 32, y: 32}
+    compression: lzw
+    layers:
+      - id: main
+        tileset_layer: main
+
+  LevelTilemap:
+    tileset: LevelTileset
+    max_size: {x: 100, y: 100}
+    compression: tilemap_tiles
+    layers:
+      - id: top
+        name: Top side
+        tileset_layer: main
+      - id: bottom
+        name: Bottom side
+        tileset_layer: main
+        editor:
+          mirror_y: true
+
+levels:
+  Level:
+    header_rom_bank: 0xC4
+    
+    components:
+      - component: tilemap
+        id: tilemap
+        tilemap: LevelTilemap
+        render_order:
+          - {name: "Bottom side", layer: bottom, target: all}
+          - {name: "Top side", layer: top, target: all}
+      - component: palette_group
+        id: palette
+        palette_group: LevelPalettes
+      - component: palette_group
+        id: top_palette
+        palette_group: LevelPalettes
+      - component: palette_group
+        id: bottom_palette
+        palette_group: LevelPalettes
+      - component: palette_group
+        id: pause_palette
+        palette_group: LevelPalettes
+      - component: custom_properties
+        id: custom_properties
+        properties:
+          - {id: name, type: text, name: Name, translatable: true, fonts: [system]}
+          - {id: start_position, type: position, name: Start position}
+          - {id: stage, type: text, name: Stage, fonts: [system]}
+          - {id: stage_index, type: number, name: Stage index}
+
+
+# --------------------------------------------------------
+variable_fonts:
+  VariableFont:
+
+# --------------------------------------------------------
+monospace_fonts:
+  MonospaceFont:
+    letter_width: 8
+    letter_height: 8
+
+# --------------------------------------------------------
+sprite_animation_indexes:
+  EmptyAnimationIndex:
+    directions:
+      - right
+      - up
+      - left
+      - down
+    animations:
+    animation_script_bank: 0xC4
+    frame_reference_bank: 0xC4
+
+  GeneralAnimationIndex:
+    extends: EmptyAnimationIndex
+    frame_groups:
+      - custom_frame_group
+    animations:
+      - stand
+    fallback_animation: stand
+
+  BallAnimationIndex:
+    extends: EmptyAnimationIndex
+    frame_groups:
+      - roll_normal
+
+  ItemAnimationIndex:
+    extends: EmptyAnimationIndex
+    animations:
+      - grid
+      - parachute
+      - pause
+      - bridge
+
+
+# --------------------------------------------------------
+sprite_types:
+  CommonSprite:
+    animation_index: GeneralAnimationIndex
+  BallSprite:
+    animation_index: BallAnimationIndex
+  ItemSprite:
+    animation_index: ItemAnimationIndex
+
+# --------------------------------------------------------
+sprites:
+  MapSprite:
+    palette_group: SpritePalettes
+    small: 8
+    large: 16
+    frame_bank: 0xCC
+    animation_bank: 0xCD
+    palette_offset: 0
+
+# --------------------------------------------------------
+characters:
+  Character:
+    header_rom_bank: 0xC4
+    id: "Game::Map::CharacterLoader"
+    components:
+      - component: sprite
+        id: sprite
+        sprite: MapSprite
+      - component: flags
+        id: flags

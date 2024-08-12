@@ -1,0 +1,12 @@
+module Aoba::Composer::Hdma
+
+  ;; Maximum number of HDMA channels
+  NUM_HDMA_CHANNEL = 7
+
+  ;; The first HDMA channel
+  FIRST_HDMA_CHANNEL = 1
+
+  ;; Bytes per HDMA channel header
+  HDMA_CHANNEL_HEADER_SIZE = $20
+  
+end

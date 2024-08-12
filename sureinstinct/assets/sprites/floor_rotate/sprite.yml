@@ -1,0 +1,51 @@
+type: CommonSprite
+
+frames:
+  vert1: {images: [{image: 0}]}
+  vert2: {images: [{image: 1}]}
+  vert3: {images: [{image: 2}]}
+  vert4: {images: [{image: 3}]}
+  vert5: {images: [{image: 4}]}
+  vert6: {images: [{image: 5}]}
+  vert7: {images: [{image: 6}]}
+  hor1: {images: [{image: 7}]}
+  hor2: {images: [{image: 8}]}
+  hor3: {images: [{image: 9}]}
+  hor4: {images: [{image: 10}]}
+  hor5: {images: [{image: 11}]}
+  hor6: {images: [{image: 12}]}
+  hor7: {images: [{image: 13}]}
+
+animations:
+  stand_down:
+    - frame: vert1
+      delay: 2
+    - frame: vert2
+      delay: 2
+    - frame: vert3
+      delay: 2
+    - frame: vert4
+      delay: 2
+    - frame: vert5
+      delay: 2
+    - frame: vert6
+      delay: 2
+    - frame: vert7
+      delay: 2
+    - action: destroy_self
+  stand_right:
+    - frame: hor1
+      delay: 2
+    - frame: hor2
+      delay: 2
+    - frame: hor3
+      delay: 2
+    - frame: hor4
+      delay: 2
+    - frame: hor5
+      delay: 2
+    - frame: hor6
+      delay: 2
+    - frame: hor7
+      delay: 2
+    - action: destroy_self

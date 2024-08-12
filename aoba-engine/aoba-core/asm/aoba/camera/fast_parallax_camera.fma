@@ -1,0 +1,165 @@
+module Aoba::Camera
+
+  ;; Camera flag
+  module ParallaxFlag
+    SLOW_CAMERA_BG1_X = $01
+    LOCK_CAMERA_BG1_X = $02
+    SLOW_CAMERA_BG2_X = $04
+    LOCK_CAMERA_BG2_X = $08
+    SLOW_CAMERA_BG1_Y = $10
+    LOCK_CAMERA_BG1_Y = $20
+    SLOW_CAMERA_BG2_Y = $40
+    LOCK_CAMERA_BG2_Y = $80
+  end
+
+  class FastParallaxCameraBuilder < BaseBuilder
+    macro use_temporary(calc32)
+      @camera._calc32a = calc32
+    end
+
+    macro add_layer(id, speed)
+      @camera.layer_order <<= id
+      @camera.layer_speed[id] = speed
+    end
+  end
+
+  class FastParallaxCamera < Base
+    macro initialize
+      super
+
+      @_calc32a = nil
+      @flags = MemoryVariable.new("camera_flags", as: :uint8, in: @RAM)
+
+      @layer_order = []
+      @layer_speed = {}
+      @layer_x = {}
+      @layer_y = {}
+    end
+
+    macro finalize
+      super
+
+      @x = @parent_camera.x
+      @y = @parent_camera.y
+
+      _self = self
+      @layer_order.each do |id|
+        _self.layer_x[id] = MemoryVariable.new("camera_x_#{id}", as: :uint16, in: _self.RAM)
+        _self.layer_y[id] = MemoryVariable.new("camera_y_#{id}", as: :uint16, in: _self.RAM)
+      end
+
+      if @_calc32a.nil?
+        raise "Please provide a temporary variable"
+      end
+    end
+
+    macro has_variable_layer_option?
+      true
+    end
+
+    ;; Calculates BG scroll axis
+    macro __calculate_bg_scroll_axis
+      LSR   dp(@_calc32a)
+      BCS   _slow_camera
+      LSR   dp(@_calc32a)
+      BCC   _no_camera_feature
+    
+    _lock_camera:
+      LDA   #0
+      BRA   _no_camera_feature
+
+    _slow_camera:
+      LSR   dp(@_calc32a)
+      LSR   A
+      
+    _no_camera_feature:
+    end
+
+
+    ;; Updates the variable layer (code)
+    routine :_update_variable_layer do
+      _self = self
+      LDX   @x
+      LDY   @y
+
+      LDA   @flags
+      AND   #$FF
+      BZE   _fast_scroll
+      STA   dp(@_calc32a)
+
+      @layer_order.each do |id|
+        TXA
+        __calculate_bg_scroll_axis
+        STA   _self.layer_x[id]
+      end
+      
+      _last_id = nil
+      @layer_order.each do |id|
+        TYA 
+        _last_id = id
+        __calculate_bg_scroll_axis
+        STA   _self.layer_y[id]
+      end
+
+      if @layer_order.size == 2
+        CMP   @layer_y[@layer_order[0]]
+        BNE   _is_special_scroll
+        LDA   @layer_x[@layer_order[0]]
+        CMP   @layer_x[@layer_order[1]]
+        BEQ   _no_special_flags
+      else
+        raise "Parallax camera with other than 2 layers is not supported yet"
+      end
+      
+    _is_special_scroll:
+      SEC
+      RTS
+
+      ;; --
+
+    _fast_scroll:
+      @layer_order.each do |id|
+        STX   _self.layer_x[id]
+      end
+      @layer_order.each do |id|
+        STY   _self.layer_y[id]
+      end
+
+    _no_special_flags:
+      CLC
+      RTS
+    end
+
+    routine :_update_composer_scrolling do
+      LDA   @layer_x[:bg].long
+      TAX
+      LDA   @layer_y[:bg].long
+      TAY
+      JSL   Aoba::Composer::Api.update_scrolling_bg2_long
+
+      LDA   @layer_x[:fg].long
+      TAX
+      LDA   @layer_y[:fg].long
+      TAY
+      JSL   Aoba::Composer::Api.update_scrolling_bg1_long
+    end
+
+    macro update_composer_scrolling
+      _update_composer_scrolling
+    end
+
+    ;; Returns BCC if parallax mode is not necessary
+    macro update_variable_layer
+      _update_variable_layer
+    end
+
+    macro self.create(&block)
+      camera = FastParallaxCamera.new
+      builder = FastParallaxCameraBuilder.new(camera)
+      block.call with_context builder
+      camera.finalize
+      return camera
+    end
+  end
+
+end

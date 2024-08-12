@@ -1,0 +1,25 @@
+module Aoba::Scene::Api
+
+  ;; @param A address
+  ;; @param X bank
+  ;; @ignore-thread-safety
+  def execute_script_long
+    PHA
+    PHX
+
+    ;; Sends the set_scene_mode event to the scene
+    LDA   #Aoba::Thread::Event::USEREVENT_ID
+    JSL   Aoba::Thread::Event.allocate_icb_long
+    X.is_a! Aoba::Scene::Event::ExecuteScript::Event
+    LDA   #Aoba::Scene::Event::ExecuteScript::ID
+    STA   X[:event_id]
+    PLA
+    STA   X[:script_address] + 2
+    PLA
+    STA   X[:script_address]
+    LDA   thread_id
+    JSL   Aoba::Thread.send_event_icb_long
+    RTL
+  end
+
+end

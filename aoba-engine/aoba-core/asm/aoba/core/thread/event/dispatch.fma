@@ -1,0 +1,128 @@
+module Aoba::Thread
+
+
+  ; @param A Thread ID
+  ; @param X ThreadEvent pointer
+  def send_event_icb
+    routine do
+      is_thread_safe
+      input A
+
+      declare :bitmask, as: :uint16
+      declare :event, as: :uint16
+
+      execute do |bitmask, event|
+;        Debug.log "{muteif(equ(byte(long(add(X,#{Event::Base.offset_of(:sender_thread_id)}),$7F)),$FF))}[EVENT] Thread {byte(long(add(X,#{Event::Base.offset_of(:sender_thread_id)}),$7F))}: Send event {byte(long(add(X,#{Event::Base.size}),$7F))} to thread {and(A,$FF)} (Event {X} )"
+
+;        Debug.trace "Thread {byte(long(add(X,#{Event::Base.offset_of(:sender_thread_id)}),$7F))}: Send event {byte(long(add(X,#{Event::Base.size}),$7F))} to thread {and(A,$FF)} (Event {X} )"
+
+        X.is_a! Event::Base
+        STX   dp(event)
+        STZ   X[:next_event]
+        TXY
+
+        STA   dp(bitmask)
+        get_thread_pointer_from_thread_id
+        X.is_a! Instance
+        Y.is_a! Event::Base
+        LDA   X[:id]
+        EOR   dp(bitmask)
+        AND   #$FF
+        BZE   _valid_thread_id
+
+      _invalid_thread_id:
+        Debug.only do
+          LDA   dp(bitmask)
+          Debug.fatal "Dispatched event {Y} to invalid thread {and(A,$FF)}"
+          NOP
+          Debug.BRK
+        end
+        TYX
+        Event.free_icb
+        JMP   _rts
+
+        ;; ---
+
+      _valid_thread_id:
+        X.is_a! Instance
+        Y.is_a! Event::Base
+        
+        Debug.access_8bit_through_16bit
+        LDA   Y[:event_bitmask]
+        STA   dp(bitmask)
+
+        ;; Tests whether we attach the event to the end or to an existing record
+        SEI
+        LDY   X[:first_event]
+        BZE   _is_first_event
+
+        ;; Adds the event to the end
+      _add_as_last_event:
+        LDY   X[:last_event]
+        LDA   dp(event)
+        STA   X[:last_event]
+        Debug.allow_invalid_ram_access 2
+        STA   Y[:next_event]
+        BRA   _test_wakeup_thread
+
+        ;; Adds the event at the beginning
+      _is_first_event:
+        LDA   dp(event)
+        STA   X[:first_event]
+        STA   X[:last_event]
+
+        ;; Wakes up the thread if the event mask matches
+      _test_wakeup_thread:
+        CPU.set A: 8
+        LDA   X[:event_mask]
+        BIT   dp(bitmask)
+        CPU.set A: 16
+        BZE   _no_match
+
+        ;; The new event matched so let's wakeup the current thread
+      _match:
+        wakeup_icb
+
+      _no_match:
+      _rts:
+      end
+    end
+  end
+
+  def send_event_icb_long
+    send_event_icb
+    RTL
+  end
+
+  ;; @ignore-thread-safety
+  def send_event_long
+    CPU.with_bank! VARIABLE_RAM_BANK do
+      JSR   send_event_icb
+    end
+    RTL
+  end
+
+  ;; @param A event bitmask
+  ;; @return X event
+  ;; @ignore-thread-safety
+  def wait_for_event_icb
+    Thread.safe do
+      CPU.set A: 16
+      PHY
+      PHD
+      AND   #$FE
+    _missing_event:
+      JSR   pause_current_thread_icb
+      TXA
+      BZE   _missing_event
+      PLD
+      PLY
+    end
+  end
+
+  def wait_for_event_icb_long
+    wait_for_event_icb
+    RTL
+  end
+
+end

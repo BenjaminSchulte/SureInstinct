@@ -1,0 +1,79 @@
+module Aoba::Scene
+
+  class VramLayoutBuilderScope 
+    macro initialize(layout, scope)
+      @layout = layout
+      @scope = scope
+    end
+
+    macro add(**kwargs)
+      id = kwargs.keys.first
+      item = kwargs[id]
+      item.include_as_vram_object id, @layout, @scope
+    end
+
+    macro shared(&func)
+      new_scope = MemoryScope.new("VramLayoutShared", in: @scope, shared: true)
+      builder = VramLayoutBuilderScope.new(@layout, new_scope)
+      func.call with_context builder
+    end
+
+    macro static(&func)
+      new_scope = MemoryScope.new("VramLayoutStatic", in: @scope, shared: false)
+      builder = VramLayoutBuilderScope.new(@layout, new_scope)
+      func.call with_context builder
+    end
+  end
+
+  class VramLayoutBuilder < VramLayoutBuilderScope
+    macro initialize(layout)
+      super layout, layout.scope
+    end
+
+    ;; Extends another object
+    macro extends(other)
+      @layout.parent = other
+    end
+
+    ;; Includes another module
+    macro use(other)
+      other.include_to_vram_layout @layout
+    end
+  end
+
+  class VramLayout < Aoba::EngineObject
+    ;; Constructor
+    macro initialize
+      super
+
+      @scope = MemoryScope.new("VramLayout", in: nil, for: ::SNES::MemoryMap::VRAM)
+
+      @parent = nil
+      @all_objects = []
+      @objects = {}
+    end
+
+    ;; Use this layout in the scene mode
+    macro include_to_scene_mode(mode)
+      mode.vram_layout = self
+      mode.VRAM.include @scope
+    end
+
+    ;; Finalize
+    macro finalize
+      @all_objects.each do |o|
+        o.setup
+      end
+    end
+
+    ;; Creates a new level layout  
+    macro self.create(&block)
+      layout = VramLayout.new
+      builder = VramLayoutBuilder.new(layout)
+      block.call with_context builder
+      layout.finalize
+      return layout
+    end
+  end
+
+end

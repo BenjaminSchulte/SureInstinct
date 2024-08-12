@@ -1,0 +1,34 @@
+module Aoba::Scene::Api
+
+  ;; @param A mode
+  ;; @ignore-thread-safety
+  def set_scene_mode_long
+    routine A: 8 do
+      is_thread_safe
+      input A
+
+      execute do
+        PHA
+
+        ;; Sends the set_scene_mode event to the scene
+        LDA   #Aoba::Thread::Event::USEREVENT_ID
+        JSL   Aoba::Thread::Event.allocate_icb_long
+        X.is_a! Aoba::Scene::Event::SetSceneMode::Event
+        LDA   #Aoba::Scene::Event::SetSceneMode::ID
+        STA   X[:event_id]
+        PLA
+        STA   X[:mode]
+        LDA   thread_id
+        JSL   Aoba::Thread.send_event_icb_long
+
+        ;; Waits for ready event  
+        LDA   #Aoba::Scene::Event::SetSceneMode::READY_ID
+        XBA
+        LDA   thread_id
+        JSL   Aoba::Thread.wait_for_ready_icb_long
+      end
+    end
+    RTL
+  end
+
+end

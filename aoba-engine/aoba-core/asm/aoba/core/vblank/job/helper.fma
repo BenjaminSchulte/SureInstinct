@@ -1,0 +1,75 @@
+module Aoba::VBlank::Job
+
+  macro flag_bitmask(target, notify_sender=false)
+    _flags = 0
+    case target
+    when :vram
+      _flags = Target::VRAM
+    when :vram_tile
+      _flags = Target::VRAM_TILE
+    else
+      raise "Unsupported job target #{target}"
+    end
+    _flags |= Flag::NOTIFY_SENDER_THREAD if notify_sender
+    return _flags
+  end
+  
+  macro dma_flags(mode=:write, fixed_transfer=false)
+    _flags = 0
+    _flags |= DmaFlag::READ if write == :read
+    _flags |= DmaFlag::FIXED_TRANSFER if fixed_transfer
+    return _flags
+  end
+  
+  macro dmaflag_bitmask(transfer_mode, mode=:write, fixed_transfer=false)
+    _flags = 0
+    case transfer_mode
+    when :transfer_1_once
+      _flags = 0
+    when :transfer_2_once
+      _flags = 1
+    when :transfer_1_twice
+      _flags = 2
+    when :transfer_2_twice_each
+      _flags = 3
+    when :transfer_4_once
+      _flags = 4
+    when :transfer_2_twice_alter
+      _flags = 5
+    else
+      raise "Invalid DMA configuration: #{transfer_mode}"
+    end
+    
+    _flags |= DmaFlag::READ if mode == :read
+    _flags |= DmaFlag::FIXED_TRANSFER if fixed_transfer
+    return _flags
+  end
+
+  macro vmainflag_bitmask(vram_mode=:word, vram_high=false)
+    _flags = 0
+    _flags |= VramFlag::HIGH_TARGET if vram_high == true
+    _flags |= VramFlag::INCREMENT_WORD if vram_mode == :word
+    return _flags
+  end
+
+  macro allocate_job_icb_long(target, transfer_mode=:transfer_2_once, **kwargs)
+    _user_flags = 0 
+    case target
+    when :vram
+      _user_flags = vmainflag_bitmask(**kwargs)
+    when :vram_tile
+      _user_flags = vmainflag_bitmask(**kwargs)
+    else
+      raise "Unsupported job target #{target}"
+    end
+
+    _flags = flag_bitmask(target, **kwargs)
+    _dma_flags = dmaflag_bitmask(transfer_mode, **kwargs)
+    
+    LDA   #_flags
+    LDX   #_dma_flags | (_user_flags << 8)
+    JSL   allocate_icb_long
+    X.is_a! JobInstance
+  end
+
+end

@@ -1,0 +1,29 @@
+module Aoba::Level
+
+  class LevelFormatBuilder
+    macro initialize(format)
+      @format = format
+    end
+
+    ;; Includes another module
+    macro use(other)
+      other.include_to_level_format @format
+    end
+  end
+
+  class LevelFormat < Aoba::EngineObject
+    ;; Constructor
+    macro initialize
+      super
+    end
+
+    ;; Creates a new level format  
+    macro self.create(&block)
+      format = LevelFormat.new
+      builder = LevelFormatBuilder.new(format)
+      block.call with_context format
+      return format
+    end
+  end
+
+end

@@ -1,0 +1,26 @@
+module Aoba::Audio::Action::StopSong
+
+  ;; Stops the song
+  ;;
+  ;; @param X volume
+  invoke_icb = create_sa1_ram_routine bank: AUDIO_ROM_BANK do
+    A.pretend_size 8
+    
+    when_ready_SEI VARIABLE_RAM_BANK do
+
+      ;; Tests whether the song is currently being played
+      LDA   #0
+      STA   current_played_song_id.long
+
+      ;; Send play command
+      LDA   last_ipc_value
+      AND   #IPC.IPC_TOGGLE_BIT
+      EOR   #IPC.IPC_TOGGLE_BIT | IPC.CMD_STOP_PLAYBACK
+      STA   CPU.APUIO0.long
+      STA   last_ipc_value
+
+    end
+    RTS
+  end
+
+end

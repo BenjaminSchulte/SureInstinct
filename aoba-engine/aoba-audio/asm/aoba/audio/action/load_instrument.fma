@@ -1,0 +1,116 @@
+module Aoba::Audio::Action::LoadInstrument
+
+  ;; Temporary RAM
+  scope :TempRAM, in: InternalActionRAM
+
+  ;; The instrument ID to load
+  declare :instrument_id, as: :uint8, in: TempRAM
+
+  ;; Loads an instrument
+  ;;
+  ;; @param A instrument ID
+  load = create_sa1_ram_routine bank: AUDIO_ROM_BANK do
+    A.pretend_size 8
+    STA   dp(instrument_id)
+
+    Mutex.lock
+
+    ;; Wait before uploading a sample
+    unsafe_wait_for_ready nil
+
+    ;; Send start command
+    LDA   dp(instrument_id)
+    STA   CPU.APUIO1.long
+
+    LDA   last_ipc_value.long
+    AND   #IPC.IPC_TOGGLE_BIT
+    EOR   #IPC.IPC_TOGGLE_BIT | IPC.CMD_SEND_SAMPLE
+    STA   CPU.APUIO0.long
+    STA   last_ipc_value.long
+    unsafe_wait_for_ready nil
+
+    ;; Only continue if we are a new instrument
+    LDA   CPU.APUIO1.long
+    BMI   _is_new_instrument
+    Debug.todo "Reconfigure instrument"
+    Mutex.unlock
+    RTS
+
+    ;; Loads the instruments address
+  _is_new_instrument:
+    CPU.set A: 16
+    Debug.access_8bit_through_16bit
+    LDA   dp(instrument_id)
+    AND   #$FF
+    ASL   A
+    TAX
+    LDA   InstrumentIndex.long, X
+    TAX
+
+    ;; Sends the loop address
+    CPU.set A: 16
+    LDA   INSTRUMENT_DATA_BANK.as_bank(InstrumentRomHeader.offset_of(:loop_address)).long, X
+    BPL   _looped
+    LDA   #0
+    BRA   _set_loop
+  _looped:
+    CLC
+    ADC   CPU.APUIO2.long
+  _set_loop:
+    STA   CPU.APUIO2.long
+    CPU.set A: 8
+
+    ; Instrument volume
+    LDA   INSTRUMENT_DATA_BANK.as_bank(InstrumentRomHeader.offset_of(:volume)).long, X
+    STA   CPU.APUIO1.long
+
+    ; Wait for ACK
+    SNES_RAM_JMP unsafe_wait_for_ack_with_modified_ipc_value_long_foreign_db, :JSR, :JSR
+
+    ;; Sends the pitch
+    CPU.set A: 16
+    LDA   INSTRUMENT_DATA_BANK.as_bank(InstrumentRomHeader.offset_of(:pitch)).long, X
+    STA   CPU.APUIO2.long
+    CPU.set A: 8
+
+    ; ADSR low
+    LDA   INSTRUMENT_DATA_BANK.as_bank(InstrumentRomHeader.offset_of(:adsr)).long, X
+    STA   CPU.APUIO1.long
+
+    ; Wait for ACK
+    SNES_RAM_JMP unsafe_wait_for_ack_with_modified_ipc_value_long_foreign_db, :JSR, :JSR
+
+    ; ADSR high
+    LDA   INSTRUMENT_DATA_BANK.as_bank(InstrumentRomHeader.offset_of(:adsr) + 1).long, X
+    STA   CPU.APUIO1.long
+
+    ;; Sets the data size
+    CPU.set A: 16
+    LDA   INSTRUMENT_DATA_BANK.as_bank(InstrumentRomHeader.offset_of(:size)).long, X
+    STA   CPU.APUIO2.long
+    TAY
+    CPU.set A: 8
+
+    SNES_RAM_JMP unsafe_wait_for_ack_with_modified_ipc_value_long_foreign_db, :JSR, :JSR
+
+    ;; Configure X/DB to point to sample data
+    PHB
+    LDA   INSTRUMENT_DATA_BANK.as_bank(InstrumentRomHeader.offset_of(:sample_address) + 2).long, X
+    PHA
+    PLB
+
+    CPU.set A: 16
+    LDA   INSTRUMENT_DATA_BANK.as_bank(InstrumentRomHeader.offset_of(:sample_address)).long, X
+    TAX
+    CPU.set A: 8
+
+    ;; Sends the data itself
+    SNES_RAM_JMP IPC.transfer, :JSR, :JSR
+
+    Mutex.unlock
+
+    PLB
+    RTS
+  end
+
+end

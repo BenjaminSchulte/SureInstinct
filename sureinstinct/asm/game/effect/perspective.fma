@@ -1,0 +1,405 @@
+module Game::Effect::Perspective
+
+  ;; Temporary RAM for calculations
+  scope :TempRAM, in: Aoba::Effect::ActionRAM
+
+  ;; The current top row
+  declare :_top_row, as: :uint16, in: TempRAM
+
+  ;; The height
+  _num_rows = _top_row + 1
+
+  ;; Current scroll
+  declare :_current_scroll, as: :uint16, in: TempRAM
+
+  ;; The actual effect
+  effect = Aoba::Effect.create "Perspective" do
+    start do
+      ;; Allocates the buffers
+      SEI
+      LDX   #SNES::Arch::SCREEN_HEIGHT * 2 + 2
+      JSL   Aoba::Memory.allocate_long
+      STX   AssetConfig::Ingame.ingame_hdma_config.back_buffer
+      TYX
+      JSL   Aoba::Memory.allocate_long
+      STX   AssetConfig::Ingame.ingame_hdma_config.front_buffer
+
+      ;; Clears the current rotation index
+      STZ   AssetConfig::Ingame.ingame_hdma_config.rotation_scrolling
+
+      ;; Starts the effect
+      CPU.set A: 8
+      STZ   AssetConfig::Ingame.ingame_hdma_config.rotation
+      LDA   #(AssetConfig::Ingame.ui_tilemap.address + $800) >> 9
+      STA   Aoba::Screen.register.BG3SC
+      LDA   Aoba::Screen.update_registers_8
+      ORA   #Aoba::Screen::Flag.BG3SC
+      STA   Aoba::Screen.update_registers_8
+      CLI
+      CPU.set A: 16
+
+      queue_update 1
+    end
+
+    routine :_set_rotation do
+      ASL   A
+      ASL   A
+      TAX
+      CPU.set A: 16
+      LDA   row_data.long, X
+      STA   0, Y
+      STA   dp(_top_row)
+      LDA   (row_data.to_sym + 2).long, X
+      TAX
+
+      LDA   Aoba::Screen::register.BG1VOFS
+      ;STA   dp(_current_scroll)
+      CPU.set A: 8
+      DEC   dp(_num_rows)
+      SEC
+      SBC   row_data.long, X
+      BCC   _first_is_wrap
+      CLC
+      BRA   _after_update_carry
+
+    _first_is_wrap:
+      XBA
+      DEC   A
+      XBA
+      CLC
+      BRA   _after_update_carry
+
+    _loop:
+      ADC   row_data.long, X
+      BCS   _carry_set
+    _after_update_carry:
+      INX
+      STA   2, Y
+      XBA
+      STA   3, Y
+      XBA
+      INY
+      INY
+      DEC   dp(_num_rows)
+      BNZ   _loop
+      BRA   _after_loop
+
+    _carry_set:
+      XBA
+      INC   A
+      XBA
+      BRA   _after_update_carry
+
+    _after_loop:
+      SEI
+      LDA   AssetConfig::Ingame.ingame_hdma_config.flags
+      ORA   #Game::Hdma::Ingame::Flag::FRONT_BUFFER_IS_READY
+      STA   AssetConfig::Ingame.ingame_hdma_config.flags
+      CPU.set A: 16
+      LDA   AssetConfig::Ingame.ingame_hdma_config.back_buffer
+      LDX   AssetConfig::Ingame.ingame_hdma_config.front_buffer
+      STA   AssetConfig::Ingame.ingame_hdma_config.front_buffer
+      STX   AssetConfig::Ingame.ingame_hdma_config.back_buffer
+      CPU.set A: 8
+
+      CLI
+      RTS
+    end
+
+    update do
+      CPU.set A: 8
+      ;; X = pointer to perspective header
+    _start_update:
+      TDC
+      XBA
+      LDY   AssetConfig::Ingame.ingame_hdma_config.back_buffer
+      LDA   AssetConfig::Ingame.ingame_hdma_config.rotation
+      BPL   _rotate_top
+
+    _rotate_bottom:
+      CMP   #$FF
+      BEQ   _finish
+
+      AND   #$7F
+      _set_rotation
+      
+      ;; Resume with next action
+      LDA   AssetConfig::Ingame.ingame_hdma_config.rotation
+      DEC   A
+      BPL   _finish_effect
+      STA   AssetConfig::Ingame.ingame_hdma_config.rotation
+      BRA   _rts
+
+      ;; --
+    _finish_effect:
+      ;; Enables perspective changes
+      SEI
+      LDA   AssetConfig::Ingame.ingame_hdma_config.flags
+      AND   #$FF ^ Game::Hdma::Ingame::Flag::CHANGE_PERSPECTIVE ^ Game::Hdma::Ingame::Flag::FRONT_BUFFER_IS_READY
+      ORA   #Game::Hdma::Ingame::Flag::NEEDS_UPDATE_DMA_CALL
+      STA   AssetConfig::Ingame.ingame_hdma_config.flags
+      CLI
+
+      LDA   #$FF
+      STA   AssetConfig::Ingame.ingame_hdma_config.rotation
+
+      ;; Enables ball control
+      LDY   Game::Ball::Movement.player
+      Y.is_a! Aoba::Sprite::Instance
+      LDA   Y[:basic_flags] + 1
+      AND   #$FF ^ (Aoba::Sprite::BasicFlag::SKIP_MOVE_ROUTINE >> 8)
+      STA   Y[:basic_flags] + 1
+      CPU.set A: 16
+      queue_update 1
+      RTS
+
+    _finish:
+      CPU.set A: 16
+      trigger_finish
+      RTS
+
+      ;; --
+
+      A.pretend_size 8
+    _rotate_top:
+      _set_rotation
+      
+      ;; Resume with next action
+      LDA   AssetConfig::Ingame.ingame_hdma_config.rotation
+      CMP   #NUM_ROW_DATA_FRAMES - 1
+      BEQ   _finish_rotate_top
+      INC   AssetConfig::Ingame.ingame_hdma_config.rotation
+      
+    _rts:
+      CPU.set A: 16
+
+      SEI
+      LDA   AssetConfig::Ingame.ingame_hdma_config.rotation_scrolling
+      INC   A
+      STA   AssetConfig::Ingame.ingame_hdma_config.rotation_scrolling
+      STA   Aoba::Screen.register.BG3VOFS
+      LDA   Aoba::Screen.update_registers_16
+      ORA   #Aoba::Screen::Flag.BG3VOFS
+      STA   Aoba::Screen.update_registers_16
+      CLI
+
+      queue_update 1
+      RTS
+
+      ;; ---
+
+      A.pretend_size 8
+      ;; Trigger level change event
+    _finish_rotate_top:
+
+      ;; Disables the camera
+      LDA   Aoba::Sprite.global_flags
+      AND   #$FF ^ Aoba::Sprite::GlobalFlag.CAMERA_ENABLED
+      STA   Aoba::Sprite.global_flags
+
+      ;; Updates the position of the ball
+      LDA   Aoba::Sprite.thread_id
+      LDX   #Aoba::Sprite::Event::SetPosition::EventConfig.size
+      SEI
+      JSL   Aoba::Memory.allocate_miniblock_long
+      CLI
+      X.is_a! Aoba::Sprite::Event::SetPosition::EventConfig
+      LDY   Game::Ball::Movement.player
+      Y.is_a! Aoba::Sprite::Instance
+      LDA   Y[:id]
+      STA   X[:sprite_id]
+      CPU.set A: 16
+      LDA   AssetConfig::Ingame.tilemap_storage.height_in_pixel.long
+      SEC
+      SBC   Y[:last_tile_y]
+      STA   X[:y]
+      LDA   Y[:last_tile_x]
+      STA   X[:x]
+      PHX
+
+      ;; Updates the ball position
+      LDA   #Aoba::Thread::Event::USEREVENT_ID
+      JSL   Aoba::Thread::Event.allocate_icb_long
+      X.is_a! Aoba::Sprite::Event::SetPosition::Event
+      LDA   #Aoba::Sprite::Event::SetPosition::ID
+      STA   X[:event_id]
+      PLA
+      STA   X[:config_address]
+      LDA   Aoba::Sprite.thread_id
+      SEI
+      JSL   Aoba::Thread.send_event_icb_long
+
+      ;; Scrolls the sprites to the new destination
+      LDA   #Aoba::Thread::Event::USEREVENT_ID
+      JSL   Aoba::Thread::Event.allocate_icb_long
+      X.is_a! Aoba::Sprite::Event::OnMapChanged::Event
+      LDA   #Aoba::Sprite::Event::OnMapChanged::ID
+      STA   X[:event_id]
+      LDA   AssetConfig::Ingame.tilemap_storage.height_in_pixel.long
+      STA   X[:height_in_pixel]
+      LDA   AssetConfig::Ingame.tilemap_storage.width_in_pixel.long
+      STA   X[:width_in_pixel]
+      LDA   Aoba::Sprite.thread_id
+      JSL   Aoba::Thread.send_event_icb_long
+
+      ;; Ensures that both events have been executed before we continue
+      JSL   Aoba::Thread.pause_current_thread_temporary_icb_long
+      CLI
+
+      ;; Triggers the layer redraw
+      LDA   Aoba::Level.thread_id
+      LDX   #Aoba::Level::Event::SetDynamicLayer::EventConfig.size
+      SEI
+      JSL   Aoba::Memory.allocate_miniblock_long
+      CLI
+      X.is_a! Aoba::Level::Event::SetDynamicLayer::EventConfig
+      LDA   #AssetConfig::Ingame.tilemap_storage.tiles[:current]
+      STA   X[:dynamic_layer_pointer]
+      LDA   AssetConfig::Ingame.tilemap_storage.tiles[:current].long
+      CMP   #AssetConfig::Ingame.tilemap_storage.tiles[:bottom]
+      BEQ   _toggle_to_top
+      LDA   #AssetConfig::Ingame.tilemap_storage.tiles[:bottom]
+      BRA   _after_set_toggle_address
+    _toggle_to_top:
+      LDA   #AssetConfig::Ingame.tilemap_storage.tiles[:top]
+    _after_set_toggle_address:
+      STA   X[:layer]
+      PHX
+      LDA   Aoba::Sprite.scroll_x
+      STA   X[:camera_x]
+      LDA   Aoba::Sprite.scroll_y
+      STA   X[:camera_y]
+
+      LDA   #Aoba::Thread::Event::USEREVENT_ID
+      JSL   Aoba::Thread::Event.allocate_icb_long
+      X.is_a! Aoba::Level::Event::SetDynamicLayer::Event
+      LDA   #AssetConfig::Ingame.tilemap_toggle_event_id
+      STA   X[:event_id]
+      PLA
+      STA   X[:config_address]
+      LDA   Aoba::Level.thread_id
+      SEI
+      JSL   Aoba::Thread.send_event_icb_long
+      
+      ;; Waits for the level to be redrawn
+      JSL   Aoba::Thread.pause_current_thread_temporary_icb_long
+      ;;;;;; TODO!!!!!!!!! Test whether the map is really redrawn!!
+      CLI
+
+      CPU.set A: 8
+      ;; Enables the camera
+      LDA   Aoba::Sprite.global_flags
+      ORA   #Aoba::Sprite::GlobalFlag.CAMERA_ENABLED
+      STA   Aoba::Sprite.global_flags
+
+      LDA   #(NUM_ROW_DATA_FRAMES - 1) | $80
+      STA   AssetConfig::Ingame.ingame_hdma_config.rotation
+
+      JMP   _start_update
+    end
+
+    finish do
+      LDX   AssetConfig::Ingame.ingame_hdma_config.back_buffer
+      LDY   #SNES::Arch::SCREEN_HEIGHT * 2 + 2
+      JSL   Aoba::Memory.free_long
+      LDX   AssetConfig::Ingame.ingame_hdma_config.front_buffer
+      LDY   #SNES::Arch::SCREEN_HEIGHT * 2 + 2
+      JSL   Aoba::Memory.free_long
+
+      ;; Starts the effect
+      CPU.set A: 8
+      SEI
+      LDA   #AssetConfig::Ingame.ui_tilemap.address >> 9
+      STA   Aoba::Screen.register.BG3SC
+      LDA   Aoba::Screen.update_registers_8
+      ORA   #Aoba::Screen::Flag.BG3SC
+      STA   Aoba::Screen.update_registers_8
+      LDA   Aoba::Screen.update_registers_16
+      ORA   #Aoba::Screen::Flag.BG3VOFS
+      STA   Aoba::Screen.update_registers_16
+      CPU.set A: 16
+      STZ   Aoba::Screen.register.BG3VOFS
+      CLI
+
+    end
+  end
+
+  ;; Starts perspective change
+  @locate_at bank: Aoba::SPRITE_ROM_BANK
+  def start
+    effect.start
+
+    ;; Palette update
+    LDY   #$FC
+    LDA   AssetConfig::Ingame.tilemap_storage.tiles[:current].long
+    CMP   #AssetConfig::Ingame.tilemap_storage.tiles[:top]
+    BEQ   _move_to_bottom
+
+  _move_to_top:
+    LDA   #6
+    LDX   Game::Level.top_palette_address
+    JSL   Aoba::Palette::Api.fade_to_palette_group_long
+    RTS
+
+    ;; --
+
+  _move_to_bottom:
+    LDA   #6
+    LDX   Game::Level.bottom_palette_address
+    JSL   Aoba::Palette::Api.fade_to_palette_group_long
+  end
+
+  ;; Changes the speed X
+  macro _test_change_speed_x
+    LDA   Y[:x]
+    EOR   dp(Aoba::Sprite::Action::Move.pos_x)
+    AND   #$FFF0
+    BZE   _no_x_tile_change
+
+    LDA   Y[:speed_x_decimal]
+    EOR   #$FFFF
+    CLC
+    ADC   #1
+    STA   Y[:speed_x_decimal]
+    LDA   Y[:speed_x]
+    EOR   #$FFFF
+    ADC   #0
+    STA   Y[:speed_x]
+
+  _no_x_tile_change:
+  end
+
+  ;; Triggers the change
+  macro trigger_change
+    ;; Checks if the change perspective flag is already set
+    SEI
+    LDA   AssetConfig::Ingame.ingame_hdma_config.flags
+    BIT   #Game::Hdma::Ingame::Flag::CHANGE_PERSPECTIVE
+    BNZ   _rts
+    ORA   #Game::Hdma::Ingame::Flag::CHANGE_PERSPECTIVE
+    STA   AssetConfig::Ingame.ingame_hdma_config.flags
+    CLI
+
+    ;; Prevents the sprite from moving
+    LDA   Y[:basic_flags]
+    ORA   #Aoba::Sprite::BasicFlag::SKIP_MOVE_ROUTINE
+    STA   Y[:basic_flags]
+
+    ;; Tests whether we came from left/right to update output speed
+    _test_change_speed_x
+
+    ;; Resets speed for this frame
+    STZ   dp(Aoba::Sprite::Action::Move.speed_x)
+    STZ   dp(Aoba::Sprite::Action::Move.speed_x_decimal)
+    STZ   dp(Aoba::Sprite::Action::Move.speed_y)
+    STZ   dp(Aoba::Sprite::Action::Move.speed_y_decimal)
+
+    JMP   start
+
+    ;; ---
+
+  _rts:
+    CLI
+  end
+
+end

@@ -1,0 +1,11 @@
+module Aoba
+
+  ;; The ROM bank
+  DIALOG_ROM_BANK ||= $C2
+
+end
+
+require "configuration"
+require "memory"
+require "action"
+require "hdma"

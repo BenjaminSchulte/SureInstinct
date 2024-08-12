@@ -1,0 +1,98 @@
+module Aoba::Control::ScriptUtils
+  locate_at bank: SCRIPT_ROM_BANK
+
+  ;; Disables controls for this gamepad
+  ;;
+  ;; @param X gamepad
+  def disable_controls_icb
+    routine do
+      make_thread_safe
+
+      execute do
+        X.is_a! GamepadPlayer
+
+        ;; Calculates the offset from the ID
+        LDA   X[:id]
+        AND   dp(Aoba::Script.x00FF)
+        CLC
+        ADC   dp(Aoba::Script.script_data)
+        TXY
+        TAX
+        X.is_a! Aoba::Script::ScriptData
+        Y.is_a! GamepadPlayer
+
+        LDA   X[:gamepad_disable_counter]
+        BNZ   _increment_only
+
+      _is_first_disable:
+        LDA   Y[:listener]
+        STA   X[:previous_gamepad_listener]
+        LDA   #0
+        STA   Y[:listener]
+
+      _increment_only:
+        INC   X[:gamepad_disable_counter]
+      _skip:
+      end
+    end
+  end
+
+  ;; Disables controls for this gamepad
+  ;;
+  ;; @param X gamepad
+  def restore_controls_icb
+    routine do
+      make_thread_safe
+
+      execute do
+        X.is_a! GamepadPlayer
+
+        ;; Calculates the offset from the ID
+        LDA   X[:id]
+        AND   dp(Aoba::Script.x00FF)
+        CLC
+        ADC   dp(Aoba::Script.script_data)
+        TXY
+        TAX
+        X.is_a! Aoba::Script::ScriptData
+        Y.is_a! GamepadPlayer
+
+        LDA   X[:gamepad_disable_counter]
+        BZE   _skip
+        DEC   X[:gamepad_disable_counter]
+        BNZ   _skip
+
+        ;; Looks for the current last record to add this item to
+      _loop:
+        LDA   Y[:listener]
+        BZE   _insert_here
+        TAY
+        BRA   _loop
+
+      _insert_here:
+        Y.is_a! GamepadPlayer
+        LDA   X[:previous_gamepad_listener]
+        STA   Y[:listener]
+        STZ   X[:previous_gamepad_listener]
+
+      _skip:
+      end
+    end
+  end
+
+  ;; Registers all controls to the script
+  def disable_all_controls_icb
+    MAX_GAMEPADS.times do |i|
+      LDX   #gamepads + i * GamepadPlayer.size
+      disable_controls_icb
+    end
+  end
+
+  ;; Registers all controls to the script
+  def restore_all_controls_icb
+    MAX_GAMEPADS.times do |i|
+      LDX   #gamepads + i * GamepadPlayer.size
+      restore_controls_icb
+    end
+  end
+end

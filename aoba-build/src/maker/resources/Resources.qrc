@@ -1,0 +1,58 @@
+<RCC>
+    <qresource prefix="/">
+    </qresource>
+    <qresource prefix="/shadow">
+        <file alias="stairs-up">icons/shadow/stairs-up.png</file>
+        <file alias="stairs-left">icons/shadow/stairs-left.png</file>
+        <file alias="stairs-right">icons/shadow/stairs-right.png</file>
+        <file alias="layer-down">icons/shadow/layer-down.png</file>
+        <file alias="layer-up">icons/shadow/layer-up.png</file>
+        <file alias="speed-slow">icons/shadow/speed-slow.png</file>
+        <file alias="speed-fast">icons/shadow/speed-fast.png</file>
+        <file alias="visible-bg">icons/shadow/visible-bg.png</file>
+        <file alias="visible-mix">icons/shadow/visible-mix.png</file>
+        <file alias="visible-fg">icons/shadow/visible-fg.png</file>
+        <file alias="cross">icons/shadow/cross.png</file>
+        <file alias="circle">icons/shadow/circle.png</file>
+        <file alias="reflect">icons/shadow/reflect.png</file>
+    </qresource>
+    <qresource prefix="/bright">
+        <file alias="circle">icons/bright/circle.png</file>
+        <file alias="revert">icons/bright/revert.png</file>
+        <file alias="database">icons/bright/database.png</file>
+        <file alias="play">icons/bright/play.png</file>
+        <file alias="gamepad">icons/bright/gamepad.png</file>
+        <file alias="person">icons/bright/person.png</file>
+        <file alias="fill">icons/bright/fill.png</file>
+        <file alias="pen">icons/bright/pen.png</file>
+        <file alias="cross">icons/bright/cross.png</file>
+        <file alias="view">icons/bright/view.png</file>
+        <file alias="plus">icons/bright/plus.png</file>
+        <file alias="save">icons/bright/save.png</file>
+        <file alias="mirrory">icons/bright/mirrory.png</file>
+        <file alias="mirrorx">icons/bright/mirrorx.png</file>
+        <file alias="grid">icons/bright/grid.png</file>
+        <file alias="brickwall">icons/bright/brickwall.png</file>
+        <file alias="door">icons/bright/door.png</file>
+        <file alias="foreground">icons/bright/foreground.png</file>
+        <file alias="undo">icons/bright/undo.png</file>
+        <file alias="redo">icons/bright/redo.png</file>
+        <file alias="star">icons/bright/star.png</file>
+        <file alias="image-priority">icons/bright/image-priority.png</file>
+        <file alias="image-shared">icons/bright/image-shared.png</file>
+        <file alias="padlock">icons/bright/padlock.png</file>
+        <file alias="footprint">icons/bright/footprint.png</file>
+        <file alias="move-arrows">icons/bright/move-arrows.png</file>
+        <file alias="sort-ascending">icons/bright/sort-ascending.png</file>
+        <file alias="sort-descending">icons/bright/sort-descending.png</file>
+        <file alias="track-start">icons/bright/track-start.png</file>
+        <file alias="track-prev">icons/bright/track-prev.png</file>
+        <file alias="track-play">icons/bright/track-play.png</file>
+        <file alias="track-pause">icons/bright/track-pause.png</file>
+        <file alias="track-next">icons/bright/track-next.png</file>
+        <file alias="track-end">icons/bright/track-end.png</file>
+        <file alias="zoom-in">icons/bright/zoom-in.png</file>
+        <file alias="zoom-out">icons/bright/zoom-out.png</file>
+        <file alias="zoom-revert">icons/bright/zoom-revert.png</file>
+    </qresource>
+</RCC>

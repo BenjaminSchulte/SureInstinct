@@ -1,0 +1,112 @@
+module Aoba::Dialog
+
+  ;; Script command for dialogs
+  Aoba::Script.command $F0, "dialog_start" do
+    Aoba::Script.update_script_pointer
+
+    ;; Allocates the configuration block
+    SEI
+    LDA   Composer.thread_id
+    LDX   #Aoba::Dialog::Hdma::Configuration.size
+    JSL   Memory.allocate_miniblock_long
+    LDY   dp(Aoba::Script.script_data)
+    Y.is_a! Aoba::Script::ScriptData
+    TXA
+    STA   Y[:current_dialog]
+    CLI
+
+    ;; Configure the block
+    X.is_a! Aoba::Dialog::Hdma::Configuration
+    CPU.set A: 8
+    LDA   default_dialog_position.long
+    STA   X[:position]
+    LDA   #56
+    STA   X[:target_height]
+    LDA   #16
+    STA   X[:animation_speed]
+    LDA   dialog_default_font.long
+    STA   X[:font_state] + Font::Render::State.offset_of(:font_address)
+    LDA   #DEFAULT_NUM_TILES_PER_ROW
+    STA   X[:font_state] + Font::Render::State.offset_of(:max_num_tiles_per_row)
+    LDA   dialog_default_speed.long
+    STA   X[:speed]
+    LDA   #3
+    STA   X[:num_rows]
+    CPU.set A: 16
+    STZ   X[:face_sprite]
+    STZ   X[:font_state] + Font::Render::State.offset_of(:color_and_flags)
+    LDA   dialog_default_font.long + 1
+    STA   X[:font_state] + Font::Render::State.offset_of(:font_address) + 1
+
+    ;; Prepare controls
+    Control::ScriptUtils.disable_all_controls_icb
+    JSL   Action::Window.initialize_icb_long
+    JSL   Action::Window.open_icb_long
+
+    ;; Resume script from 0
+    LDY   #0
+  end
+
+  ;; Script command for dialogs
+  Aoba::Script.command $F1, "dialog_end" do
+    Aoba::Script.update_script_pointer
+
+    ;; Set animation speed
+    LDX   dp(Aoba::Script.script_data)
+    X.is_a! Aoba::Script::ScriptData
+    LDA   X[:current_dialog]
+    TAX
+    X.is_a! Aoba::Dialog::Hdma::Configuration
+    LDA   X[:face_sprite]
+    BZE   _skip_remove_face
+    PHX
+    JSL   __free_sprite_face
+    PLX
+  _skip_remove_face:
+    CPU.set A: 8
+    LDA   #4
+    STA   X[:animation_speed]
+    CPU.set A: 16
+
+    ;; Close dialog
+    JSL   Action::Window.close_icb_long
+    JSL   Action::Window.free_icb_long
+
+    Control::ScriptUtils.restore_all_controls_icb
+
+    LDY   #0
+  end
+
+  ;; Script command for dialogs
+  Aoba::Script.command $F2, "dialog_say" do
+    ;; Reads the source address to A/X
+    Aoba::Script.read_current_script_value
+    INY
+    INY
+    TAX
+    Aoba::Script.update_script_pointer
+
+    ;; Stores the target buffer address to Y
+    LDY   dp(Aoba::Script.script_data)
+    Y.is_a! Aoba::Script::ScriptData
+    LDA   Y[:current_dialog]
+    TAY
+    Y.is_a! Aoba::Dialog::Hdma::Configuration
+    LDA   Y[:text_rendering_ram]
+    STA   Y[:font_state] + Font::Render::State.offset_of(:target_buffer)
+    CLC
+    ADC   #TEXT_DECOMPRESSION_RAM_OFFSET
+    STA   Y[:font_state] + Font::Render::State.offset_of(:current_line)
+    TAY
+
+    ;; Reads the current bank to A
+    LDA   Aoba::Script.script_pointer.long.indirect
+    
+    JSL   Font::Decompress.decompress_icb_long
+    JSL   Action::Render.render_message_icb_long
+
+    ;; Resume script after bank
+    LDY   #1
+  end
+
+end

@@ -1,0 +1,210 @@
+module Command::UnloadSample
+  
+  scope :DefragRAM, in: ::Memory.SharedPage0
+
+  declare :sample_data_write_offset, as: :uint16, in: DefragRAM
+  declare :num_samples_to_move, as: :uint8, in: DefragRAM
+
+  declare :current_sample_size, as: :uint16, in: DefragRAM
+
+  declare :calc_register, as: :uint16, in: DefragRAM
+  declare :calc_register2, as: :uint16, in: DefragRAM
+
+  declare :source_sample_id, as: :uint16, in: DefragRAM
+  source_sample_id_4 = source_sample_id + 1
+
+  declare :target_sample_id, as: :uint16, in: DefragRAM
+  target_sample_id_4 = target_sample_id + 1
+
+
+  ;; Processes the reset command
+  def process
+    MOV   Y, dp(SPC.PORT1)
+    MOV   dp(SPC.PORT0), dp(IPC.last_ipc_value)
+    MOV   A, addr(Sample.snes_sample_id_map, Y)
+    MOV   X, A
+    MOV   A, #$FF
+    MOV   addr(Sample.snes_sample_id_map, Y), A
+    MOV   addr(Sample.sample_id_snes_map, X), A
+  end
+
+  ;; Defragment memory
+  def defrag
+    MOV   dp(SPC.PORT0), dp(IPC.last_ipc_value)
+
+    MOV   A, #SAMPLE_OFFSET ; must be zero
+    MOV   Y, #SAMPLE_OFFSET >> 8
+    MOVW  dp(sample_data_write_offset), YA
+
+    MOV   dp(Sample.next_sample_id), A
+    MOV   Y, A
+
+    MOVW  dp(source_sample_id), YA
+    MOVW  dp(target_sample_id), YA
+    MOV   dp(num_samples_to_move), #MAX_LOCAL_SAMPLES
+
+  _loop:
+    MOV   X, dp(source_sample_id)
+    MOV   A, addr(Sample.sample_id_snes_map, X)
+    BMI   _resume
+
+    CMP   dp(source_sample_id), dp(Sample.next_sample_id)
+    BEQ   _copy_not_necessary
+
+    _move_sample_data
+
+  _copy_not_necessary:
+    MOV   X, dp(Sample.next_sample_id)
+
+    ; advance size pointer
+    MOV   A, addr(Sample.sample_size_low_byte, X)
+    MOV   dp(current_sample_size), A
+    MOV   A, addr(Sample.sample_size_high_byte, X)
+    MOV   dp(current_sample_size + 1), A
+    MOVW  YA, dp(sample_data_write_offset)
+    CLRC
+    ADDW  YA, dp(current_sample_size)   
+    ADDW  YA, dp(current_sample_size)   
+    ADDW  YA, dp(current_sample_size)   
+    MOVW  dp(sample_data_write_offset), YA
+
+    ; advance target pointers
+    INC   dp(Sample.next_sample_id)
+    ;INC   dp(target_sample_id)
+    CLRC
+    ADC   dp(target_sample_id_4), #4
+
+  _resume:
+    INC   dp(source_sample_id)
+    CLRC
+    ADC   dp(source_sample_id_4), #4
+    DEC   dp(num_samples_to_move)
+    BNZ   _loop
+    
+    MOVW  YA, dp(sample_data_write_offset)
+    MOVW  dp(Sample.next_sample_offset), YA
+  end
+
+  macro _increment_YA
+    INC   A
+    BNZ   _skip_y
+    INC   Y
+  _skip_y:
+  end
+
+  def _move_sample_data
+    MOV   X, dp(source_sample_id)
+    MOV   Y, dp(Sample.next_sample_id)
+
+    ; Copy size
+    MOV   A, addr(Sample.sample_size_low_byte, X)
+    MOV   addr(Sample.sample_size_low_byte, Y), A
+    MOV   dp(current_sample_size), A
+    MOV   A, addr(Sample.sample_size_high_byte, X)
+    MOV   addr(Sample.sample_size_high_byte, Y), A
+    MOV   dp(current_sample_size + 1), A
+
+    ; Update SNES sample ID
+    MOV   A, addr(Sample.sample_id_snes_map, X)
+    MOV   addr(Sample.sample_id_snes_map, Y), A
+    MOV   X, A
+    MOV   A, dp(Sample.next_sample_id)
+    MOV   addr(Sample.snes_sample_id_map, X), A
+
+    ; Calculate new loop offset
+    MOV   X, dp(source_sample_id_4)
+    MOV   A, addr(Sample.sample_directory + 1, X)
+    MOV   Y, A
+    MOV   A, addr(Sample.sample_directory + 0, X)
+    MOVW  dp(calc_register2), YA
+
+    MOV   A, addr(Sample.sample_directory + 3, X)
+    MOV   Y, A
+    MOV   A, addr(Sample.sample_directory + 2, X)
+    MOVW  dp(calc_register), YA
+
+    SETC
+    SUBW  YA, dp(calc_register2)
+    ADDW  YA, dp(sample_data_write_offset)
+
+    ; Write new sample offset
+    MOV   X, dp(target_sample_id_4)
+    MOV   addr(Sample.sample_directory + 2, X), A
+    MOV   A, Y
+    MOV   addr(Sample.sample_directory + 3, X), A
+
+    MOV   A, dp(sample_data_write_offset + 1)
+    MOV   addr(Sample.sample_directory + 1, X), A
+    MOV   Y, A
+    MOV   A, dp(sample_data_write_offset)
+    MOV   addr(Sample.sample_directory, X), A
+
+    ; Modify following code for WRITE TARGET
+    ;MOVW  YA, dp(sample_data_write_offset)
+    MOV   addr(__t0 + 1), A
+    MOV   addr(__t0 + 2), Y
+    _increment_YA
+    MOV   addr(__t1 + 1), A
+    MOV   addr(__t1 + 2), Y
+    _increment_YA
+    MOV   addr(__t2 + 1), A
+    MOV   addr(__t2 + 2), Y
+
+    ; Modify following code for READ SOURCE
+    MOVW  YA, dp(calc_register2)
+    MOV   addr(__s0 + 1), A
+    MOV   addr(__s0 + 2), Y
+    _increment_YA
+    MOV   addr(__s1 + 1), A
+    MOV   addr(__s1 + 2), Y
+    _increment_YA
+    MOV   addr(__s2 + 1), A
+    MOV   addr(__s2 + 2), Y
+
+    CLRC
+    MOV   X, #0
+    MOV   Y, dp(current_sample_size)
+    BNZ   _loop
+    DEC   dp(current_sample_size + 1)
+
+  _loop:
+  __s0:
+    MOV A, addr(0, X)
+  __t0:
+    MOV addr(0, X), A
+  __s1:
+    MOV A, addr(0, X)
+  __t1:
+    MOV addr(0, X), A
+  __s2:
+    MOV A, addr(0, X)
+  __t2:
+    MOV addr(0, X), A
+
+    MOV   A, X
+    ADC   A, #3
+    BCC   _skip_fwd
+
+    CLRC
+    INC   addr(__t0 + 2)
+    INC   addr(__t1 + 2)
+    INC   addr(__t2 + 2)
+    INC   addr(__s0 + 2)
+    INC   addr(__s1 + 2)
+    INC   addr(__s1 + 2)
+
+  _skip_fwd:
+    MOV   X, A
+    DBNZ  Y, _loop
+
+    MOV   A, dp(current_sample_size + 1)
+    BZE   _return
+
+    DEC   dp(current_sample_size + 1)
+    BRA   _loop
+
+  _return:
+    RET
+  end
+
+end

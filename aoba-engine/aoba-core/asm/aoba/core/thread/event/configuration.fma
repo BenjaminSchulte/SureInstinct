@@ -1,0 +1,20 @@
+module Aoba::Thread::Event
+
+  ;; User event ID for state
+  USEREVENT_ID = $02
+
+  ;; System event ID for ready
+  READYEVENT_ID = $40
+
+  ;; System event ID for state
+  SYSTEMEVENT_ID = $80
+
+
+  ;; Event ID for KILL_ACK
+  KILLACKEVENT_ID = $FE
+
+  ;; Event ID for KILL
+  KILLEVENT_ID = $FF
+
+
+end

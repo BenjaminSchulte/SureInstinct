@@ -1,0 +1,156 @@
+module Aoba::Sprite
+
+  ;; Converts the gamepad+olddirection to a new direction
+  datablock _gamepaddirection_to_direction
+    64.times do |i|
+      target_x = nil
+      target_y = nil
+      
+      target_x = :left if i & (Control::Key.KEY_LEFT >> 2)
+      target_x = :right  if i & (Control::Key.KEY_RIGHT >> 2)
+      target_y = :up if i & (Control::Key.KEY_UP >> 2)
+      target_y = :down  if i & (Control::Key.KEY_DOWN >> 2)
+
+      old_direction = nil
+      case i & 3
+        when 0
+          old_direction = :right
+        when 1
+          old_direction = :up
+        when 2
+          old_direction = :left
+        when 3
+          old_direction = :down
+      end
+
+      new_direction = old_direction
+      keep_direction = false
+      keep_direction = true if target_x == old_direction
+      keep_direction = true if target_y == old_direction
+
+      unless keep_direction
+        new_direction = target_y unless target_y.nil?
+        new_direction = target_x unless target_x.nil?
+      end
+
+      case new_direction
+        when :right
+          db BasicFlag::DIRECTION_RIGHT
+        when :up
+          db BasicFlag::DIRECTION_UP
+        when :down
+          db BasicFlag::DIRECTION_DOWN
+        when :left
+          db BasicFlag::DIRECTION_LEFT
+      end
+    end
+  end
+  
+  ;; Converts the gamepad+olddirection to a new direction
+  datablock _gamepaddirection_to_angle
+    64.times do |i|
+      target_x = nil
+      target_y = nil
+      
+      target_x = :left if i & (Control::Key.KEY_LEFT >> 2)
+      target_x = :right  if i & (Control::Key.KEY_RIGHT >> 2)
+      target_y = :up if i & (Control::Key.KEY_UP >> 2)
+      target_y = :down  if i & (Control::Key.KEY_DOWN >> 2)
+
+      if target_x == :right
+        db 0 if target_y.nil?
+        db $20 if target_y == :up
+        db $E0 if target_y == :down
+      elsif target_x == :left
+        db $80 if target_y.nil?
+        db $60 if target_y == :up
+        db $A0 if target_y == :down
+      else
+        db 0 if target_y.nil?
+        db $40 if target_y == :up
+        db $C0 if target_y == :down
+      end
+    end
+  end
+
+  ;; Sets the direction from the gamepad
+  Aoba::Script.callback "Character_SetDirectionFromGamepad", bank: SPRITE_ROM_BANK do
+    ;; Clears the A register
+    STZ   dp(Aoba::Script.register_a)
+    STZ   dp(Aoba::Script.register_a) + 2
+
+    CPU.set A: 8
+    TDC
+    XBA
+
+    ;; Checks if there is any gamepad attached
+    LDX   dp(Aoba::Script.register_c0)
+    X.is_a! Instance
+    LDY   X[:gamepad]
+    BZE   _no_movement
+
+    ;; Checks if any keys have been pressed
+    Y.is_a! Control::GamepadPlayer
+    LDA   Y[:keys]
+    AND   #Control::Key.KEY_DIRECTION
+    BZE   _no_movement
+
+    ;; `A` if any bitmap of 00F0
+    LSR   A
+    LSR   A
+    ORA   X[:direction]
+    TAX
+    LDA   _gamepaddirection_to_direction.long, X
+    STA   dp(Aoba::Script.calc0)
+    LDA   _gamepaddirection_to_angle.long, X
+
+    LDX   dp(Aoba::Script.register_c0)
+    X.is_a! Instance
+    STA   X[:new_move_angle]
+    LDA   dp(Aoba::Script.calc0)
+    STA   X[:new_direction]
+
+    ;; Writes the keys to the A register
+    LDX   Y[:keys]
+    STX   dp(Aoba::Script.register_a)
+
+    ;; We don't have any movement currently
+  _no_movement:
+    CPU.set A: 16
+  end
+
+  ;; Triggers the closest character
+  Aoba::Script.callback "Character_FindNearAction", bank: SPRITE_ROM_BANK do
+    LDA   #Thread::Event::USEREVENT_ID
+    JSL   Thread::Event.allocate_icb_long
+    X.is_a! Sprite::Event::TriggerNpcInRange::Event
+    LDA   #Sprite::Event::TriggerNpcInRange::ID
+    STA   X[:event_id]
+    LDY   dp(Aoba::Script.register_c0)
+    Y.is_a! Instance
+    LDA   Y[:id]
+    STA   X[:sprite_id]
+    LDA   Sprite.thread_id
+    JML   Thread.send_event_icb_long
+  end
+
+  ;; Triggers the NPC in register A
+  Aoba::Script.callback "Character_TriggerActionAsync", bank: SPRITE_ROM_BANK do
+    CPU.set A: 8
+    LDA   #Thread::Event::USEREVENT_ID
+    JSL   Thread::Event.allocate_icb_long
+    X.is_a! Sprite::Event::TriggerScript::Event
+    LDA   #Sprite::Event::TriggerScript::ID
+    STA   X[:event_id]
+    LDY   dp(Aoba::Script.register_c0)
+    Y.is_a! Instance
+    LDA   Y[:id]
+    STA   X[:sender_sprite_id]
+    LDA   dp(Aoba::Script.register_a)
+    STA   X[:sprite_id]
+    LDA   Sprite.thread_id
+    CPU.set A: 16
+    JML   Thread.send_event_icb_long
+  end
+
+end

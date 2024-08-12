@@ -1,0 +1,152 @@
+module Aoba::GameVariable
+
+  ;; Calculates a specific checksum
+  ;;
+  ;; @param X offset
+  ;; @param A size
+  ;; @return A checksum
+  def calculate_checksum
+    LSR   A
+    TAY
+
+    CPU.with_bank! SRAM_BANK do
+      LDA   #$1337
+      CLC
+    _loop:
+      ADC   0, X
+      XBA
+      INX
+      INX
+      DEY
+      BNZ   _loop
+    end
+  end
+
+  ;; Tests whether the checksum is valid
+  def calculate_global_checksum
+    LDX   #SRAM_ADDRESS
+    LDA   #SRAM_SIZE - SRAM_CHECKSUM_SIZE
+    JMP   calculate_checksum
+  end
+
+  ;; Commits changes
+  def commit
+    calculate_global_checksum
+    STA   SRAM_CHECKSUM_ADDRESS.long
+  end
+
+  def commit_long
+    commit
+    RTL
+  end
+
+  ;; Tests whether the checksum of a single gameslot is valid
+  def calculate_slot_checksum
+  end
+
+  ;; Tests whether the identifier is correct
+  def test_sram
+    CPU.set A: 8    
+    LDX   #SRAM_HEADER_SIZE - 1
+  _loop:
+    LDA   SRAM_HEADER_ADDRESS.long, X
+    CMP   expected_sram_header.long, X
+    BNE   _failed
+    DEX
+    BPL   _loop
+
+  _success:
+    CPU.set A: 16
+    calculate_global_checksum
+    CMP   SRAM_CHECKSUM_ADDRESS.long
+    BNE   _failed
+    CLC
+    RTS
+
+  _failed:
+    CPU.set A: 16
+    SEC
+  end
+
+  ;; Copy global data to SRAM
+  macro _copy_global_data_to_sram
+    LDA   #SRAM_GLOBAL_DATA_SIZE
+    BZE   _end_of_copy
+    TAX
+    BIT   #1
+    BZE   _start
+
+  _copy_first_byte:
+    CPU.set A: 8
+    LDA   GlobalInitializerData.long + SRAM_GLOBAL_DATA_SIZE - 1
+    STA   SRAM_ADDRESS.long + SRAM_GLOBAL_DATA_SIZE - 1
+    CPU.set A: 16
+    DEX
+    BZE   _end_of_copy
+
+  _start:
+    DEX
+    DEX
+  _loop:
+    LDA   GlobalInitializerData.long, X
+    STA   SRAM_ADDRESS.long, X
+    DEX
+    DEX
+    BPL   _loop
+
+  _end_of_copy:
+  end
+  
+  ;; Resets persistent data
+  macro _reset_persistent_data_in_ram
+    CPU.with_bank! FIXED_RAM_BANK do
+      LDA   #SRAM_SAVESLOT_DATA_SIZE
+      BZE   _end_of_copy
+      TAX
+      BIT   #1
+      BZE   _start
+
+    _copy_first_byte:
+      CPU.set A: 8
+      LDA   PersistentInitializerData.long + SRAM_SAVESLOT_DATA_SIZE - 1
+      STA   SaveSlotRAM + SRAM_SAVESLOT_DATA_SIZE - 1
+      CPU.set A: 16
+      DEX
+      BZE   _end_of_copy
+
+    _start:
+      DEX
+      DEX
+    _loop:
+      LDA   PersistentInitializerData.long, X
+      STA   SaveSlotRAM, X
+      DEX
+      DEX
+      BPL   _loop
+
+    _end_of_copy:
+    end
+  end
+
+  ;; Generates the header
+  macro _generate_header
+    CPU.set A: 8
+    LDX   #SRAM_HEADER_SIZE - 1
+  _loop:
+    LDA   expected_sram_header.long, X
+    STA   SRAM_HEADER_ADDRESS.long, X
+    DEX
+    BPL   _loop
+
+  _success:
+    CPU.set A: 16
+  end
+
+  ;; Regenerates the sram
+  def regenerate_sram
+    _copy_global_data_to_sram
+    _generate_header
+    JMP   commit
+  end
+
+end

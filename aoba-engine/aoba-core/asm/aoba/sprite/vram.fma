@@ -1,0 +1,14 @@
+module Aoba::Sprite
+  class VramObject < Aoba::VramObject
+    macro initialize(num_tiles)
+      super
+
+      @num_tiles = num_tiles
+      @align = $4000
+    end
+
+    macro size_in_bytes
+      return @num_tiles * 32
+    end
+  end
+end

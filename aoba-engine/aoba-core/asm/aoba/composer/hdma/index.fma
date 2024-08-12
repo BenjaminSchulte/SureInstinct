@@ -1,0 +1,8 @@
+module Aoba
+  HDMA_COMPOSER_ROM_BANK ||= SCREEN_ROM_BANK
+end
+
+require "configuration"
+require "memory"
+require "mode"
+require "manager"

@@ -1,0 +1,215 @@
+module Aoba::Level::Action::Modify
+
+  _modify_variables = create_shared_routine_variables do
+    declare :map_offset, as: :uint16
+    declare :vram_offset, as: :uint16
+    declare :tiledata_offset, as: :uint16
+    declare :calc0, as: :uint16
+    declare :calc1, as: :uint16
+  end
+
+  ;; The current buffer
+  declare :buffer, as: :uint16, in: SceneStaticRAM
+
+  ;; The current buffer pointer
+  declare :buffer_offset, as: :uint16, in: SceneStaticRAM
+
+  ;; Starts a replace level tile
+  ;; @param A amount of tiles
+  def start
+    ;; Each tile requires 4 subtiles with each 2 byte
+    ASL   A
+    ASL   A
+    ASL   A
+    TAX
+    LDA   thread_id.long
+    SEI
+    JSL   Memory.allocate_miniblock_long
+    CLI
+    TXA
+    STA   buffer.long
+    STA   buffer_offset.long
+  end
+
+  ;; Commits the changes
+  def finish
+    Debug.fatal "FREE buffer next frame"
+    NOP
+  end
+
+  ;; Writes the tile to buffer
+  macro _write_tile_to_buffer(xaxis, yaxis, xor)
+Debug.BRK
+NOP
+;;;;    RenderLevel._generate_load_tile_flip xaxis, yaxis, xor, :Y do |x, y|
+;;;;      STA   VARIABLE_RAM_BANK.as_bank(x * 2 + y * 4).long, X
+;;;;    end
+  end
+
+  ;; Adds the tile to the buffer
+  def _add_tile_to_buffer
+    _modify_variables.use do |map_offset, vram_offset, tiledata_offset, calc0, calc1|
+      STY   dp(calc0)
+      TYA
+      AND   #$3FF
+      Tileset.BYTES_PER_TILE_INDEX.multiplicated_register_A
+      CLC
+      ADC   dp(tiledata_offset)
+      TAY
+      LDX   buffer_offset
+      ASL   dp(calc0)
+      BCS   _flip_1z
+
+    _flip_0z:
+      ASL   dp(calc0)
+      BCS   _flip_01
+    _flip_00:
+      _write_tile_to_buffer 1, 1, $0000
+      RTS
+    _flip_01:
+      _write_tile_to_buffer 1, -1, $8000
+      RTS
+
+    _flip_1z:
+      ASL   dp(calc0)
+      BCS   _flip_11
+    _flip_10:
+      _write_tile_to_buffer -1, 1, $4000
+      RTS
+    _flip_11:
+      _write_tile_to_buffer -1, -1, $C000
+    end
+  end
+
+  ;; Replaces a tile on the map
+  ;; @param A position
+  ;; @param X layer
+  ;; @param Y new tile value
+  def add
+    routine bank: FIXED_RAM_BANK do
+      is_thread_safe
+      input A
+
+      use_shared_variables _modify_variables
+
+      execute do |map_offset, vram_offset, tiledata_offset, calc0, calc1|
+        ;; yyyyyyyy xxxxxxxx
+
+        ;; MAP:     yyyyy yxxxxxx0
+        ;; VRAM:     ttyy yy0xxxx0
+
+
+        ;; X axis calculation
+        STA   dp(calc0)
+        ASL   A
+        AND   #$FF
+        STA   dp(calc1)
+        STA   dp(map_offset)
+        
+        ;; Y axis calculation
+        LDA   dp(calc0)
+        AND   #$FF00
+        LSR   A
+        STA   dp(calc0)
+        ORA   dp(map_offset)
+        STA   dp(map_offset)
+
+        ;; Writes the tile to the map
+        TXA
+        CLC
+        ADC   dp(map_offset)
+        STA   dp(map_offset)
+
+        ;; Calculates the tilemap location
+        Debug.BRK
+        ;LDA   tilemap_vram_location - 1
+        AND   #$FF00
+        ;;;;;;;CPX   #Tilemap.tilemap_storage.tiles[:fg]
+        BNE   _skip_front_tilemap
+        ;;;;;;;LDX   #Tileset.tileset_storage.tiles[:fg]
+        BRA   _skip_back_tilemap
+      _skip_front_tilemap:
+        CLC
+        ADC   #64 * 32
+        ;;;;;;;LDX   #Tileset.tileset_storage.tiles[:bg]
+      _skip_back_tilemap:
+        STA   dp(vram_offset)
+        STX   dp(tiledata_offset)
+
+        ;; Updates the tile
+        LDX   dp(map_offset)
+        TYA
+        STA   0, X
+
+        ;; Tests if the tile is visible on the screen
+        LDA   dp(calc1)
+        SEC
+        ;;;;;;;SBC   tilemap_renderer.rendered_area_left_tile[:bg]
+        BMI   _skip_vram
+        CMP   #64
+        BGE   _skip_vram
+        LDA   dp(calc0) + 1
+        AND   #$FF
+        ASL   A
+        SEC
+        ;;;;;;;SBC   tilemap_renderer.rendered_area_top_tile[:bg]
+        BMI   _skip_vram
+        CMP   #32
+        BGE   _skip_vram
+
+        ;; Calculates the VRAM address
+      _vram_necessary:
+        ;; AH must be 00 at this point
+        CPU.set A: 8
+        LDA   dp(calc1)
+        BIT   #$20
+        BZE   _skip_second_tilemap
+        XBA
+        ORA   #$4
+        XBA
+      _skip_second_tilemap:
+        AND   #$1F
+        CPU.set A: 16
+        STA   dp(map_offset)
+        
+        ;; Calculates the Y position
+        LDA   dp(calc0)
+        LSR   A
+        AND   #$3C0
+        ORA   dp(map_offset)
+        CLC
+        ADC   dp(vram_offset)
+        STA   dp(vram_offset)
+        
+        ;; Calculates the flip
+        _add_tile_to_buffer
+
+        ;; Triggers VRAM update
+        CPU.with_bank VARIABLE_RAM_BANK, from_bank: FIXED_RAM_BANK do
+
+          CPU.set A: 8
+          Aoba::VBlank::Job.allocate_job_icb_long :vram_tile
+          ;;;;;LDA   #Aoba::VBlank::Target::VRAM_TILE
+          ;;;;;JSL   Aoba::VBlank::Job.allocate_icb_long
+          ;;;;;X.is_a! Aoba::VBlank::Job::JobInstance
+          LDA   #VARIABLE_RAM_BANK
+          STA   X[:source_address] + 2
+          CPU.set A: 16
+          LDA   buffer_offset.long
+          STA   X[:source_address]
+          CLC
+          ADC   #4 * 2
+          STA   buffer_offset.long
+          LDA   dp(vram_offset)
+          STA   X[:target_address]
+          LDA   #8
+          STA   X[:data_size]
+          JSL   Aoba::VBlank::Job.try_queue_icb_long
+
+        end
+
+      _skip_vram:
+      end
+    end
+  end
+end

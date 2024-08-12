@@ -1,0 +1,46 @@
+module Command::PlaySong
+
+  def process
+    MOV   dp(Song.song_volume), dp(SPC.PORT1)
+    MOV   dp(SPC.PORT0), dp(IPC.last_ipc_value)
+
+    ; Copy script track addresses
+    MOV   Y, #$10
+    MOV   X, #0
+  _copy_track_script_addresses:
+    MOV   A, addr(Song.song_data, X)
+    MOV   addr(Channel.script_offsets, X), A
+    INC   X
+    DEC   Y
+    BNZ   _copy_track_script_addresses
+
+    ; Stop all tracks
+    MOV   A, #SONG_CHANNEL_INDEX
+    Channel.channel_index_to_channel_pointer
+    MOV   dp(Channel.num_channels), #NUM_SONG_CHANNELS
+    MOV   dp(Channel.default_control_flags), #0
+    MOV   dp(Channel.default_panning), #$80
+    Channel.initialize_channels
+
+    ; Sets up the song timer
+    MOV   A, #DEFAULT_SONG_SPEED
+    MOV   dp(SPC.TIMER1), A
+    MOV   dp(Song.song_speed), A
+
+    MOV   dp(SPC.DSP_ADDR), #DSP.KOFF
+    MOV   A, dp(Channel.processed_channels)
+    MOV   dp(SPC.DSP_DATA), A
+    MOV   dp(Song.song_active_channels), A
+
+    ; Reset some variables
+    MOV   A, #0
+    MOV   dp(Song.song_enabled_echo_voices), A
+    MOV   dp(Song.song_enabled_noise_voices), A
+    MOV   dp(Song.song_enabled_pitchmod_voices), A
+
+    Script::Action::SetEcho.set_echo_on
+    Script::Action::SetNoise.set_noise_on
+    Script::Action::SetPitch.set_pitchmod_on
+  end
+
+end

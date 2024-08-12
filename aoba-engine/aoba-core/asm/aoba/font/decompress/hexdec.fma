@@ -1,0 +1,223 @@
+module Aoba::Font::Decompress::HexDec
+
+  _hexdec_variables = create_shared_routine_variables do
+    declare :write_buffer, as: :uint16
+    declare :temp_result, as: :uint8, size: 5
+    declare :current_number_pair, as: :uint8
+    declare :current_pair, as: :uint8
+  end
+
+  datablock _lookuptable_8_11
+    dw  $0000, $0256, $0512, $0768, $1024, $1280, $1536, $1792, $2048, $2304, $2560, $2816, $3072, $3328, $3584, $3840
+  end
+
+  datablock _lookuptable_4_7
+    dw  $0000, $0016, $0032, $0048, $0064, $0080, $0096, $0112, $0128, $0144, $0160, $0176, $0192, $0208, $0224, $0240
+  end
+
+  datablock _lookuptable_12_15
+    dw  $0000, $4096, $8192, $2288, $6384, $0480, $4576, $8672, $2768, $6864, $0960, $5056, $9152, $3248, $7344, $1440
+  end
+
+  datablock _lookuptable_12_15_high
+    dw  $0000, $0000, $0000, $0001, $0001, $0002, $0002, $0002, $0003, $0003, $0004, $0004, $0004, $0005, $0005, $0006
+  end
+
+  datablock _lookuptable_byte_to_word
+    dw $0000, $0001, $0002, $0003, $0004, $0005, $0006, $0007, $0008, $0009, 0, 0, 0, 0, 0, 0
+    dw $0100, $0101, $0102, $0103, $0104, $0105, $0106, $0107, $0108, $0109, 0, 0, 0, 0, 0, 0
+    dw $0200, $0201, $0202, $0203, $0204, $0205, $0206, $0207, $0208, $0209, 0, 0, 0, 0, 0, 0
+    dw $0300, $0301, $0302, $0303, $0304, $0305, $0306, $0307, $0308, $0309, 0, 0, 0, 0, 0, 0
+    dw $0400, $0401, $0402, $0403, $0404, $0405, $0406, $0407, $0408, $0409, 0, 0, 0, 0, 0, 0
+    dw $0500, $0501, $0502, $0503, $0504, $0505, $0506, $0507, $0508, $0509, 0, 0, 0, 0, 0, 0
+    dw $0600, $0601, $0602, $0603, $0604, $0605, $0606, $0607, $0608, $0609, 0, 0, 0, 0, 0, 0
+    dw $0700, $0701, $0702, $0703, $0704, $0705, $0706, $0707, $0708, $0709, 0, 0, 0, 0, 0, 0
+    dw $0800, $0801, $0802, $0803, $0804, $0805, $0806, $0807, $0808, $0809, 0, 0, 0, 0, 0, 0
+    dw $0900, $0901, $0902, $0903, $0904, $0905, $0906, $0907, $0908, $0909
+  end
+
+  ;; Writes the number to the buffer
+  macro _write_number_to_buffer
+    _hexdec_variables.use do |write_buffer, temp_result, current_number_byte, current_pair|
+
+      CPU.set A: 8
+      ;; Finds the first byte which is not zero
+      LDX   #3
+      LDY   dp(write_buffer)
+    _loop_first_byte:
+      LDA   dp(temp_result), X
+      BNZ   _found_first_byte
+      DEX
+      BPL   _loop_first_byte
+
+      ;; Value seems to be zero
+      STZ   dp(current_pair)
+      STZ   dp(current_number_byte)
+      LDA   #0
+      XBA
+      BRA   _process_lower_number
+
+      ;; We found the first byte
+    _found_first_byte:
+      STX   dp(current_number_byte)
+
+      ;; Converts the first byte $AB -> $0A0B
+      CPU.set A: 16
+      AND   #$FF
+      ASL
+      TAX
+      LDA   _lookuptable_byte_to_word.long, X
+      STA   dp(current_pair)
+      CPU.set A: 8
+
+      ;; Checks whether this is zero
+      LDA   #0
+      XBA
+      BZE   _process_lower_number
+
+    ;; Processes the higher number
+    _process_higher_number:
+      TAX
+      LDA   SystemText.system_characters.long + DIGIT_BASE, X
+      STA   0, Y
+      LDA   #0
+      STA   1, Y
+      INY
+      INY
+
+    _process_lower_number:
+      LDA   dp(current_pair)
+      TAX
+      LDA   SystemText.system_characters.long + DIGIT_BASE, X
+      STA   0, Y
+      LDA   #0
+      STA   1, Y
+      INY
+      INY
+
+    _process_next:
+      DEC   dp(current_number_byte)
+      BMI   _end_of_loop
+
+      LDA   dp(current_number_byte)
+      TAX
+      LDA   dp(temp_result), X
+      CPU.set A: 16
+      ASL   A
+      TAX
+      LDA   _lookuptable_byte_to_word.long, X
+      STA   dp(current_pair)
+      CPU.set A: 8
+      LDA   #0
+      XBA
+      BRA   _process_higher_number
+
+    _end_of_loop:
+      CPU.set A: 16
+    end
+  end
+
+  ;; Writes the number in X/Y to the target buffer
+  ;;
+  ;; @param A target buffer
+  ;; @param X number low uint16
+  ;; @param Y number high uint16
+  ;; @returns Y target buffer
+  def write_icb
+    routine from_A: 16, from_XY: 16 do
+      is_thread_safe
+      use_shared_variables _hexdec_variables
+      input A
+
+      execute do |write_buffer, temp_result, current_number_pair, current_pair| 
+        STA   dp(write_buffer)
+        CPY   #0
+        BNZ   _not_zero_high_word
+
+        ;; Writes an uint16 value
+      _write_uint16:
+        ;; Save number to Y
+        TXY
+        TXA
+
+        ;; Converts the lowest number
+        SED
+        AND   #$F
+        CLC
+        ADC   #0
+        STA   dp(temp_result)
+        STZ   dp(temp_result + 2)
+
+        ;; Converts bits 8..11
+        TYA
+        XBA
+        AND   #$F
+        BZE   _no_bit8
+        ASL   A
+        TAX
+        LDA   dp(temp_result)
+        CLC
+        ADC   _lookuptable_8_11.long, X
+        STA   dp(temp_result)
+
+        ;; Converts bit 4..7
+      _no_bit8:
+        TYA
+        LSR   A
+        LSR   A
+        LSR   A
+        TAY
+
+        AND   #$F << 1
+        BZE   _no_bit4
+
+        TAX
+        LDA   dp(temp_result)
+        CLC
+        ADC   _lookuptable_4_7.long, X
+        STA   dp(temp_result)
+
+        ;; Converts bit 12..15
+      _no_bit4:
+        TYA
+        XBA
+
+        AND   #$F << 1
+        BZE   _write_result_to_buffer
+
+        TAX
+        LDA   dp(temp_result)
+        CLC
+        ADC   _lookuptable_12_15.long, X
+        STA   dp(temp_result)
+        LDA   _lookuptable_12_15_high.long, X
+        ADC   #0
+        STA   dp(temp_result + 2)
+        BRA   _write_result_to_buffer
+
+      _is_negative_number:
+        Debug.BRK
+        NOP
+        NOP
+        BRA   _write_uint16
+
+      _not_zero_high_word:
+        CPY   #$FFFF
+        BEQ   _is_negative_number
+        fatal_error "can not write numbers larger than 65535 yet"
+
+        ;; Writes the result to the target buffer
+      _write_result_to_buffer:
+        CLD
+
+        _write_number_to_buffer
+      end
+    end
+  end
+
+  def write_long
+    write_icb
+    RTL
+  end
+
+end

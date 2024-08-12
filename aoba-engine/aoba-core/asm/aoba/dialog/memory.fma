@@ -1,0 +1,48 @@
+module Aoba::Dialog
+  
+  locate_at bank: DIALOG_ROM_BANK
+
+  ;; Temporary RAM
+  scope :ScriptTempRAM, in: nil, shared: true, for: ::SNES::MemoryMap::RAM
+
+  ;; Stores the pointer to the large dialog tilemap
+  declare :vram_dialog_tiles_address, as: :uint16, in: ::Memory::VariableRAM
+
+  ;; Stores the pointer to the large dialog tilemap
+  declare :vram_text_tiles_address, as: :uint16, in: ::Memory::VariableRAM
+
+  ;; The pointer tiles address
+  declare :vram_pointer_tiles_address, as: :uint16, in: ::Memory::VariableRAM
+
+  ;; Stores the pointer to the large dialog tilemap
+  declare :vram_dialog_tilemap_address, as: :uint16, in: ::Memory::VariableRAM
+
+  ;; Stores the pointer to the large dialog tilemap
+  declare :vram_text_tilemap_address, as: :uint16, in: ::Memory::VariableRAM
+
+  ;; VRAM num rows
+  declare :vram_num_rows, as: :uint8, in: ::Memory::VariableRAM
+
+  ;; Stores the pointer to the large dialog tilemap
+  declare :dialog_tilemap_header, as: :uint16, in: ::Memory::FixedRAM
+
+  ;; Default dialog font
+  declare :dialog_default_font, as: :uint24, in: ::Memory::FixedRAM
+
+  ;; Default dialog font
+  declare :dialog_default_speed, as: :uint8, in: ::Memory::FixedRAM
+
+  ;; Default dialog position
+  declare :default_dialog_position, as: :uint8, in: ::Memory::FixedRAM
+
+
+  ;; Reads the current_dialog to dp
+  macro _read_dialog_from_script(current_dialog)
+    LDX   dp(Aoba::Script.script_data)
+    X.is_a! Aoba::Script::ScriptData
+    LDA   X[:current_dialog]
+    TAX
+    STX   dp(current_dialog)
+    X.is_a! Aoba::Dialog::Hdma::Configuration
+  end
+end

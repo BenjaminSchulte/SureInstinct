@@ -1,0 +1,17 @@
+module Aoba
+
+  ;; The ROM bank
+  SCRIPT_ROM_BANK ||= $C1
+
+end
+
+require "configuration"
+require "memory"
+require "command"
+require "commands"
+require "processor"
+require "callback"
+require "callbacks"
+require "tools"
+
+require "thread"

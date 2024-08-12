@@ -1,0 +1,87 @@
+module Aoba::Tileset::Loader
+
+  class ImageParameter < Parameter
+    macro initialize(mode7=false)
+      super
+
+      @TempRAM = MemoryScope.new("ImageParameter", in: nil, for: ::SNES::MemoryMap::RAM)
+      @_decompress_buffer = MemoryVariable.new("_decompress_buffer", as: :uint16, in: @TempRAM)
+      @_lzw = MemoryVariable.new("_lzw", as: Aoba::Compression::LZW::State, in: @TempRAM)
+      @_vram_address = MemoryVariable.new("_vram_address", as: :uint16, in: @TempRAM)
+      @_mode7 = mode7
+    end
+
+    macro preconfigure
+      @loader.SharedTempRAM.include @TempRAM
+    end
+
+    macro size_in_bytes
+      return 3
+    end
+
+    macro load
+      LDA   dp(@loader._vram_address)
+      STA   dp(@_vram_address)
+
+      ;; Copy the image address for decompression
+      @loader.read_header_at @offset
+      STA   dp(@_lzw.source_address)
+      CPU.set A: 8
+      @loader.read_header_at @offset + 2
+      STA   dp(@_lzw.source_address + 2)
+      LDA   #VARIABLE_RAM_BANK
+      STA   dp(@_lzw.target_address + 2)
+      CPU.set A: 16
+
+      ;; Allocates the decompression RAM
+      LDX   #COMPRESSION_CHUNK_SIZE
+      JSL   Memory.waitfor_allocate_from_behind_long
+      STX   dp(@_decompress_buffer)
+      STX   dp(@_lzw.target_address)
+
+      ;; X = offset of LZW state
+    _loop_decompress:
+      TDC
+      CLC
+      ADC   #@_lzw
+      JSL   Aoba::Compression::LZW.decompress_long
+      PHX
+
+      ;; We decompressed a chunk. Let's try to upload it next VBLANK
+      if @_mode7
+        Aoba::VBlank::Job.allocate_job_icb_long :vram, notify_sender: true, vram_high: true, transfer_mode: :transfer_1_once
+      else
+        Aoba::VBlank::Job.allocate_job_icb_long :vram, notify_sender: true
+      end
+      LDA   dp(@_decompress_buffer)
+      STA   X[:source_address]
+      CPU.set A: 8
+      LDA   #VARIABLE_RAM_BANK
+      STA   X[:source_address] + 2
+      CPU.set A: 16
+      LDA   dp(@_vram_address)
+      STA   X[:target_address]
+      PLA
+      STA   X[:data_size]
+      LSR   A
+      CLC
+      ADC   dp(@_vram_address)
+      STA   dp(@_vram_address)
+
+      ;; Upload data and wait for it
+      JSL   Aoba::VBlank::Job.try_queue_and_wait_icb_long
+
+      ;; Test whether there is more data to copy
+      LDA   dp(@_lzw.has_more)
+      BNZ   _loop_decompress
+
+      ;; Free decompress buffer
+      LDX   dp(@_decompress_buffer)
+      LDY   #COMPRESSION_CHUNK_SIZE
+      JSL   Memory.free_long
+
+      LDX   dp(@loader._current_tileset)
+    end
+  end
+
+end

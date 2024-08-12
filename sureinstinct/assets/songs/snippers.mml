@@ -1,0 +1,335 @@
+.TRACK 0
+t62 o6
+
+[
+@"bassdrum" c10
+@"hihat" f12 f12
+@"pointsnare" c+:18
+@"hihat" f12
+@"bassdrum" c10
+@"hihat" f12 f12
+@"pointsnare" c+8
+]20
+
+/ o6
+
+[
+@"bassdrum" c10
+@"hihat" f12 f12
+@"pointsnare" c+:18
+@"hihat" f12
+@"bassdrum" c10
+@"hihat" f12 f12
+@"pointsnare" c+8
+]36
+
+@"bassdrum" c10
+@"hihat" d12
+@"bassdrum" c12
+@"pointsnare" c+10
+@"hihat" d12
+@"pointsnare" c+10 c+10
+@"hihat" d12
+@"pointsnare" c+3 
+
+r8
+
+[
+@"bassdrum" c10
+@"hihat" f12 f12
+@"pointsnare" c+:18
+@"hihat" f12
+@"bassdrum" c10
+@"hihat" f12 f12
+@"pointsnare" c+8
+]3
+
+
+@"bassdrum" c10
+@"hihat" f12 f12
+@"pointsnare" c+:18
+@"hihat" f12
+@"bassdrum" c10
+@"hihat" f12 f12
+@"pointsnare" c+10
+@"synthdrum" a12 f12
+
+[
+@"bassdrum" c10
+@"hihat" f12 f12
+@"pointsnare" c+:18
+@"hihat" f12
+@"bassdrum" c10
+@"hihat" f12 f12
+@"pointsnare" c+8
+]8
+
+
+
+
+
+
+
+
+
+.TRACK 1
+@"pointbass"r6 o6
+
+# Intro
+@"hihat" f5 f12 f:42 f5 f12 f:42 f5 f12 f:42 f6 < @"cymbal1" a8 >
+
+@"pointbass"
+[
+  d10 d:18 c:18 d6 < a12 > c12 d10 d:18 c:18 d6 g12 a12 a+10 a+:18 a:18 a+6 a+12 a12 g10 g:18 f:18 g10 f10 c10 c+10 
+]4
+
+/ o6
+
+[
+  g10 g:18 f:18 g6 d12 f12 g10 g:18 g:18 a10 g10 f10 g10 d10 d:18 c:18 d6 < a12 > c12 d10 d:18 f:18 d5 
+]2
+[
+  < a+:18 a+10 > d12 d+12 f12
+]2
+[
+  c:18 c10 e12 f12 g12
+]2
+[
+  d+:18 d+10 g12 a12 a+12
+]2
+[
+  f:18 f10 c12 d+12 c12
+]2
+[
+  < a+:18 a+10 > d12 d+12 f12
+]2
+[
+  c:18 c10 e12 f12 g12
+]2
+[
+  d+:18 d+10 g12 a12 a+12
+]2
+f:18 f10 c12 d+12 c12 f10
+
+@"bassdrum" c12 c12 @"fsnare" c8 @"pointbass"
+
+[
+  d10 d:18 c:18 d6 < a12 > c12 d10 d:18 c:18 d6 g12 a12 a+10 a+:18 a:18 a+6 a+12 a12 g10 g:18 f:18 g10 f10 c10 c+10
+]2
+
+[
+  g10 g:18 f:18 g6 d12 f12 g10 g:18 g:18 a10 g10 f10 g10 d10 d:18 c:18 d6 < a12 > c12 d10 d:18 f:18 d5
+]2
+
+< a+:18 a+10 f12 a10 a+10 a+10 a10 a+10 > c:18 c10 < g12 a+10 > c10 c10 < a+10 > c10
+< a+:18 a+10 f12 a10 a+10 a+10 a10 a+10 > g:18 g10 d12 f10 g10 g10 f10 g10
+
+@"synthdrum"
+a10 a12 g10 g12 f10 e12 e12 d10 c10 < a3 
+
+r10
+
+@"pointbass"
+[
+  d10 d:18 c:18 d6 < a12 > c12 d10 d:18 c:18 d6 g12 a12 a+10 a+:18 a:18 a+6 a+12 a12 g10 g:18 f:18 g10 f10 c10 c+10
+]3
+
+
+
+
+
+
+
+
+
+.TRACK 2
+r4 o6 v64
+
+@"fsnare" c3 c3 c:84 c10 c12 c12 c:84 c3 c3 c3 c3 c3 c3 c:30
+@"synthdrum" a:18 a:18 f:18 d10 c12 c12 < b8 >
+
+@"ensamblechord2" vr15 c6 c6 c8 c6 c6 <
+@"ensamblechord1" vr15 g+8 g+6 g+6
+@"ensamblechord2" vr15 f8 f6 g5 > r10 c6 c6 c8 c6 c6 <
+@"ensamblechord1" vr15 g+8 g+6 g+6
+@"ensamblechord2" vr15 f8 f6 g5 >
+
+/ o5
+
+@"ensamblechord1" f8 f8 f:18 f:18 d+:18 f:18 f8 f:18 f:18 d+:18
+@"ensamblechord2" c:18 c8 c:18 c:18
+@"ensamblechord1" d+:18
+@"ensamblechord2" c:18 c8 c:18 c:18
+@"ensamblechord1" d+10 f8 f8 f:18 f:18 d+:18 f:18 f8 f:18 f:18 d+:18
+@"ensamblechord2" c:18 c8 c:18 c:18
+@"ensamblechord1" d+:18
+@"ensamblechord2" c:18 c8 c:18 c:18
+@"ensamblechord1" d+10 g+:18 g+:18 g+8 g+10 g+10 g+10 a+:18 a+:18 a+8 a+10 a+10 a+10 
+> c+:18 c+:18 c+8 c+10 c+10 c+10 d+:18 d+:18 d+8 d+10 d+10 d+10 
+< g+:18 g+:18 g+8 g+10 g+10 g+10 a+:18 a+:18 a+8 a+10 a+10 a+10 
+> c+:18 c+:18 c+8 c+10 c+10 c+10 d+:18 d+:18 d+:18
+@"synthdrum" a12 a12 a12 f12 f12 d12 d:18
+
+@"ensamblechord2" vr15 c6 c6 c8 c6 c6 <
+@"ensamblechord1" vr15 g+8 g+6 g+6
+@"ensamblechord2" vr15 f8 f6 g5 > r10 c6 c6 c8 c6 c6 <
+@"ensamblechord1" vr15 g+8 g+6 g+6
+@"ensamblechord2" vr15 f8 f6 g5 
+
+@"ensamblechord1" f8 f8 f:18 f:18 d+:18 f:18 f8 f:18 f:18 d+:18
+@"ensamblechord2" c:18 c8 c:18 c:18
+@"ensamblechord1" d+:18 
+@"ensamblechord2" c:18 c8 c:18 c:18
+@"ensamblechord1" d+10 f8 f8 f:18 f:18 d+:18 f:18 f8 f:18 f:18 d+:18
+@"ensamblechord2" c:18 c8 c:18 c:18
+@"ensamblechord1" d+:18 
+@"ensamblechord2" c:18 c8 c:18 c:18
+@"ensamblechord1" d+10 g+6 g+8 g+8 g+10 a+6 a+8 a+8 a+10 g+6 g+8 g+8 g+10 f8 f8 f8 f8 f6 d+10 f:42
+
+@"plunk" f3 r10
+@"plunk" f+12 g+10 c+5 >
+@"fsnare" c3 c3 c:84 c10 c10 c10 <
+@"ensamblechord1" vr15 a+10 >
+@"ensamblechord2" vr15 c6 c6 <
+@"ensamblechord1" vr15 a+8 >
+@"ensamblechord2" vr15 c6 c6 <
+@"ensamblechord1" vr15 g+8 g+6 g+6
+@"ensamblechord2" vr15 f8 f6 g
+@"ensamblechord1" vr15 a+10 >
+@"ensamblechord2" vr15 c6 c6 <
+@"ensamblechord1" vr15 a+8 >
+@"ensamblechord2" vr15 c6 c6 <
+@"ensamblechord1" vr15 g+8 g+6 g+6
+@"ensamblechord2" vr15 f8 f6 g5
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+.TRACK 3
+o6 v64
+@"synperc" l12
+[
+g+ g+ f+10 d+10 c+ d+10 d+ f+10 d+10 f+10
+g+ g+ f+10 d+10 c+ d+6c+ d+ f+
+]10
+
+/ o6
+
+<
+@"cymbal1" a8 >
+@"plunk" c+:18 c+5 < g+12 > c+10 d+10 f10 f+8 f10 d+10 c+10 < b6 g+8 f+10 g+3 >
+@"cymbal1" c8 < a8 >
+@"plunk" c+10 < g+12 > c+5 < g+12 > c+10 d+10 f10 f+8 f10 d+10 c+10 g+6 d+8 c+10 d+3 
+@"cymbal1" c8 < a8
+@"pearldrop" e10 < b12 > e:30 d+10 e10 f+10 f+10 g+10 a+12 b:18 a+10 g+10 f+10 a:18 a10
+e12 a8 a10 b12 > c+12 < a10 b:18 b:18 f+10 b10 f+10 e10 d+10
+@"cymbal1" a8
+@"pearldrop" e10 < b12 > e:30 d+10 e10 f+10 f+10 g+10 a+12 b:18 a+10 g+10 f+10 a:18 a10
+e12 a8 a12 b12 > c+12 < b12 a10 b:18 > d+:18 f+10 b5 
+@"plunk" g+:18 f+:18 g+8 d+10 c+10 < b10 > d+:18 c+:18 < b10 g+6 > d+10 c+8 < b10 >
+c+8 c+10 < b10 > d+8 d+10 c+10 < b10 > c+10 < b10 > c+12 < b12 g+10 > g+10 a+12 b:18
+g+8 g+10 f+12 d+12 f+10 g+:18 f+:18 d+10 c+:18 < b:18 g+10 > c+:18 c+:18 < b10 > c+10 
+< b10 > c+10 d10 d+8 c+:18 < b10 > c+12 d+10 < g+10 b10
+@"cymbal1" a10 >
+@"pearldrop" f10 f8 f10 d+12 c+:18 d+10 f10 f10 d+12 f10 f+:18 f10 d+10 c+10 < b:18 b:18 a+10 b10 a+12 b10 a+12 f+10 g+:54 >
+@"synthdrum" b10 b12 g12 g12 e12 e12 <
+@"cymbal1" a10 >
+@"pearldrop" f10 f:18 c+12 f10 f+12 g+10 < g+12 > c+12 d+12 f10 f10 d+12 f10 f+:18 f10 d+10 c+10 g+12 a+12 b12 g+:18 d+10 c+:18 < b:18 > c+10 < g+8 >
+@"synthdrum" a12 a12 a12 a12 f12 f12 f12 f12 d12 d12 d12 d12 
+@"plunk" g+5 f+8 g+10 c+3 c+10 g+8 g+8 f+10 g+6 f8 d+8 c+8 < g+8 b8 a+8 g+8
+f+3 r8 >
+
+@"synperc"
+[
+g+ g+ f+10 d+10 c+ d+10 d+ f+10 d+10 f+10
+g+ g+ f+10 d+10 c+ d+6c+ d+ f+
+]6
+
+
+
+
+
+
+
+
+
+
+.TRACK 4
+o6 v20 r13
+@"synperc" l12
+[
+g+ g+ f+10 d+10 c+ d+10 d+ f+10 d+10 f+10
+g+ g+ f+10 d+10 c+ d+6c+ d+ f+
+]10
+
+/ o6
+v20
+
+[r1]19
+
+[
+g+ g+ f+10 d+10 c+ d+10 d+ f+10 d+10 f+10
+g+ g+ f+10 d+10 c+ d+6c+ d+ f+
+]6
+
+
+
+
+
+
+.TRACK 5
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+.TRACK 6
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+.TRACK 7
+
+
+
+
+
+
+
+
+
+
+
+
+
+

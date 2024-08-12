@@ -1,0 +1,109 @@
+name: Ingame tests
+
+tests:
+  game_starts_with_random_ram:
+    routine:
+      - action: play
+
+
+
+      - action: repeat
+        times: 150
+        routine:
+          - action: set_joypad
+            key_up: {random: {from: 0, to: 4095}}
+            key_down: {random: {from: 0, to: 4095}}
+          - action: wait
+            frames: 1
+      - action: set_joypad
+        key_up: 0xFFFF
+      - action: wait
+        frames: 100
+      - action: assert_screen
+        compare: game_starts_with_random_ram.png
+      - action: set_joypad
+        key_down: 0x20
+      - action: wait
+        frames: 50
+      - action: set_joypad
+        key_up: 0xFFFF
+      - action: wait
+        frames: 1
+      - action: repeat
+        times: 3
+        routine:
+          - action: set_joypad
+            key_down: 0x800
+          - action: wait
+            frames: 5
+          - action: set_joypad
+            key_up: 0x800
+          - action: wait
+            frames: 5
+      - action: set_joypad
+        key_down: 0x1
+      - action: wait
+        frames: 5
+      - action: set_joypad
+        key_up: 0x1
+      - action: wait
+        frames: 15
+      - action: repeat
+        times: 2
+        routine:
+          - action: set_joypad
+            key_down: 0x20
+          - action: wait
+            frames: 5
+          - action: set_joypad
+            key_up: 0x20
+          - action: wait
+            frames: 5
+      - action: set_joypad
+        key_down: 0x1
+      - action: wait
+        frames: 5
+      - action: set_joypad
+        key_up: 0x1
+      - action: wait
+        frames: 5
+      - action: wait
+        frames: 100
+      - action: assert_screen
+        compare: game_starts_with_random_ram_menu.png
+      - action: wait
+        frames: 30
+      - action: repeat
+        times: 2
+        routine:
+          - action: set_joypad
+            key_down: 0x10
+          - action: wait
+            frames: 5
+          - action: set_joypad
+            key_up: 0x10
+          - action: wait
+            frames: 5
+      - action: repeat
+        times: 2
+        routine:
+          - action: set_joypad
+            key_down: 0x20
+          - action: wait
+            frames: 5
+          - action: set_joypad
+            key_up: 0x20
+          - action: wait
+            frames: 5
+      - action: wait
+        frames: 10
+      - action: set_joypad
+        key_down: 0x1
+      - action: wait
+        frames: 5
+      - action: set_joypad
+        key_up: 0x1
+      - action: wait
+        frames: 5
+      - action: wait
+        frames: 40

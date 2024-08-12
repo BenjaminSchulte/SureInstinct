@@ -1,0 +1,45 @@
+module Aoba::Script
+
+  ;; Delay
+  ;;
+  ;; @param REGA duration to wait
+  Aoba::Script.callback "Script_Delay", bank: SYSTEM_ROM_BANK do
+    LDY   dp(Aoba::Script.register_a)
+    JMP   Aoba::Thread.delay_icb_long
+  end
+
+  ;; Delay
+  ;;
+  ;; @param REGA duration to wait
+  Aoba::Script.callback "Script_SetPriority", bank: SYSTEM_ROM_BANK do
+    CPU.set A: 8
+    LDA   dp(Aoba::Script.register_a)
+    JSL   Aoba::Thread.set_priority_icb_long
+    CPU.set A: 16
+  end
+
+  ;; Userdata
+  Aoba::Script.callback "Script_AllocateUserData", bank: SYSTEM_ROM_BANK do
+    LDX   dp(script_data)
+    X.is_a! ScriptData
+    LDA   X[:userdata]
+    BZE   _skip_free
+
+    ;; TODO: Free old RAM block 
+    Debug.BRK
+    NOP
+    NOP
+
+  _skip_free:
+    LDA   Memory.active_thread_id.long
+    LDX   dp(register_a)
+    SEI
+    JSL   Memory::allocate_miniblock_long
+    CLI
+    TXA
+    LDX   dp(script_data)
+    X.is_a! ScriptData
+    STA   X[:userdata]
+  end
+
+end

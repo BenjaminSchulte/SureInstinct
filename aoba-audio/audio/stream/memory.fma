@@ -1,0 +1,31 @@
+module Stream
+
+  STREAM_CHANNEL_BIT = $80
+  STREAM_CHANNEL_BASE = $70
+
+  STREAM_SAMPLE_ID = $1F
+
+  STREAM_BUFFER_TIMES = 8
+
+  ; Active channels used by stream playback
+  declare :stream_disabled_voices, as: :uint8, in: ::Memory.Page0
+
+  ; The number of blocks submitted every frame
+  declare :stream_block_size, as: :uint8, in: ::Memory.Page0
+
+  ; The number of blocks submitted every frame
+  declare :stream_byte_size, as: :uint8, in: ::Memory.Page0
+
+  ; The start of the stream buffer
+  declare :stream_buffer_start, as: :uint16, in: ::Memory.Page0
+
+  ; The offset within the current stream buffer
+  declare :stream_buffer_offset, as: :uint16, in: ::Memory.Page0
+
+  ; Number of blocks until we make a loop
+  declare :number_of_blocks_till_loop, as: :uint8, in: ::Memory.Page0
+
+  ; Number of blocks until we play the stream
+  declare :number_of_blocks_till_play, as: :uint8, in: ::Memory.Page0
+
+end

@@ -1,0 +1,92 @@
+module Aoba::Sprite
+
+  module MovableFlag
+
+    ;; Whether this NPC is currently being moved
+    IS_BEING_PUSHED = $01
+
+    ;; Whether this NPC is currently being moved
+    IDLE_IS_BEING_PUSHED = $02
+
+    ;; Whether this NPC can be moved
+    CAN_BE_PUSHED = $04
+
+    ;; Whether this NPC can move other NPCs
+    CAN_PUSH = $08
+
+    ;; Whether the NPC is flying (ignore move events)
+    IS_FLYING = $10
+
+    ;; Whether the NPC is currently pushing another NPC
+    IS_PUSHING = $20
+
+    ;; Whether the NPC was pushing last frame
+    IDLE_IS_PUSHING = $40
+
+    ;; Forces collision test even if no tile has changed
+    FORCE_COLLISION_TEST = $80
+  end
+
+  class Movable
+    ;; Movable flags
+    declare :movable_flags, as: :uint8
+
+    ;; The speed of the sprite X
+    declare :speed_x_decimal, as: :uint16
+    declare :speed_x, as: :uint16
+
+    ;; The speed of the sprite Y
+    declare :speed_y_decimal, as: :uint16
+    declare :speed_y, as: :uint16
+
+    ;; The speed for being shifted
+    declare :shift_x_speed_decimal, as: :uint16
+    declare :shift_x_speed, as: :uint16
+    declare :shift_y_speed_decimal, as: :uint16
+    declare :shift_y_speed, as: :uint16
+
+    ;; The current walk speed
+    declare :walk_speed, as: :uint16
+
+    ;; Bitmask on both axis (Used for collision detection)
+    declare :collision_x_bitmask, as: :uint16
+    declare :collision_y_bitmask, as: :uint16
+
+    ;; Configures the class when being included
+    macro self.configure(Instance)
+      Instance.event.on :reset8 do
+        STZ   X[:movable_flags]
+      end
+
+      Instance.event.on :reset16 do
+        STZ   X[:speed_x_decimal]
+        STZ   X[:speed_x]
+        STZ   X[:speed_y_decimal]
+        STZ   X[:speed_y]
+        STZ   X[:shift_x_speed]
+        STZ   X[:shift_y_speed]
+        STZ   X[:shift_y_speed_decimal]
+        STZ   X[:shift_x_speed_decimal]
+        STZ   X[:walk_speed]
+        STZ   X[:collision_x_bitmask]
+        STZ   X[:collision_y_bitmask]
+      end
+
+      Instance.event.on :update do
+        LDA   X[:basic_flags]
+        BMI   _skip_move
+        LDA   X[:custom_move_routine]
+        BZE   _custom_move
+        PEA   #_skip_move - 1
+        DEC   A
+        DEC   A
+        PHA
+        RTS
+      _custom_move:
+        Aoba::Sprite::Action::Move.move_sprite
+      _skip_move:
+      end
+    end
+  end
+
+end

@@ -1,0 +1,245 @@
+module Aoba
+
+  class RoutineVariables
+    macro initialize
+      @_variables = []
+      @_names = {}
+      @_stack_size = 0
+    end
+
+    macro declare(id, as, size=1)
+      @_variables << (@_stack_size + 1)
+      @_names[id] = (@_stack_size + 1)
+      @_stack_size += as.size_in_bytes * size
+    end
+
+    macro offset_of(id)
+      return @_names[id]
+    end
+
+    macro all
+      return @_variables
+    end
+
+    macro stack_size
+      return @_stack_size
+    end
+
+    macro use(&block)
+      v=@_variables
+      block.call *v
+    end
+  end
+
+  macro create_shared_routine_variables(&block)
+    v = RoutineVariables.new
+    block.call with_context v
+    return v
+  end
+
+  class Routine
+    macro initialize(bank, from_bank, A, XY, from_A, from_XY)
+      @_bank = bank
+      @_from_bank = from_bank
+      @_A_size = A
+      @_XY_size = XY
+      @_from_A_size = from_A
+      @_from_XY_size = from_XY
+      @_force_set_data = false
+
+      @_thread = nil
+
+      @_input_register_A = false
+      @_output_register_A = false
+
+      @_variables = RoutineVariables.new
+    end
+
+    macro use_shared_variables(v)
+      @_variables = v
+    end
+
+    macro is_thread_safe
+      @_thread = :none
+    end
+
+    macro with_data_to_stack
+      @_force_set_data = true
+    end
+
+    macro make_thread_safe
+      @_thread = :sei
+    end
+
+    macro assert_thread_safe
+      @_thread = :test
+    end
+
+    macro input(reg)
+      @_input_register_A = true if reg == A
+    end
+
+    macro output(reg)
+      @_output_register_A = true if reg == A
+    end
+
+    macro declare(id, as, size=1)
+      @_variables.declare(id, as, size)
+    end
+
+    macro bank_change_needed?
+      return false if @_bank.nil?
+      return true if @_from_bank.nil?
+      return false if @_bank == @_from_bank
+      return true
+    end
+
+    macro XY_change_needed?
+      return false if @_XY_size.nil?
+      return true if @_from_XY_size.nil?
+      return false if @_XY_size == @_from_XY_size
+      return true
+    end
+
+    macro direct_page_needed?
+      return true if @_force_set_data
+      return false if @_variables.stack_size == 0
+      return true
+    end
+
+    macro from_A_size_after_dp
+      return 16 if direct_page_needed?
+      return @_from_A_size
+    end
+
+    macro needs_php?
+      return true if @_from_A_size.nil? || XY_change_needed?
+      return true if @_thread == :sei
+      return false
+    end
+
+    macro execute(&block)
+      raise "Missing thread configuration for routine" if @_thread.nil?
+
+      if @_A_size == 16 || @_A_size.nil?
+        _execute_with_A16 &block
+      else
+        _execute_with_A8 &block
+      end
+    end
+
+    macro _execute_with_A16(&block)
+      v = @_variables.all
+
+      _with_bank do
+        _with_php do
+          _with_registersize do
+            _with_directpage do
+              block.call *v
+            end
+          end
+        end
+      end
+    end
+
+    macro _execute_with_A8(&block)
+      v = @_variables.all
+
+      _with_bank do
+        _with_php do
+          _with_directpage do
+            _with_registersize do
+              block.call *v
+            end
+          end
+        end
+      end
+    end
+
+    macro _with_php
+      PHP if @needs_php?
+      SEI if @_thread == :sei
+      yield
+      PLP if @needs_php?
+    end
+
+    macro _with_bank
+      if bank_change_needed?
+        CPU.with_bank! @_bank, from_bank: @_from_bank do
+          yield
+        end
+      else
+        yield
+      end
+    end
+
+    macro _test_thread_A16
+      Debug.only do
+        Thread.test_thread_disabled_A16_SYSTEMBANK
+      end
+    end
+
+    macro _with_registersize
+      _local_from_A_size = from_A_size_after_dp
+
+      if _local_from_A_size.nil? || XY_change_needed?
+        if XY_change_needed?
+          CPU.set A: @_A_size, XY: @_XY_size
+        else
+          CPU.set A: @_A_size
+        end
+      elsif _local_from_A_size == 8
+        raise "TODO: Routine: From A Size 8"
+      end
+
+      if @_thread == :test
+        if @_A_size == 8
+          raise "TODO: _test_thread_A8"
+        else
+          _test_thread_A16
+        end
+      end
+
+      yield
+    end
+
+    macro _with_directpage
+      if direct_page_needed?
+        CPU.set A: 16 if @_from_A_size.nil? || @_from_A_size == 8
+        PHD
+        PHA if @_input_register_A || @_output_register_A
+        TSC
+        if @_variables.stack_size > 0
+          @_variables.stack_size.subtract_from_A
+          TCS
+        end
+        TCD
+        LDA   @_variables.stack_size + 1, S if @_input_register_A
+      end
+
+      yield
+
+      if direct_page_needed?
+        STA   @_variables.stack_size + 1, S if @_output_register_A
+        CPU.set A: 16 unless A.size == 16
+
+        if @_variables.stack_size > 0
+          TSC
+          CLC
+          ADC   #@_variables.stack_size
+          TCS
+        end
+
+        PLA if @_input_register_A || @_output_register_A
+        PLD
+      end
+    end
+  end
+
+  macro routine(bank=nil, from_bank=nil, A=16, XY=16, from_A=nil, from_XY=nil)
+    r = Routine.new(bank, from_bank, A, XY, from_A, from_XY)
+
+    yield with_context r
+  end
+
+end

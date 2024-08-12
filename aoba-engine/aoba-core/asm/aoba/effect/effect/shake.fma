@@ -1,0 +1,110 @@
+module Aoba::Effect::Shake
+
+  module Flag
+    SCREEN_BG1 = $01
+    SCREEN_BG2 = $02
+    SCREEN_BG3 = $04
+    SCREEN_BG4 = $08
+  end
+
+  class Event < Aoba::Effect::Event::Base
+    declare :power_x, as: :uint8
+    declare :power_y, as: :uint8
+    declare :duration, as: :uint8
+    declare :flags, as: :uint8
+  end
+
+  class Configuration
+    declare :power_x, as: :uint8
+    declare :power_y, as: :uint8
+    declare :duration, as: :uint8
+    declare :flags, as: :uint8
+  end
+
+  ShakeEffect = Aoba::Effect.create "Shake" do
+    with_event_class Event
+    with_variables Configuration
+
+    start do
+      LDY   dp(current_event)
+      Y.is_a! Event
+      LDX   dp(current_memory)
+      X.is_a! Configuration
+
+      LDA   Y[:power_x]
+      STA   X[:power_x]
+      LDA   Y[:duration]
+      STA   X[:duration]
+
+      queue_update 1
+    end
+
+    update do
+      LDX   dp(current_memory)
+      X.is_a! Configuration
+
+      CPU.set A: 8
+      DEC   X[:duration]
+      BZE   _finish
+
+      TDC
+      XBA
+
+      LDA   X[:power_y]
+      TAY
+      EOR   #$FF
+      INC   A
+      STA   X[:power_y]
+      LDA   X[:power_x]
+      PHA
+      EOR   #$FF
+      INC   A
+      STA   X[:power_x]
+      PLA
+      CPU.set A: 16
+      BPL   _no_adjust_x
+      EOR   #$FF00
+    _no_adjust_x:
+      TAX
+      TYA
+      BIT   #$80      
+      BZE   _no_adjust_y
+      EOR   #$FF00
+    _no_adjust_y:
+      TAY
+      JSL   Aoba::Composer::Api.update_additional_scrolling_long
+
+      queue_update 1
+      BRA   _rts
+
+    _finish:
+      CPU.set A: 16
+      trigger_finish
+
+    _rts:
+    end
+
+    finish do
+      LDX   #0
+      LDY   #0
+      JSL   Aoba::Composer::Api.update_additional_scrolling_long
+    end
+  end
+
+  macro trigger(x, y, duration, bg1=false, bg2=false, bg3=false, bg4=false)
+    ShakeEffect.create_start_event
+    LDA   #(x & $FF) | (y << 8)
+    STA   X[:power_x]
+
+    _flags = 0
+    _flags |= Flag.SCREEN_BG1 if bg1
+    _flags |= Flag.SCREEN_BG2 if bg2
+    _flags |= Flag.SCREEN_BG3 if bg3
+    _flags |= Flag.SCREEN_BG4 if bg4
+
+    LDA   #duration | _flags << 8
+    STA   X[:duration]
+    ShakeEffect.send_start_event
+  end
+
+end

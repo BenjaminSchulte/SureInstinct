@@ -1,0 +1,157 @@
+module Aoba::Sprite
+
+  ;; Basic flags
+  module BasicFlag
+
+    ;; The move direction
+    DIRECTION_RIGHT = $00
+
+    ;; The move direction
+    DIRECTION_UP = $01
+
+    ;; The move direction
+    DIRECTION_LEFT = $02
+
+    ;; The move direction
+    DIRECTION_DOWN = $03
+
+    ;; The direction mask
+    DIRECTION_MASK = $03
+
+    ;; Whether this has a custom sprite slot allocation
+    HAS_DETACHED_SPRITE_SLOT_ALLOCATION = $04
+
+    ;; Set if the sprite is meant to be destroyed
+    DESTROYED = $10
+  
+    ;; Set if sprite is part of the player collision group
+    PLAYER_SPRITE_GROUP = $20
+
+    ;; Whether the sprite is currently in the queue
+    IN_QUEUE = $40
+
+    ;; Whether the sprite is on front or on back layer for collision
+    COLLISION_FG_LAYER = $80
+
+    ;; Set if sprite is part of the player collision group
+    NPC_SPRITE_GROUP = $0100
+
+    ;; Skips the animation queue
+    SKIP_UPDATE_ROUTINE = $4000
+
+    ;; Whether the sprite moves on its own
+    SKIP_MOVE_ROUTINE = $8000
+
+    macro direction_to_s(bit)
+      case bit
+      when DIRECTION_UP
+        :up
+      when DIRECTION_DOWN
+        :down
+      when DIRECTION_LEFT
+        :left
+      when DIRECTION_RIGHT
+        :right
+      else
+        :unknown
+      end
+    end
+  end
+
+  ;; Internal usage only
+  class SpriteRootClass
+    ;; Includes another sprite into this
+    macro self.use(Klass)
+      include_class Klass
+      self.use_modifier Klass
+    end
+
+    macro self.use_modifier(Klass)
+      @event ||= Aoba::Event::Emitter.new
+
+      @modules ||= []
+      @modules << Klass
+
+      if Klass.respond_to?(:configure)
+        Klass.configure self
+      end
+    end
+  end
+  
+  ;; Base sprite attributes
+  class SpriteRootAttributes
+    ;; The next sprite pointer
+    declare :next_sprite, as: :uint16
+
+    ;; The previous sprite pointer
+    declare :previous_sprite, as: :uint16
+    
+    ;; Parent sprite
+    declare :parent_sprite, as: :uint16
+
+    ;; Upper sprite
+    declare :attached_sprite_above, as: :uint16
+
+    ;; The ID
+    declare :id, as: :uint8
+
+    ;; The X position
+    declare :x_decimal, as: :int16
+    declare :x, as: :int16
+
+    ;; The Y position
+    declare :y_decimal, as: :int16
+    declare :y, as: :int16
+
+    ;; The creature pointer
+    declare :creature_header, as: :uint16
+
+    ;; The sprite resource ID
+    declare :sprite_id, as: :uint16
+
+    ;; The sprite header
+    declare :sprite_header, as: :uint24
+
+    ;; The basic flags
+    declare :basic_flags, as: :uint16
+
+    ;; The basic flags
+    declare :direction, as: :uint8
+    ; - no space here -
+    ;; The new direction
+    declare :new_direction, as: :uint8
+
+    ;; The thread that killed this sprite
+    declare :sprite_killed_thread, as: :uint8
+
+    ;; Custom move routine
+    declare :custom_move_routine, as: :uint16
+
+    ;; Configures the instance
+    macro self.configure(Instance)
+      Instance.event.on :reset16 do
+        STZ   X[:x_decimal]
+        STZ   X[:y_decimal]
+        STZ   X[:basic_flags]
+        STZ   X[:new_direction]
+        STZ   X[:direction]
+        STZ   X[:parent_sprite]
+        STZ   X[:attached_sprite_above]
+        STZ   X[:custom_move_routine]
+      end
+      Instance.event.on :reset8 do
+        STZ   X[:sprite_killed_thread]
+      end
+    end
+  end
+
+  ;; The sprite instance
+  class Base < SpriteRootClass
+    use SpriteRootAttributes
+  end
+
+  ;; The sprite instance
+  class Instance < Base
+  end
+
+end

@@ -1,0 +1,12 @@
+module Aoba::Sprite::Crowd
+
+  ;; Class
+  class List
+    ;; Number of members maximum
+    declare :max_members, as: :uint8
+
+    ;; Current number of members
+    declare :num_members, as: :uint8
+  end
+
+end

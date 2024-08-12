@@ -1,0 +1,76 @@
+module Aoba
+
+  ;; pow(n, 2)
+  datablock PowerOfTwo8
+    db   1
+    db   2
+    db   4
+    db   8
+    db   16
+    db   32
+    db   64
+    db   128
+  end
+
+  ;; pow(n, 2)
+  datablock PowerOfTwo16
+    dw   1
+    dw   2
+    dw   4
+    dw   8
+    dw   16
+    dw   32
+    dw   64
+    dw   128
+    dw   256
+    dw   512
+    dw   1024
+    dw   2048
+    dw   4096
+    dw   8192
+    dw   16384
+    dw   32768
+  end
+
+  ;; pow(n, 2)
+  datablock PowerOfTwoBitmask16
+    dw   $0000 ; 0
+    dw   $0001
+    dw   $0003
+    dw   $0007
+    dw   $000F ; 4
+    dw   $001F
+    dw   $003F
+    dw   $007F
+    dw   $00FF ; 8
+    dw   $01FF
+    dw   $03FF
+    dw   $07FF
+    dw   $0FFF ; C
+    dw   $1FFF
+    dw   $3FFF
+    dw   $7FFF
+    dw   $FFFF ; 10
+
+    dw   $FFFF
+    dw   $FFFF
+    dw   $FFFF
+    dw   $FFFF ; 14
+    dw   $FFFF
+    dw   $FFFF
+    dw   $FFFF
+    dw   $FFFF ; 18
+    dw   $FFFF
+    dw   $FFFF
+    dw   $FFFF
+    dw   $FFFF ; 1C
+    dw   $FFFF
+    dw   $FFFF
+    dw   $FFFF
+    dw   $FFFF
+  end
+
+  ;; word $0000
+  Zero = PowerOfTwoBitmask16.to_sym
+
+end

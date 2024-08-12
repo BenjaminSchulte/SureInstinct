@@ -1,0 +1,89 @@
+module Aoba::Composer::Event::WaitForFadeScreen
+
+  ;; The event
+  class Event < Base
+  end
+
+  ;; The notify answer event
+  class ReplyEvent < Aoba::Thread::Event::Base
+    declare :our_event_id, as: :uint8
+    declare :target_thread_id, as: :uint8
+  end
+
+  ;; The RAM for scrolling configuration
+  scope :TempRAM, in: ActionRAM
+  
+  declare :sender_thread_id, as: :uint8, in: TempRAM
+
+
+  ;; The RAM for scrolling configuration
+  scope :StaticRAM, in: Aoba::Composer::StaticRAM
+
+  ;; Pointer to the first event that needs attention after fading is finished
+  declare :first_notify_event, as: :uint16, in: ::Memory::VariableRAM
+
+
+  ;; Triggers all notify events
+  def trigger_all
+    Thread.assert_thread thread_id
+
+    LDA   first_notify_event.long
+    BZE   _end_of_trigger
+
+  _trigger_loop:
+    TAX
+    X.is_a! ReplyEvent
+    LDA   X[:next_event]
+    STA   first_notify_event.long
+
+    LDA   X[:target_thread_id]
+    JSL   Aoba::Thread.send_event_icb_long
+
+    LDA   first_notify_event.long
+    BNZ   _trigger_loop
+
+  _end_of_trigger:
+  end
+
+
+  ;; Starts fading
+  ;; @ignore-thread-safety
+  ID = List.create "WaitForFadeScreen" do
+    Y.is_a! Event
+
+    ;; Creates the wait event
+    PHY
+    LDA   #Aoba::Thread::Event::READYEVENT_ID
+    JSL   Aoba::Thread::Event.allocate_icb_long
+    PLY
+    X.is_a! ReplyEvent
+
+    CPU.set A: 8
+    LDA   #ID
+    STA   X[:our_event_id]
+    LDA   Y[:sender_thread_id]
+    STA   X[:target_thread_id]
+    STA   dp(sender_thread_id)
+    LDA   Action::FadeScreen.target_brightness.long
+    CPU.set A: 16
+    BMI   _has_finished
+
+    ;; Queues the wait event
+  _queue_wait_for_finish:
+    LDA   first_notify_event.long
+    STA   X[:next_event]
+    TXA
+    STA   first_notify_event.long
+    RTS
+
+  _has_finished:
+    LDA   dp(sender_thread_id)
+    JSL   Aoba::Thread.send_event_icb_long
+  end
+
+  ;; Initial setup
+  Aoba::Event.on :composer_initialize_ram_16 do
+    STZ   first_notify_event
+  end
+
+end

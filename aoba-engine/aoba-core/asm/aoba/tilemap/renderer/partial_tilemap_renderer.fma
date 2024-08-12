@@ -1,0 +1,534 @@
+module Aoba::Tilemap::Renderer
+
+  class PartialTilemapRendererBuilder < BaseBuilder
+    macro use_temporary(calc32)
+      @renderer._calc32a = calc32
+    end
+  end
+
+  class PartialTilemapRenderer < Base
+    macro initialize
+      super
+
+      @_calc32a = nil
+      @_current_column       = MemoryVariable.new("current_column", as: :uint16, in: @TempRAM)
+      @_current_row          = MemoryVariable.new("current_row", as: :uint16, in: @TempRAM)
+      @_origin_map           = MemoryVariable.new("origin_map", as: :uint16, in: @TempRAM)
+      @_origin_tileset       = MemoryVariable.new("origin_tileset", as: :uint16, in: @TempRAM)
+      @_left_tile            = MemoryVariable.new("left_tile", as: :uint16, in: @TempRAM)
+      @_top_tile             = MemoryVariable.new("top_tile", as: :uint16, in: @TempRAM)
+      @_tilemap_read_offset  = MemoryVariable.new("tilemap_read_offset", as: :uint16, in: @TempRAM)
+      @_tilemap_write_offset = MemoryVariable.new("tilemap_write_offset", as: :uint16, in: @TempRAM)
+      @_allocated_ram        = MemoryVariable.new("allocated_ram", as: :uint16, in: @TempRAM)
+      @_write_target         = MemoryVariable.new("write_target", as: :uint24, in: @TempRAM)
+
+      @SharedTempRAM = MemoryScope.new("shared_temp_ram", in: @TempRAM, shared: true)
+    end
+
+    macro configure_for_scene(scene)
+      super scene
+
+      _self = self
+      scene.event.on :load16_fixed do
+        LDA   #$FFFF
+        _self.layers.each do |layer|
+          STA   _self.rendered_area_top_tile[layer]
+          STA   _self.rendered_area_left_tile[layer]
+        end
+      end
+
+      scene.FixedRAM.include @RAM
+    end
+
+    macro _configure_vram(scene, vram)
+      _self = self
+      scene.event.on :load8_fixed do
+        _address = vram.address
+        _self.layers.each do |layer|
+          _self.layer_target_bgs[layer].each do |bg|
+            LDA   #_address >> 9
+
+            case bg
+              when 1
+                STA   Composer.vram_bg1_tilemap
+              when 2
+                STA   Composer.vram_bg2_tilemap
+              else
+                raise "Unsupported background: #{bg}"
+            end
+
+            _address += vram.layer_size_in_bytes
+          end
+        end
+      end
+    end
+
+    macro finalize
+      if @_calc32a.nil?
+        @_calc32a = MemoryVariable.new("calc32", as: :uint16, in: @TempRAM)
+      end
+
+      @rendered_area_left_tile = {}
+      @rendered_area_top_tile = {}
+      
+      _self = self
+      @layers.each do |layer|
+        _self.rendered_area_left_tile[layer] = MemoryVariable.new("rendered_area_left_tile_#{layer}", as: :uint16, in: _self.RAM)
+        _self.rendered_area_top_tile[layer] = MemoryVariable.new("rendered_area_top_tile_#{layer}", as: :uint16, in: _self.RAM)
+      end
+
+      super
+    end
+
+    ;; Add to VRAM
+    macro include_as_vram_object(id, layout, scope)
+      obj = VramObject.new(self)
+      obj.include_as_vram_object id, layout, scope
+    end
+
+
+    ;; ------------------------------------------------------
+    ;;  HELPER METHODS
+    ;; ------------------------------------------------------
+
+    ;; Number of background
+    macro num_bgs
+      _count = 0
+      _self = self
+      @layers.each do |layer|
+        num_for_layer = _self.tilemap_layer(layer).tileset_layer.num_bgs
+        _count += num_for_layer
+      end
+      return _count
+    end
+
+    ;; Returns the total RAM size per layer
+    macro single_bg_ram_size
+      return @screen_bgtile_width * @screen_bgtile_height * 2
+    end
+
+    ;; Returns the total RAM size
+    macro total_ram_size
+      return num_bgs * single_bg_ram_size
+    end
+
+    ;; Loads the initial row and column
+    macro load_initial_row_and_column
+      LDY   #@screen_render_tile_width
+      STY   dp(@_current_column)
+      LDY   #screen_tile_height if screen_tile_height != @screen_render_tile_width
+      STY   dp(@_current_row)
+    end
+
+    ;; Increments the current write address
+    macro _increment_write_address_Y
+      STA   dp(@_calc32a)
+      CLC
+      ADC   #$80
+      AND   #$7BC
+      STA   dp(@_calc32a + 2)
+      EOR   dp(@_calc32a)
+      AND   #$800
+      EOR   #$800
+      EOR   dp(@_calc32a + 2)
+    end
+
+    ;; Increments the current write address
+    macro _increment_write_address_X
+      CLC
+      ADC   #@tile_format.num_bgtiles_x * 2
+      
+      if screen_bgtile_width == 64
+        BIT   #$3F
+        BNZ   _no_jump_to_next_screen
+        EOR   #$0800
+      end
+
+    _no_jump_to_next_screen:
+      AND   #$FFBF
+    end
+
+    ;; ------------------------------------------------------
+    ;;  MEMORY MANAGEMENT
+    ;; ------------------------------------------------------
+
+    ;; Allocates the necessary RAM
+    routine :_allocate_ram do
+      LDA   #VARIABLE_RAM_BANK << 8
+      STA   dp(@_write_target + 1)
+      LDX   #total_ram_size
+      SEI
+      JSL   Aoba::Memory.waitfor_allocate_from_behind_long
+      CLI
+      STX   dp(@_write_target)
+      STX   dp(@_allocated_ram)
+      RTS
+    end
+
+    ;; Frees the RAM
+    macro _free_ram
+      LDY   #total_ram_size
+      LDX   dp(@_allocated_ram)
+      JSL   Aoba::Memory.free_long
+    end
+
+    ;; ------------------------------------------------------
+    ;;  VBLANK
+    ;; ------------------------------------------------------
+
+    macro _copy_data_to_vram_fast(two_bgs)
+      Aoba::VBlank::Job.allocate_job_icb_long :vram, notify_sender: true
+      
+      if two_bgs
+        PHX
+        Aoba::VBlank::Job.allocate_job_icb_long :vram, notify_sender: true
+        PLY
+      end
+
+      X.is_a! Aoba::VBlank::Job::JobInstance
+      Y.is_a! Aoba::VBlank::Job::JobInstance
+      
+      ;; Source address
+      LDA   dp(@_allocated_ram)
+      STA   X[:source_address]
+      
+      if two_bgs
+        CLC
+        ADC   #single_bg_ram_size
+        STA   Y[:source_address]
+      end
+
+      ;; Target address
+      Debug.access_8bit_through_16bit
+      LDA   @vram_address.long
+      AND   #$FF
+      XBA
+      STA   X[:target_address]
+      if two_bgs
+        CLC
+        ADC   #single_bg_ram_size >> 1
+        STA   Y[:target_address]
+      end
+
+      ;; Data size
+      LDA   #single_bg_ram_size
+      STA   X[:data_size]
+      STA   Y[:data_size] if two_bgs
+
+      ;; Source address bank
+      CPU.set A: 8
+      LDA   #VARIABLE_RAM_BANK
+      STA   X[:source_address] + 2
+      STA   Y[:source_address] + 2 if two_bgs
+      CPU.set A: 16
+
+      if two_bgs
+        PHY
+        JSL   Aoba::VBlank::Job.try_queue_and_wait_icb_long
+        PLX
+      end
+      JSL   Aoba::VBlank::Job.try_queue_and_wait_icb_long
+    end
+
+    routine :copy_data_to_vram do
+      if @num_bgs <= 2
+        _copy_data_to_vram_fast @num_bgs == 2
+      else
+        raise "copy_data_to_vram with more than two bgs not yet supported"
+      end
+      RTS
+    end
+
+    ;; ------------------------------------------------------
+    ;;  SHARED RENDERING
+    ;; ------------------------------------------------------
+
+    ;; Plots the tile A to the write offset in X w/o using a reference table
+    macro _plot_tile_flipped_direct(x, y, mask)
+      if x != 0 || y != 0
+        raise "Rendering without lookup table doesn't work with builtup tiles"
+      end
+
+      raise "Todo: plot tile flipped direct"
+    end
+
+    ;; Plots the tile A to the write offset in X
+    macro _plot_tile_flipped(x, y, mask)
+      if @tileset_storage.nil?
+        _plot_tile_flipped_direct x, y, mask
+        return
+      end
+
+      _self = self
+      @tileset_storage.generate_load_flipped_tile_code x, y, mask do |x, y, bg|
+        STA   _self._write_target.indirect.long, Y
+
+        if x + 1 != _self.tile_format.num_bgtiles_x
+          INY
+          INY
+        elsif y + 1 != _self.tile_format.num_bgtiles_y
+          TYA
+          CLC
+          ADC   #62
+          TAY
+        elsif bg + 1 != _self.tileset_storage.num_bgs
+          TYA
+          CLC
+          ADC   #single_bg_ram_size - (_self.tile_format.num_bgtiles_y - 1) * 64 - 2
+          TAY
+        end
+      end
+    end
+
+    ;; Plots the tile A to the write offset in X
+    routine :_plot_tile do
+      @storage.generate_load_tile_code @tileset_storage, dp(@_calc32a), dp(@_origin_tileset) do |x, y, mask|
+        _plot_tile_flipped x, y, mask
+      end
+      RTS
+    end
+
+    routine :_redraw do
+      load_initial_row_and_column
+      LDY   dp(@_tilemap_read_offset)
+      LDX   dp(@_tilemap_write_offset)
+
+    _loop:
+      PHY
+      PHX
+
+      ;; Loads a tile
+      LDA   @_origin_map.indirect, Y
+      _plot_tile
+
+      DEC   dp(@_current_column)
+      BZE   _next_row
+
+      ;; Calculates the next write target
+      PLA
+      _increment_write_address_X
+      TAX
+
+      ;; Calculates the next read offset
+      @storage.increment_read_address_X_from_stack_to_register_Y
+      BRA   _loop
+
+    _next_row:
+      DEC   dp(@_current_row)
+      BZE   _end_of_loop
+
+      ;; Prepares the iterator
+      LDY   #screen_render_tile_width
+      STY   dp(@_current_column)
+
+      ;; Calculates the next write target
+      PLA
+      _increment_write_address_Y
+      TAX
+
+      ;; Calculates next read offset
+      @storage.increment_read_address_Y_from_stack_to_register_Y self
+      BRA   _loop
+
+    _end_of_loop:
+      PLA
+      PLA
+      RTS
+    end
+
+
+    ;; ------------------------------------------------------
+    ;;  FAST RENDERING
+    ;; ------------------------------------------------------
+
+    ;; Fast render a layer
+    macro _fast_render_layer(layer)
+      LDA   @storage.layer_address(layer)
+      STA   dp(@_origin_map)
+      
+      unless @tileset_storage.nil?
+        LDA   #@tileset_storage.reference_index_for(@tilemap_layer(layer).layer.layer_id)
+        STA   dp(@_origin_tileset)
+      end
+
+      _redraw
+    end
+
+    ;; Fast render all layers
+    macro _fast_render_all_layers
+      _self = self
+      _first_layer = true
+
+      @layers.each do |layer|
+        ;; Increase write target pointer
+        unless _first_layer
+          LDA   dp(_self._write_target)
+          CLC
+          ADC   #_self.single_bg_ram_size
+          STA   dp(_self._write_target)
+        end
+        _first_layer = false
+
+        ;; Configures the layer
+        _fast_render_layer layer
+      end
+    end
+
+    ;; Fast render mode
+    macro _fast_render_mode
+      _self = self
+
+      LDA   @camera.x.long
+      @tile_format.pixel_width_to_bgtile
+      @layers.each do |layer|
+        STA   _self.rendered_area_left_tile[layer].long
+      end
+      @tile_format.bgtile_width_to_tile
+      STA   dp(@_left_tile)
+
+      LDA   @camera.y.long
+      @tile_format.pixel_height_to_bgtile
+      @layers.each do |layer|
+        STA   _self.rendered_area_top_tile[layer].long
+      end
+      @tile_format.bgtile_height_to_tile
+      STA   dp(@_top_tile)
+
+      ;; Prepares rendering
+      @storage.data_read_offset dp(@_left_tile), dp(@_top_tile), @screen_tile_width, @screen_tile_height
+      STA   dp(@_tilemap_read_offset)
+
+      calculate_tilemap_write_offset
+      _allocate_ram
+
+      ;; Renders all layers
+      CPU.with_bank FIXED_RAM_BANK, from_bank: VARIABLE_RAM_BANK do
+        _fast_render_all_layers
+      end
+
+      copy_data_to_vram
+      _free_ram
+    end
+
+
+    ;; ------------------------------------------------------
+    ;;  PARALLAX RENDERING
+    ;; ------------------------------------------------------
+    macro _parallax_render_bg(layer)
+      LDA   @camera.layer_x[layer]
+      @tile_format.pixel_width_to_bgtile
+      STA   @rendered_area_left_tile[layer]
+      @tile_format.bgtile_width_to_tile
+      STA   dp(@_left_tile)
+
+      LDA   @camera.layer_y[layer]
+      @tile_format.pixel_height_to_bgtile
+      STA   @rendered_area_top_tile[layer]
+      @tile_format.bgtile_height_to_tile
+      STA   dp(@_top_tile)
+
+      calculate_tilemap_write_offset
+      _fast_render_layer layer
+    end
+
+    routine :_parallax_render_mode do
+      unless @camera.has_variable_layer_option?
+        RTS
+        return
+      end
+
+      _self = self
+
+      ;; Allocates RAM
+      _allocate_ram
+
+      CPU.with_bank FIXED_RAM_BANK, from_bank: VARIABLE_RAM_BANK do
+        _first_layer = true
+        @layers.each do |layer|
+          unless _first_layer
+            LDA   dp(_self._write_target)
+            CLC
+            ADC   #_self.single_bg_ram_size
+            STA   dp(_self._write_target)
+          end
+          _first_layer = false
+
+          _parallax_render_bg layer
+        end
+      end
+
+      ;; Copies result to VRAM
+      copy_data_to_vram
+      _free_ram
+      RTS
+    end
+
+
+    ;; ------------------------------------------------------
+    ;;  RENDERING ROOT
+    ;; ------------------------------------------------------
+
+    ;; Calculates the write offset
+    routine :calculate_tilemap_write_offset do
+      LDA   dp(@_top_tile)
+      AND   #@screen_tile_height.bitmask
+      (@screen_bgtile_height * 2).multiplicated_register_A
+      STA   dp(@_tilemap_write_offset)
+      LDA   dp(@_left_tile)
+      AND   #@screen_tile_width.bitmask
+      @tile_format.num_bgtiles_x.multiplicated_register_A
+      ORA   dp(@_tilemap_write_offset)
+      ASL   A
+
+      if @screen_bgtile_width >= 32
+        BIT   #$40
+        BZE   _skip_toggle_screen
+        EOR   #$840
+      end
+    _skip_toggle_screen:
+      STA   dp(@_tilemap_write_offset)
+      RTS
+    end
+
+    ;; Invokes the code
+    routine :_invoke_icb do
+      @event.invoke :before_render_variable
+      CPU.with_bank FIXED_RAM_BANK, from_bank: VARIABLE_RAM_BANK do
+        @event.invoke :before_render_fixed
+
+        if @camera.has_variable_layer_option?
+          @camera.update_variable_layer
+        else
+        end
+      end
+
+      if @camera.has_variable_layer_option?
+        BCC   _default_render_mode
+        _parallax_render_mode
+        RTS
+      else
+      end
+
+    _default_render_mode:
+      _fast_render_mode
+      RTS
+    end
+
+    ;; Invoke
+    macro invoke_icb
+      JSR   _invoke_icb
+    end
+
+    ;; ------------------------------------------------------
+
+    ;; Creates the renderer
+    macro self.create(&block)
+      renderer = PartialTilemapRenderer.new
+      builder = PartialTilemapRendererBuilder.new(renderer)
+      block.call with_context builder
+      renderer.finalize
+      return renderer
+    end
+  end
+
+end

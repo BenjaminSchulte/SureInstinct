@@ -1,0 +1,9 @@
+module Aoba::Mouse
+
+  Aoba::Script.callback "Mouse_Enable", bank: MOUSE_ROM_BANK do
+    LDX   dp(Aoba::Script.register_a)
+    LDY   dp(Aoba::Script.register_x)
+    JML   Api.enable_mouse
+  end
+
+end

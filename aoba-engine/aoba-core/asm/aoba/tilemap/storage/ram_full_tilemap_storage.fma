@@ -1,0 +1,237 @@
+module Aoba::Tilemap::Storage
+
+  class RamFullTilemapStorageBuilder < BaseBuilder
+    macro format(id)
+      @storage.format = id
+    end
+
+    macro enable_script_support(name)
+      Aoba::Level.__create_tilemap_storage_script_commands name, @storage
+    end
+
+    macro add_layer(layer)
+      @storage.layers_to_create << layer
+    end
+
+    macro add_dynamic_layer(layer)
+      @storage.dynamic_layers << layer
+    end
+  end
+
+  class RamFullTilemapStorage < Base
+    macro initialize
+      super
+
+      @apply_switch_event_id = Aoba::Level::Event::ApplySwitch.create_for(self)
+      @apply_switch_event_ready_id = @apply_switch_event_id | $80
+
+      @format = :uint16
+      @can_flip = true
+      @layers_to_create = []
+      @dynamic_layers = []
+      
+      @tiles = {}
+    end
+
+    ;; Generates the load code for a flippable item
+    macro _generate_load_tile_code_flip(calc32, &block)
+      ASL   calc32
+      BCC   _flip_0z
+      JMP   _flip_1z
+    
+    _flip_0z:
+      ASL   calc32
+      BCS   _flip_01
+
+    _flip_00:
+      block.call 1, 1, $0000
+      RTS
+
+    _flip_01:
+      block.call 1, -1, $8000
+      RTS
+
+    _flip_1z:
+      ASL   calc32
+      BCS   _flip_11
+
+    _flip_10:
+      block.call -1, 1, $4000
+      RTS
+
+    _flip_11:
+      block.call -1, -1, $C000
+      RTS
+    end
+
+    ;; Generates a load tile for this tileset
+    macro generate_load_tile_code(tileset_storage, calc32, tileset_reference, target_register=:X, &block)
+      AND   #$FF if @format.size_in_bytes == 1
+      STA   calc32
+
+      if tileset_storage.nil?
+        raise "TODO: Load without tileset storage"
+      else
+        AND   #$3FF
+        tileset_storage.load_tile_from_reference tileset_reference
+      end
+
+      if target_register == :X
+        TXY
+        TAX
+      elsif target_register == :Y
+        TAY
+      end
+
+      if @can_flip
+        _generate_load_tile_code_flip calc32, &block
+      else
+        block.call 1, 1, $0000
+      end
+    end
+
+    macro format_size_in_bytes
+      return @format.size_in_bytes
+    end
+
+    ;; Increments the read address X
+    macro increment_read_address_X_from_stack_to_register_Y
+      PLY
+      INY
+      INY if @format.size_in_bytes >= 2
+    end
+
+    ;; Increments the read address
+    macro increment_read_address_Y_from_stack_to_register_Y(renderer)
+      PLA
+      ADC   #(@tilemap.max_width - renderer.screen_render_tile_width + 1) * @format.size_in_bytes
+      TAY
+    end
+
+    ;; Returns a layer address
+    macro layer_address(layer)
+      if @dynamic_layers.include?(layer)
+        return @tiles[layer].long
+      else
+        return #@tiles[layer]
+      end
+    end
+
+    ;; Stores a pointer to the data in 
+    macro bgtile_data_read_offset(left_tile, top_tile, width, height)
+      ;; Calculates the read address
+      if @format.size_in_bytes == 1
+        LDA   top_tile
+        @tilemap.max_width.multiplicated_register_A
+        AND   #$FFFF ^ (@tilemap.max_width.bitmask * 2)
+        ORA   left_tile
+        LSR   A
+      else
+        LDA   top_tile
+        @tilemap.max_width.multiplicated_register_A
+        AND   #$FFFF ^ @tilemap.max_width.bitmask
+        ORA   left_tile
+        AND   #$FFFE
+      end
+    end
+
+    macro y_to_storage_pointer
+      _size = @format.size_in_bytes
+      _height = @tilemap.any_tile_format.tile_height
+      _width_in_bytes = @tilemap.max_width * _size
+
+      (_width_in_bytes / _height).multiplicated_register_A
+      AND   #$FFFF * _width_in_bytes
+    end
+    
+    macro x_to_storage_pointer
+      _size = @format.size_in_bytes
+      _width = @tilemap.any_tile_format.tile_width
+
+      (_width / _size).divided_register_A
+      AND   #$FFFE if _size > 1
+    end
+
+    macro read_from_storage_pointer_A(layer)
+      if @dynamic_layers.include?(layer)
+        CLC
+        ADC   @tiles[layer].long
+        TAX
+        LDA   FIXED_RAM_BANK.as_bank.long, X
+      else
+        TAX
+        LDA   @tiles[layer].long, X
+      end
+      AND   #$FF if @format.size_in_bytes == 1
+    end
+
+    ;; Increments the tile pointer X
+    macro increment_bgtile_data_read_column_stack_to_Y
+      PLY
+      INY
+      INY if @format.size_in_bytes == 2
+    end
+
+    ;; Increments the tile pointer X
+    macro increment_bgtile_data_read_row_stack_to_Y
+      PLA
+      CLC
+      ADC   #@tilemap.max_width * @format.size_in_bytes
+      TAY
+    end
+
+    ;; Stores a pointer to the data in 
+    macro data_read_offset(left_tile, top_tile, width, height)
+      ;; Calculates the read address
+      LDA   top_tile
+      @tilemap.max_width.multiplicated_register_A
+      ORA   left_tile
+      @format.size_in_bytes.multiplicated_register_A 
+    end
+
+    ;; Finalizes the storage
+    macro finalize
+      _self = self
+      
+      ram_size = @tilemap.max_width * @tilemap.max_height * @format.size_in_bytes
+
+      @layers_to_create.each do |id|
+        _self.tiles[id] = MemoryVariable.new("tilemap_tiles_#{id}", as: :uint8, length: ram_size, in: _self.RAM)
+      end
+      @dynamic_layers.each do |id|
+        _self.tiles[id] = MemoryVariable.new("tilemap_tiles_#{id}", as: :uint16, in: _self.RAM)
+      end
+    end
+
+    macro include_as_scene_object(scene, **kwargs)
+      _self = self
+
+      scene.event.on :load16_fixed do
+        LDA   #_self.tiles[_self.layers_to_create.first]
+        _self.dynamic_layers.each do |layer|
+          STA   _self.tiles[layer]
+        end
+      end
+
+      return super(scene, **kwargs)
+    end
+
+    macro tilemap_layer(id)
+      if @dynamic_layers.include?(id)
+        return @tilemap.layers_by_id[@layers_to_create.first]
+      else
+        return @tilemap.layers_by_id[id]
+      end
+    end
+    
+    ;; Creates the storage
+    macro self.create(&block)
+      storage = RamFullTilemapStorage.new
+      builder = RamFullTilemapStorageBuilder.new(storage)
+      block.call with_context builder
+      storage.finalize
+      return storage
+    end
+  end
+
+end

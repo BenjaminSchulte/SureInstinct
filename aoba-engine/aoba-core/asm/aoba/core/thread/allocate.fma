@@ -1,0 +1,189 @@
+module Aoba::Thread
+
+  ;; @group Allocate
+  ;; @param X Thread address
+  ;; @param Y Thread bank
+  ;; @return X Thread::Instance
+  ;; @ignore-thread-safety
+  def allocate_and_queue_long
+    CPU.with_bank! VARIABLE_RAM_BANK do
+      JSR   allocate_icb
+      JSR   queue_icb
+    end
+    RTL
+  end
+
+  ;; @group Allocate
+  ;; @param X Thread address
+  ;; @param Y Thread bank
+  ;; @return X Thread::Instance
+  ;; @ignore-thread-safety
+  def allocate_and_queue_icb_long
+    JSR   allocate_icb
+    JSR   queue_icb
+    RTL
+  end
+
+  def destroy_icb
+    routine do
+      assert_thread_safe
+
+      declare :instance, as: :uint16
+
+      execute do |instance|
+        X.is_a! Instance
+        STX   dp(instance)
+
+        ;; Destroys the RAM
+        CLI
+        CPU.set A: 8
+        LDA   X[:id]
+        JSR   Memory.free_all_thread_blocks
+
+        ;; Rotate the thread ID to prevent receiving events that are not meant for this thread.
+        LDX   dp(instance)
+        LDA   X[:id]
+        CLC
+        ADC   #$20
+        AND   #$7F
+        STA   X[:id]
+
+        LDA   #Status.DESTROYED
+        STA   X[:status]
+        CPU.set A: 16
+
+        SEI
+
+        ;; Destroys the timer
+        LDA   X[:timer]
+        TAX
+        Timer.free_icb
+        LDX   dp(instance)
+        X.is_a! Instance
+
+        Debug.todo "Destroy all timers for this thread"
+
+        ;; Destroys all events
+        LDY   X[:first_event]
+        BZE   _no_event
+
+        TYX
+        Event.free_linked_list_icb
+        LDX   dp(instance)
+        X.is_a! Instance
+
+      _no_event:
+        ;; Destroys the instance
+        LDA   free_threads
+        STA   X[:next_thread]
+        STX   free_threads
+
+        ;; Remove thread from all lists
+        CPX   current_thread
+        BEQ   _is_current_thread
+
+        fatal_error "TODO destroy foreign threads"
+
+      _is_current_thread:
+      end
+    end
+  end
+
+  ;; @group Allocate
+  ;; @param X Thread address
+  ;; @param Y Thread bank
+  ;; @return X Thread::Instance
+  def allocate_icb
+    routine do
+      is_thread_safe
+      declare :config_address, as: :uint24
+      declare :instance, as: :uint16
+
+      execute do |config_address, instance|
+        Debug.enter_threadsafe_ram_access
+
+        ;; Remembers the configuration
+        STY   dp(config_address + 1)
+        STX   dp(config_address)
+
+        ;; Allocates the thread from the list
+        Thread.safe do
+          X.is_a! Instance
+          LDX   free_threads
+          LDA   X[:next_thread]
+          STA   free_threads
+          STZ   X[:next_thread]
+          STX   dp(instance)
+        end
+
+        ;; Calculates the RAM offset for the thread
+        LDA   X[:id]
+        AND   #$1F
+        DEC
+        XBA
+        ORA   #$6000 if ENABLE_SA1
+        TAX
+
+        ;; Initializes the stack to return to the correct addresses
+        CPU.set A: 8
+        LDA   config_address.indirect.long
+        STA   THREAD_RAM_BANK.as_bank($F8).long, X
+        LDA   #$C0
+        STA   THREAD_RAM_BANK.as_bank($FD).long, X
+        CPU.set A: 16
+        INC   dp(config_address)
+        LDA   config_address.indirect.long
+        INC   dp(config_address)
+        INC   dp(config_address)
+        STA   THREAD_RAM_BANK.as_bank($F9).long, X
+        LDA   #on_exit.to_sym - 1
+        STA   THREAD_RAM_BANK.as_bank($FB).long, X
+        LDA   dp(instance)
+        STA   THREAD_RAM_BANK.as_bank($FE).long, X
+
+        ;; Sets the default stack address
+        TXA
+        CLC
+        ADC   #$F7
+        LDX   dp(instance)
+        X.is_a! Instance
+
+        STA   X[:stack_address]
+
+        ;; Sets the default flags
+        CPU.set A: 8
+        LDA   Memory::active_thread_id
+        STA   X[:parent_thread_id]
+        LDA   config_address.indirect.long
+        STA   X[:priority]
+        STZ   X[:status]
+        LDA   #$FE
+        STA   X[:event_mask]
+
+        CPU.set A: 16
+        STZ   X[:first_event]
+        STZ   X[:last_event]
+        STZ   X[:miniblock_section]
+
+        LDA   X[:id]
+        Debug.profile_thread_create
+        Thread.Timer.allocate_icb
+        TXA
+        LDX   dp(instance)
+        STA   X[:timer]
+
+        Debug.leave_threadsafe_ram_access
+      end
+    end
+  end
+
+  ;; @group Allocate
+  ;; @param X Thread address
+  ;; @param Y Thread bank
+  ;; @return X Thread::Instance
+  def allocate_icb_long
+    allocate_icb
+    RTL
+  end
+
+end

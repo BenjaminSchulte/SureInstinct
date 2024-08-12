@@ -1,0 +1,36 @@
+module SNES::MemoryMap
+
+  ;; The bank of the header
+  HEADER_BANK = 0
+
+  ;; The address of the header
+  HEADER_ADDRESS = $FFB0
+
+  ;; The ROM memory map
+  ROM = ::MemoryMap.new
+  ROM.used_for_static_data
+  ROM.has_banks $00..$FF, bank_size: $10000
+
+  ;; The RAM memory map
+  RAM = ::MemoryMap.new
+  RAM.used_for_dynamic_data
+  RAM.has_banks $00..$FF, bank_size: $10000
+  
+  ;; The system registers
+  SYSTEM = ::MemoryMap.new
+  SYSTEM.used_for_dynamic_data
+  SYSTEM.no_banks $2000..$7FFF
+  SYSTEM.address $2000..$7FFF
+
+  ;; Video RAM memory map
+  VRAM = ::MemoryMap.new
+  VRAM.used_for_dynamic_data
+  VRAM.no_banks $0000..$FFFF
+  VRAM.address $0000..$FFFF
+
+  ;; Configures the header location
+  macro header_location(bank, address)
+    HEADER_BANK = bank
+    HEADER_ADDRESS = address
+  end
+end

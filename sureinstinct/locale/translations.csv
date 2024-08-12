@@ -1,0 +1,16 @@
+ID;en;Comment
+;;#### Level_stage1
+__asset_translation_fe94a7372f05a7966a9201ef34a7bfa6;Retro Console;
+__asset_translation_0bc61651d273e5ebdee136aede5015e7;Stage 1;
+;;#### Level_stage2
+__asset_translation_3bd61a4feb55735b68897d21a4cca8b1;Bombing Mission;
+__asset_translation_80079a52eff30c7d2e8dd1c55c6eeb7a;Stage 2;
+;;#### Level_stage3
+__asset_translation_66ae3c9d26e4c526f1bb7ba7fb8a44c9;Breaking Bat;
+__asset_translation_6d5d1ebb49e630b8397ef30d46fdafdb;Stage 3;
+;;#### Level_debug
+__asset_translation_8a06831ca1e357bcd31cf253be0a3932;Debug map;
+__asset_translation_6935443460015317d00f5bcf310c0e34;Debug;
+;;#### Level_tutorial
+__asset_translation_4bc223a5fe88cd9758c689becf4af50a;Welcome to Sure Instinct;
+__asset_translation_3a77a14001f71d2c0d773b3e1f96cb05;Tutorial;

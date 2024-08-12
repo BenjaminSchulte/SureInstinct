@@ -1,0 +1,30 @@
+module Aoba::Level
+
+  macro __create_tilemap_storage_script_commands(name, storage)
+    Aoba::Script.callback "#{name}_ApplySwitch", bank: LEVEL_ROM_BANK do
+
+      ;; Send the ready event request to the level thread
+      CPU.set A: 8
+      LDA   #Aoba::Thread::Event.USEREVENT_ID
+      JSL   Aoba::Thread::Event.allocate_icb_long
+      X.is_a! Aoba::Level::Event::ApplySwitch::Event
+      LDA   #storage.apply_switch_event_id
+      STA   X[:event_id]
+      CPU.set A: 16
+      LDA   dp(Aoba::Script.register_a)
+      STA   X[:address]
+      LDA   Level.thread_id
+      JSL   Aoba::Thread.send_event_icb_long
+
+      ;; Waits for the level to be ready
+      CPU.set A: 8
+      LDA   #storage.apply_switch_event_ready_id
+      XBA
+      LDA   Level.thread_id
+      JSL   Aoba::Thread.wait_for_ready_icb_long
+      CPU.set A: 16
+
+    end
+  end
+
+end

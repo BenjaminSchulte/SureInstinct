@@ -1,0 +1,93 @@
+module Aoba::Thread
+
+  @returns X: Instance
+  def wakeup_icb
+    routine do
+      assert_thread_safe
+
+      execute do
+        X.is_a! Instance
+
+        ;; Looks up the thread in the paused thread list
+        TXA
+        LDX   #paused_threads
+      _loop:
+        CMP   X[:next_thread]
+        BEQ   _found_record
+        LDY   X[:next_thread]
+        TYX
+        BNZ   _loop
+
+        ;; The record could not be found
+      _no_record_found:
+        TAX
+        BRA   _end_of_callback
+
+      _found_record:
+        ; A = current thread
+        ; X = previous thread
+        PHA
+        TAY
+        LDA   Y[:next_thread]
+        STA   X[:next_thread]
+        PLX
+        STZ   X[:next_thread]
+        queue_icb
+
+      _end_of_callback:
+      end
+    end
+  end
+
+  def queue_icb
+    routine do
+      make_thread_safe
+
+      execute do
+        PHD
+        PHX
+        TSC
+        TCD
+        PHX
+
+        CPU.set A: 8
+        X.is_a! Instance
+        LDA   X[:priority]
+        LDX   #queued_threads
+
+      _loop:
+        STX   dp(1)
+        LDY   X[:next_thread]
+        BZE   _insert_here
+        TYX
+        X.is_a! Instance
+        CMP   X[:priority]
+        BLT   _loop
+        BEQ   _loop
+
+      _insert_here:
+        CPU.set A: 16
+
+        ; Pops out the own instance
+        PLX
+        X.is_a! Instance
+        TYA
+        STA   X[:next_thread]
+
+        ; Writes the address to the previous record
+        TXA
+        PLX
+        STA   0, X
+
+        TAX
+        PLD
+      end
+    end
+  end
+
+  def queue_icb_long
+    queue_icb
+    RTL
+  end
+
+end

@@ -1,0 +1,7 @@
+name: StageSelect
+type: variable
+hires: false
+bpp: 1
+baseline: 6
+letters: "0123456789:.!"
+fallbackLetter: '.'

@@ -1,0 +1,14 @@
+input_locale: en
+
+dictionary_bank: 0xC4
+
+adapters:
+  - adapter: csv
+    input: true
+    output: true
+
+all_locales:
+  - en
+
+build_locales:
+  - en

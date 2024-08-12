@@ -1,0 +1,29 @@
+module Aoba::GameVariable
+
+  ;; Creates a new slot
+  Aoba::Script.callback "GameVar_Initialize", bank: GAMEVAR_ROM_BANK do
+    test_sram
+    BCS   _recreate_sram
+
+    Debug.info "[SRAM] Valid SRAM is present"
+    RTL
+
+  _recreate_sram:
+    Debug.warn "[SRAM] SRAM is missing or invalid, restoring SRAM"
+    regenerate_sram
+    test_sram
+    BCS   _fatal_error
+
+    Debug.info "[SRAM] SRAM has been initialized"
+    RTL
+
+  _fatal_error:
+    fatal_error "Could not initialize SRAM"
+  end
+
+  ;; Creates a new slot
+  Aoba::Script.callback "GameVar_ResetPersistent", bank: GAMEVAR_ROM_BANK do
+    _reset_persistent_data_in_ram
+  end
+
+end

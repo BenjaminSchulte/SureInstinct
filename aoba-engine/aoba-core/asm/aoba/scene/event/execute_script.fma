@@ -1,0 +1,45 @@
+module Aoba::Scene::Event::ExecuteScript
+
+  ;; The event
+  class Event < Base
+    ;; The script to execute
+    declare :script_address, as: :uint24
+  end
+
+  ;; Temporary RAM
+  scope :TempRAM, in: ActionRAM
+
+  ;; The current thread ID
+  declare :event_pointer, as: :uint16, in: TempRAM
+
+  ;; The current thread ID
+  declare :thread_id, as: :uint16, in: TempRAM
+
+  ;; Loads the palette
+  ;; @ignore-thread-safety
+  ID = List.create "ExecuteScript" do
+    STY   dp(event_pointer)
+
+    ;; Allocates the script thread
+    Aoba::ScriptThread.allocate_and_queue
+    X.is_a! Aoba::Thread::Instance
+    LDA   X[:id]
+    STA   dp(thread_id)
+    
+    LDA   #Aoba::Thread::Event::USEREVENT_ID
+    JSL   Aoba::Thread::Event.allocate_icb_long
+    X.is_a! Aoba::Script::EventConfig
+    Y.is_a! Event
+    LDY   dp(event_pointer)
+    CPU.set A: 8
+    LDA   Y[:script_address] + 2
+    STA   X[:script_address] + 2
+    STZ   X[:script_create_flags]
+    CPU.set A: 16
+    LDA   Y[:script_address]
+    STA   X[:script_address]
+    LDA   dp(thread_id)
+    JSL   Aoba::Thread.send_event_icb_long
+  end
+
+end

@@ -1,0 +1,18 @@
+module Aoba::Font::Event::ResumeRenderText
+
+  ;; The event
+  class Event < Base 
+    ;; The config address
+    declare :renderer_state, as: :uint16
+  end
+
+  ;; Creates the sprite
+  ;; @ignore-thread-safety
+  ID = List.create "ResumeRenderText" do
+    Y.is_a! Event
+
+    LDA   Y[:renderer_state]
+    JMP   Render.resume_render_icb
+  end
+
+end

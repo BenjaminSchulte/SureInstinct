@@ -1,0 +1,70 @@
+module Aoba::Level::Loader
+ 
+  class TilemapParameter < Parameter
+    macro initialize(tilemap_loader, tilemap_storage, tilemap_camera)
+      super
+      @tilemap_loader = tilemap_loader
+      @tilemap_storage = tilemap_storage
+      @tilemap_camera = tilemap_camera
+    end
+
+    macro parent_objects
+      return [self.tilemap_loader, self.tilemap_storage, self.tilemap_camera]
+    end
+
+    macro size_in_bytes
+      return 3
+    end
+
+    macro preconfigure
+      @loader.SharedTempRAM.include @tilemap_loader.TempRAM
+
+      @loader.event.on :wait_for_ready do
+        _notify_map_has_changed
+        _wait_for_ready
+      end
+    end
+
+    macro _notify_map_has_changed
+      ;; Sends a notification to the sprite thread
+      CPU.set A: 8
+      LDA   #Aoba::Thread::Event.USEREVENT_ID
+      JSL   Aoba::Thread::Event.allocate_icb_long
+      X.is_a! Aoba::Sprite::Event::OnMapChanged::Event
+      LDA   #Aoba::Sprite::Event::OnMapChanged::ID
+      STA   X[:event_id]
+      CPU.set A: 16
+      LDA   @tilemap_storage.width_in_pixel.long
+      STA   X[:width_in_pixel]
+      LDA   @tilemap_storage.height_in_pixel.long
+      STA   X[:height_in_pixel]
+
+      LDA   Aoba::Sprite.thread_id
+      JSL   Aoba::Thread.send_event_icb_long
+
+      ;; Goto sprite thread (and other important threads)
+      SEI
+      JSL   Aoba::Thread.pause_current_thread_temporary_icb_long
+      CLI
+
+      LDA   Aoba::Sprite.scroll_x ;;;;;;;;;;;;;;;; TODO: MIGRATE
+      STA   @tilemap_camera.x.long
+      LDA   Aoba::Sprite.scroll_y
+      STA   @tilemap_camera.y.long
+    end
+
+    macro _wait_for_ready
+      @tilemap_loader.wait_for_ready
+    end
+
+    macro load
+      @loader.read_header_at @offset + 1
+      STA   dp(@tilemap_loader.header_address + 1)
+      @loader.read_header_at @offset
+      STA   dp(@tilemap_loader.header_address)
+      @tilemap_loader.load
+      LDX   dp(@loader._current_level)
+    end
+  end
+
+end

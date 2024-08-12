@@ -1,0 +1,17 @@
+module Aoba::Sprite::Event::CameraAddSprite
+
+  ;; The event
+  class Event < Base 
+    declare :sprite_id, as: :uint8
+  end
+
+  ;; Disables the sprite camera
+  ;; @ignore-thread-safety
+  ID = List.create "CameraAddSprite" do
+    Y.is_a! Event
+    LDA   Y[:sprite_id]
+    Action::ManageSprite.find_sprite_by_sprite_id
+    JMP   Action::Camera.add_sprite
+  end
+
+end

@@ -1,0 +1,67 @@
+module Aoba::Sprite
+
+  module AutomationFlag
+    ;; Receive events about collisions
+    COLLISION_EVENT_LISTENER = $01
+
+    ;; Whether the speed is "locked" (can not be set by animations)
+    SPEED_IS_LOCKED = $02
+  end
+
+  class Automatable
+    ;; Automation script thread ID
+    declare :automation_script_id, as: :uint8
+
+    ;; Automatable flags
+    declare :automation_flags, as: :uint8
+
+    ;; The move angle ($00: right, $40: up, $80: left, $C0: down)
+    declare :move_angle, as: :uint8
+    ; -no space-
+    ;; The move angle ($00: right, $40: up, $80: left, $C0: down)
+    declare :new_move_angle, as: :uint8
+
+    ;; The thread which listens to the move-to-target event
+    declare :move_event_thread_id, as: :uint8
+
+    ;; The target X position
+    declare :move_target_x, as: :uint16
+
+    ;; The target Y position
+    declare :move_target_y, as: :uint16
+
+    ;; Sender sprite ID
+    declare :trigger_sprite_id, as: :uint8
+
+    ;; The action script
+    declare :trigger_action_script, as: :uint24
+
+    ;; The active trigger script thread
+    declare :trigger_script_thread_id, as: :uint8
+
+    ;; Userdata for script
+    declare :userdata, as: :uint8, size: SCRIPT_USERDATA_SIZE
+
+    ;; The current automation counter
+    declare :crowd_event_timer, as: :uint16
+
+    ;; Configures the class when being included
+    macro self.configure(Instance)
+      Instance.event.on :reset16 do
+        STZ   X[:move_target_x]
+        STZ   X[:move_target_y]
+        STZ   X[:crowd_event_timer]
+        STZ   X[:trigger_action_script]
+      end
+      Instance.event.on :reset8 do
+        STZ   X[:new_move_angle]
+        STZ   X[:automation_flags]
+        STZ   X[:automation_script_id]
+        STZ   X[:move_event_thread_id]
+        STZ   X[:trigger_script_thread_id]
+        STZ   X[:trigger_action_script] + 2
+      end
+    end
+  end
+
+end

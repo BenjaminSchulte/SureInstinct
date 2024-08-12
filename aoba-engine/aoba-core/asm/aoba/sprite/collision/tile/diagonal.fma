@@ -1,0 +1,243 @@
+module Aoba::Sprite::Collision::Tile
+
+  class CollisionDiagonal < StaticRoutineClass
+    locate_at bank: SPRITE_ROM_BANK
+    register A: 8, XY: 16
+
+    macro initialize(parent)
+      @parent = parent
+      setup_static_routines
+    end
+
+    ;; @ignore-thread-safety
+    routine :_collision_diagonal_se do
+      LDA   dp(Action::Move.speed_x + 1)
+      BMI   _move_left
+    _test_y_axis:
+      LDA   dp(Action::Move.speed_y + 1)
+      BMI   _move_up
+    
+    _test_diagonal_collision:
+      LDA   dp(@parent.collision_pos_x)
+      AND   #$F
+      EOR   #$F
+      SEC
+      SBC   dp(_calc0)
+      BEQ   _diagonal_collision
+      BPL   _no_collision
+    _diagonal_collision:
+      SEC
+      RTS
+
+    _no_collision:
+      CLC
+      LDA   #0
+      RTS
+
+    _move_up:
+      LDA   dp(@parent.collision_pos_y)
+      BIT   #$8
+      BEQ   _test_diagonal_collision
+      
+    _full_collision:
+      CLC
+      LDA   #1
+      RTS
+
+    _move_left:
+      LDA   dp(@parent.collision_pos_x)
+      BIT   #$8
+      BEQ   _test_y_axis
+      BRA   _full_collision
+    end
+
+    ;; @ignore-thread-safety
+    routine :_collision_diagonal_sw do
+      CPU.set A: 16
+      LDA   dp(Action::Move.speed_x)
+      BMI   _move_left
+      ORA   dp(Action::Move.speed_x_decimal)
+      BEQ   _move_left
+
+    _move_right:
+      CPU.set A: 8
+      LDA   dp(@parent.collision_pos_x)
+      BIT   #$8
+      BEQ   _full_collision
+
+    _move_left:
+      CPU.set A: 8
+      LDA   dp(Action::Move.speed_y + 1)
+      BMI   _move_up
+    
+    _test_diagonal_collision:
+      LDA   dp(@parent.collision_pos_x)
+      AND   #$F
+      SEC
+      SBC   dp(_calc0)
+      BEQ   _diagonal_collision
+      BPL   _no_collision
+    _diagonal_collision:
+      SEC
+      RTS
+
+    _no_collision:
+      CLC
+      LDA   #0
+      RTS
+
+    _move_up:
+      LDA   dp(@parent.collision_pos_y)
+      BIT   #$8
+      BEQ   _test_diagonal_collision
+      
+    _full_collision:
+      CLC
+      LDA   #1
+      RTS
+    end
+
+    ;; @ignore-thread-safety
+    routine :_collision_diagonal_ne do
+      LDA   dp(Action::Move.speed_x + 1)
+      BMI   _move_left
+    _test_y_axis:
+      CPU.set A: 16
+      LDA   dp(Action::Move.speed_y)
+      BMI   _move_up
+      ORA   dp(Action::Move.speed_y_decimal)
+      BEQ   _move_up
+
+    _move_down:
+      CPU.set A: 8
+      LDA   dp(@parent.collision_pos_y)
+      BIT   #$8
+      BNE   _test_diagonal_collision
+      
+    _full_collision:
+      CLC
+      LDA   #1
+      RTS
+    
+    _move_up:
+      CPU.set A: 8
+    _test_diagonal_collision:
+      LDA   dp(@parent.collision_pos_x)
+      AND   #$F
+      SEC
+      SBC   dp(_calc0)
+      BEQ   _diagonal_collision
+      BMI   _no_collision
+    _diagonal_collision:
+      SEC
+      RTS
+
+    _no_collision:
+      CLC
+      LDA   #0
+      RTS
+
+    _move_left:
+      LDA   dp(@parent.collision_pos_x)
+      BIT   #$8
+      BEQ   _test_y_axis
+      BRA   _full_collision
+    end
+
+    ;; @ignore-thread-safety
+    routine :_collision_diagonal_nw do
+      CPU.set A: 16
+      LDA   dp(Action::Move.speed_x)
+      BMI   _move_left
+      ORA   dp(Action::Move.speed_x_decimal)
+      BEQ   _move_left
+
+    _move_right:
+      CPU.set A: 8
+      LDA   dp(@parent.collision_pos_x)
+      BIT   #$8
+      BEQ   _full_collision
+
+    _move_left:
+      CPU.set A: 16
+      LDA   dp(Action::Move.speed_y)
+      BMI   _move_up
+      ORA   dp(Action::Move.speed_y_decimal)
+      BEQ   _move_up
+
+    _move_down:
+      CPU.set A: 8
+      LDA   dp(@parent.collision_pos_y)
+      BIT   #$8
+      BNE   _test_diagonal_collision
+      
+    _full_collision:
+      CLC
+      LDA   #1
+      RTS
+    
+    _move_up:
+      CPU.set A: 8
+    _test_diagonal_collision:
+      LDA   dp(@parent.collision_pos_x)
+      EOR   #$F
+      AND   #$F
+      SEC
+      SBC   dp(_calc0)
+      BEQ   _diagonal_collision
+      BMI   _no_collision
+    _diagonal_collision:
+      SEC
+      RTS
+
+    _no_collision:
+      CLC
+      LDA   #0
+      RTS
+    end
+
+    data :block_diagonal_edges_map do
+      dw   _collision_diagonal_se
+      dw   _collision_diagonal_ne
+      dw   _collision_diagonal_sw
+      dw   _collision_diagonal_nw
+    end
+
+    macro _process_diagonal_collision
+      ; Apply tile mirror
+      CPU.set A: 8
+      AND   #$3
+      STA   dp(_calc0)
+
+      ;; Sets the 'force collision test' flag of the NPC
+      LDA   X[:movable_flags]
+      ORA   #MovableFlag::FORCE_COLLISION_TEST
+      STA   X[:movable_flags]
+
+      LDA   dp(@parent.collision_tile) + 1
+      ASL
+      ROL   dp(_calc0 + 1)
+      ASL
+      ROL   dp(_calc0 + 1)
+      ; 000000XY
+      LDA   dp(_calc0)
+      EOR   dp(_calc0 + 1)
+      ASL
+      CPU.set A: 16
+
+      ; Set pointer to the subroutine
+      AND   #3 << 1
+      TAX
+
+      ; Do some precalculations
+      CPU.set A: 8
+      LDA   dp(@parent.collision_pos_y)
+      AND   #$F
+      STA   dp(_calc0)
+
+      ; Executes the test
+      JSR   block_diagonal_edges_map.indirect, X
+      CPU.set A: 16
+    end
+  end
+end

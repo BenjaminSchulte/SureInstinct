@@ -1,0 +1,42 @@
+module Aoba::Audio::Event
+  class Base < Aoba::Thread::Event::Base
+    declare :event_id, as: :uint8
+  end
+end
+
+require "load_song"
+require "load_sfx_database"
+require "setup_echo"
+require "set_master_volume"
+require "set_sfx_volume"
+require "reset"
+require "play_song"
+require "stop_song"
+require "ready"
+require "play_sfx"
+require "play_stream"
+require "upload_driver"
+require "stop_playback"
+require "fade_volume"
+
+module Aoba::Audio::Event
+
+  datablock routines
+    dw   LoadSong.event_handler               ;; 01 - SA1 tested 2020-03-15
+    dw   LoadSfxDatabase.event_handler        ;; 02 - SA1 tested 2020-03-15
+    dw   SetupEcho.event_handler              ;; 03 - SA1 tested 2020-03-15
+    dw   SetMasterVolume.event_handler        ;; 04 - SA1 tested 2020-03-15
+    dw   SetSfxVolume.event_handler           ;; 05 - SA1 tested 2020-03-15
+    dw   Reset.event_handler                  ;; 06 - SA1 tested 2020-03-15
+    dw   PlaySong.event_handler               ;; 07 - SA1 tested 2020-03-15
+    dw   StopSong.event_handler               ;; 08
+    dw   ReadyEvent.event_handler             ;; 09 - SA1 tested 2020-03-15
+    dw   PlaySfx.event_handler                ;; 0A - SA1 tested 2020-03-15
+    dw   PlayStream.event_handler             ;; 0B
+    dw   UploadDriver.event_handler           ;; 0C - SA1 tested 2020-03-15
+    dw   StopPlayback.event_handler           ;; 0D - SA1 tested 2020-03-15
+    dw   FadeVolume.event_handler             ;; 0E
+  end
+
+  MAX_EVENT_ID = $E
+end

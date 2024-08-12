@@ -1,0 +1,116 @@
+module Audio
+  ;; External references
+  import __aobascript_Audio_Initialize
+  import __aobascript_Audio_LoadSong
+  import __aobascript_Audio_PlaySong
+  import __aobascript_Audio_FadeToSong
+  import __aobascript_Audio_PlaySfx
+  import __aobascript_Audio_PlayStream
+  import __aobascript_Audio_SetMasterVolume
+  import __aobascript_Audio_SetSfxVolume
+  import __aobascript_Audio_SetupEcho
+  import __aobascript_Audio_WaitForReadyEvent
+  import __aobascript_Audio_UploadSfxLibrary
+
+  ;; Initializes the audio engine
+  macro Initialize
+    INVOKE __aobascript_Audio_Initialize
+  end
+
+  ;; Sets the master volume
+  macro SetMasterVolume(volume)
+    raise "Volume must be between 0 and 127" if volume < 0 || volume > 127
+
+    LDA    #volume
+    INVOKE __aobascript_Audio_SetMasterVolume
+  end
+
+  ;; Sets the master volume
+  macro SetSfxVolume(volume)
+    raise "Volume must be between 0 and 127" if volume < 0 || volume > 127
+
+    LDA    #volume
+    INVOKE __aobascript_Audio_SetSfxVolume
+  end
+
+  ;; Sets up the echo
+  macro SetupEcho(delay, feedback, volume)
+    LDA    #delay | (feedback << 8) | (volume << 16)
+    INVOKE __aobascript_Audio_SetupEcho
+  end
+
+  ;; Loads a song
+  macro LoadSong(id, async=false)
+    if id.is_param?
+      LDA8   id
+    else
+      LDA8   #__asset("Song", id, "id")
+    end
+    INVOKE __aobascript_Audio_LoadSong 
+
+    unless async
+      LDA    #1
+      INVOKE __aobascript_Audio_WaitForReadyEvent
+    end
+  end
+
+  ;; Plays a song
+  macro PlaySong(id=nil, volume=127, async=false)
+    raise "Volume must be between 0 and 127" if volume < 0 || volume > 127
+
+    LoadSong id, async unless id.nil?
+    LDA    #volume
+    INVOKE __aobascript_Audio_PlaySong
+  end
+
+  ;; Fades to a different volume
+  macro FadeIn(speed=3, volume=128)
+    LDA16  #volume | (speed << 8)
+    INVOKE __aobascript_Audio_FadeToSong
+  end
+
+  ;; Fades to a different volume
+  macro FadeOut(speed=3)
+    FadeIn speed, 0
+  end
+
+  ;; Fades to a different song
+  macro FadeToSong(id=nil, speed=3, volume=127)
+    LDA32  #(__asset("Song", id, "id") << 16) | (speed << 8) | (volume << 24) | $80000000
+    INVOKE __aobascript_Audio_FadeToSong
+  end
+
+  ;; Sets the SFX library
+  macro SetSfxLibrary(id, async=false)
+    LDA24  #__asset("SfxLib", id, "address")
+    INVOKE __aobascript_Audio_UploadSfxLibrary
+
+    unless async
+      LDA    #2
+      INVOKE __aobascript_Audio_WaitForReadyEvent
+    end
+  end
+
+  ;; Plays an sfx
+  macro PlaySfx(id, set="default", panning=0)
+    LDA16   #__asset("SfxLib", "#{set}/#{id}", "sfx_id") | ((panning + 127) << 8)
+    INVOKE __aobascript_Audio_PlaySfx
+  end
+
+  ;; Sets the default audio for an action
+  macro SetDefaultSfx(for, id, set="default")
+    LDA16   #__asset("SfxLib", "#{set}/#{id}", "sfx_id")
+    case for
+      when :menu_select
+        STA16   __engine_variable("Aoba.Audio.Preset.menu_select")
+      else
+        raise "Unknown default sfx #{for}"
+    end
+  end
+
+  ;; Plays an stream
+  macro PlayStream(id, panning=0)
+    LDA16   #__asset("Stream", id, "address")
+    INVOKE __aobascript_Audio_PlayStream
+  end
+end

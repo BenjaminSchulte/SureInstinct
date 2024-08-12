@@ -1,0 +1,330 @@
+module Aoba::Dialog::Hdma
+
+  module Status
+    ;; Status for initializing
+    INITIALIZING = 0
+
+    ;; Active
+    ACTIVE = 1
+
+    ;; Released
+    RELEASED = 2
+  end
+
+  ;; Window configuration
+  class Configuration
+    ;; The status
+    declare :status, as: :uint8
+
+    ;; The starting line
+    declare :position, as: :uint8
+
+    ;; The window height
+    declare :height, as: :uint8
+
+    ;; The window target height
+    declare :target_height, as: :uint8
+
+    ;; Number of lines
+    declare :num_rows, as: :uint8
+
+    ;; The speed used to open the dialog
+    declare :animation_speed, as: :uint8
+
+    ;; Temporary RAM for text rendering
+    declare :text_rendering_ram, as: :uint16
+
+    ;; The delay between character tiles being rendered (0 for instant rendering)
+    declare :speed, as: :uint8
+    
+    ;; The current sprite
+    declare :face_sprite, as: :uint16
+
+
+
+    ;; Internal: dialog bg mode
+    declare :_bgmode, as: :uint8
+    
+    ;; Internal: mosaic
+    declare :_mosaic, as: :uint8
+
+    ;; Internal: BG1SC
+    declare :_bg1sc, as: :uint8
+
+    ;; Internal: BG2SC
+    declare :_bg2sc, as: :uint8
+
+    ;; Internal: BG12NBA
+    declare :_bg12nba, as: :uint8
+
+    ;; Internal: TM
+    declare :_tm, as: :uint8
+
+    ;; Internal: TS
+    declare :_ts, as: :uint8
+
+    ;; Internal: TMW
+    declare :_tmw, as: :uint8
+
+    ;; Internal: TSW
+    declare :_tsw, as: :uint8
+
+    ;; Internal: CGWSEL
+    declare :_cgwsel, as: :uint8
+
+    ;; Internal: CGADSUB
+    declare :_cgadsub, as: :uint8
+
+    ;; Internal: BG1HOFS
+    declare :_bg1hofs, as: :uint16
+
+    ;; Internal: BG1VOFS
+    declare :_bg1vofs, as: :uint16
+
+    ;; Internal: BG2HOFS
+    declare :_bg2hofs, as: :uint16
+
+    ;; Internal: BG2VOFS
+    declare :_bg2vofs, as: :uint16
+
+    ;; Block used for
+    declare :font_state, as: :uint8, size: Font::Render::State.size
+  end
+
+  ;; Sets up
+  ;; @param Y Configuration
+  ;; @return Y Configuration
+  macro hdma_setup
+    Y.is_a! Configuration
+    CPU.set A: 8
+    LDA   #0
+    STA   Y[:height]
+    
+    Debug.only do
+      LDA   Y[:status]
+      BZE   _ok
+      fatal_error "please clear bg1_address/bg2_address"
+    _ok:
+    end
+
+    LDA   Aoba::Dialog.vram_dialog_tiles_address + 1
+    LSR   A
+    LSR   A
+    LSR   A
+    LSR   A
+    AND   #$07
+    STA   dp(Aoba::Composer._calc0)
+    LDA   Aoba::Dialog.vram_text_tiles_address + 1
+    AND   #$70
+    ORA   dp(Aoba::Composer._calc0)
+    STA   Y[:_bg12nba]
+    CPU.set A: 16
+    LDA   Y[:position]
+    AND   #$FF
+    EOR   #$FFFF
+    INC   A
+    STA   Y[:_bg1vofs]
+    CLC
+    ADC   #7*8 - 4
+    STA   Y[:_bg2vofs]
+
+
+    LDA   #5 | (0 << 8)
+    STA   Y[:_bgmode]
+    LDA   Aoba::Dialog.vram_dialog_tilemap_address + 1
+    AND   #$FF
+    STA   dp(Aoba::Composer._calc0)
+    XBA
+    ORA   dp(Aoba::Composer._calc0)
+    STA   Y[:_bg1sc]
+    LDA   #3 | (3 << 8)
+    STA   Y[:_tm]
+    LDA   #0
+    STA   Y[:_tmw]
+    STA   Y[:_cgwsel]
+    STA   Y[:_bg1hofs]
+    LDA   #-6
+    STA   Y[:_bg2hofs]
+  end
+
+  ;; Sets up the HDMA channel on VBLANK
+  ;; @param Y Configuration
+  macro hdma_enable
+    Y.is_a! Configuration
+
+    _header_size = Aoba::Composer::Hdma::HDMA_CHANNEL_HEADER_SIZE
+
+    ;; Configures the HDMA channels
+    PHD
+    LDA   #$4300
+    TCD
+    LDX   #(PPU.BGMODE << 8) | DMA[0].configure_value(:transfer_4_once, indirect: true)
+    STX   dp(DMA[1].control)
+    LDX   #(PPU.BG12NBA << 8) | DMA[0].configure_value(:transfer_1_once, indirect: true)
+    STX   dp(DMA[2].control)
+    LDX   #(PPU.TM << 8) | DMA[0].configure_value(:transfer_4_once, indirect: true)
+    STX   dp(DMA[3].control)
+    LDX   #(PPU.CGWSEL << 8) | DMA[0].configure_value(:transfer_2_once, indirect: true)
+    STX   dp(DMA[4].control)
+    LDX   #(PPU.BGOFFSET[0].horizontal << 8) | DMA[0].configure_value(:transfer_2_twice_each, indirect: true)
+    STX   dp(DMA[5].control)
+    LDX   #(PPU.BGOFFSET[1].horizontal << 8) | DMA[0].configure_value(:transfer_2_twice_each, indirect: true)
+    STX   dp(DMA[6].control)
+
+    LDX   Aoba::Composer::Hdma.hdma_header_ram
+    CPU.set A: 8
+    LDA   Y[:position]
+    DEC   A
+    DEC   A
+    BMI   _is_bottom_position
+
+  _is_top_position:
+    PHA
+    LDA   #1
+    STA   0 * _header_size + 0, X
+    STA   1 * _header_size + 0, X
+    STA   2 * _header_size + 0, X
+    STA   3 * _header_size + 0, X
+    STA   4 * _header_size + 0, X
+    STA   5 * _header_size + 0, X
+    PLA
+    BRA   _set_second_position_part
+
+  _is_bottom_position:
+    LDA   #127
+    STA   0 * _header_size + 0, X
+    STA   1 * _header_size + 0, X
+    STA   2 * _header_size + 0, X
+    STA   3 * _header_size + 0, X
+    STA   4 * _header_size + 0, X
+    STA   5 * _header_size + 0, X
+    LDA   Y[:position]
+    SEC
+    SBC   #128
+
+  _set_second_position_part:
+    STA   0 * _header_size + 3, X
+    STA   1 * _header_size + 3, X
+    STA   2 * _header_size + 3, X
+    STA   3 * _header_size + 3, X
+    STA   4 * _header_size + 3, X
+    STA   5 * _header_size + 3, X
+    LDA   Y[:height]
+    STA   0 * _header_size + 6, X
+    STA   1 * _header_size + 6, X
+    STA   2 * _header_size + 6, X
+    STA   3 * _header_size + 6, X
+    STA   4 * _header_size + 6, X
+    STA   5 * _header_size + 6, X
+    LDA   #1
+    STA   Y[:status]
+    STA   0 * _header_size + 9, X
+    STA   1 * _header_size + 9, X
+    STA   2 * _header_size + 9, X
+    STA   3 * _header_size + 9, X
+    STA   4 * _header_size + 9, X
+    STA   5 * _header_size + 9, X
+    STZ   0 * _header_size + 12, X
+    STZ   1 * _header_size + 12, X
+    STZ   2 * _header_size + 12, X
+    STZ   3 * _header_size + 12, X
+    STZ   4 * _header_size + 12, X
+    STZ   5 * _header_size + 12, X
+    LDA   #$7E
+    STA   CPU.HDMAEN.long
+    CPU.set A: 16
+    
+    LDA   #Screen.ppu_register.BGMODE
+    STA   0 * _header_size + 1, X
+    STA   0 * _header_size + 4, X
+    STA   0 * _header_size + 10, X
+    LDA   #Screen.ppu_register.BG12NBA
+    STA   1 * _header_size + 1, X
+    STA   1 * _header_size + 4, X
+    STA   1 * _header_size + 10, X
+    LDA   #Screen.ppu_register.TM
+    STA   2 * _header_size + 1, X
+    STA   2 * _header_size + 4, X
+    STA   2 * _header_size + 10, X
+    LDA   #Screen.ppu_register.CGWSEL
+    STA   3 * _header_size + 1, X
+    STA   3 * _header_size + 4, X
+    STA   3 * _header_size + 10, X
+    LDA   #Screen.ppu_register.BG1HOFS
+    STA   4 * _header_size + 1, X
+    STA   4 * _header_size + 4, X
+    STA   4 * _header_size + 10, X
+    LDA   #Screen.ppu_register.BG2HOFS
+    STA   5 * _header_size + 1, X
+    STA   5 * _header_size + 4, X
+    STA   5 * _header_size + 10, X
+
+    TYA
+    CLC
+    ADC   #Configuration.offset_of(:_bgmode)
+    STA   0 * _header_size + 7, X
+    ADC   #4
+    STA   1 * _header_size + 7, X
+    INC   A
+    STA   2 * _header_size + 7, X
+    ADC   #4
+    STA   3 * _header_size + 7, X
+    INC   A
+    INC   A
+    STA   4 * _header_size + 7, X
+    ADC   #4
+    STA   5 * _header_size + 7, X
+
+    PLD
+  end
+
+  ;; Updates the HDMA channel
+  ;; @param Y Configuration
+  ;; @ignore-thread-safety
+  macro hdma_update
+    Y.is_a! Configuration
+
+    _header_size = Aoba::Composer::Hdma::HDMA_CHANNEL_HEADER_SIZE
+
+    LDA   Y[:height]
+    LDX   Aoba::Composer::Hdma.hdma_header_ram
+    CMP   0 * _header_size + 6, X
+    BNE   _update_values
+    RTL
+
+  _update_values:
+    STA   0 * _header_size + 6, X
+    STA   1 * _header_size + 6, X
+    STA   2 * _header_size + 6, X
+    STA   3 * _header_size + 6, X
+    STA   4 * _header_size + 6, X
+    STA   5 * _header_size + 6, X
+  end
+
+  ;; Unloads the HDMA
+  ;; @param Y Configuration
+  macro hdma_release
+    Y.is_a! Configuration
+
+    LDA   #Status.RELEASED
+    STA   Y[:status]
+  end
+
+  DialogMode = Aoba::Composer::Hdma::Mode.create do
+    load do
+      hdma_setup
+    end
+
+    enable16 do
+      hdma_enable
+    end
+
+    update do
+      hdma_update
+    end
+
+    release do
+      hdma_release
+    end    
+  end
+end

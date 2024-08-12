@@ -1,0 +1,71 @@
+module Game::Ball
+
+  ; -----------------------------------------------------
+  macro __increment_score(value)
+    LDA   #value
+    CLC
+    ADC   Game::Level.score
+    STA   Game::Level.score
+  end
+
+  ; -----------------------------------------------------
+  macro __update_modified_attributes(bits)
+    SEI
+    LDA   #bits
+    ORA   Game::Level.modified_attributes
+    STA   Game::Level.modified_attributes
+    CLI
+  end
+
+  ; -----------------------------------------------------
+  @locate_at bank: Aoba::SPRITE_ROM_BANK
+  def _modify_hp
+    CLC
+    ADC   Game::Level.hp
+    BMI   _death
+    BZE   _death
+    CMP   #MAX_HP
+    BLT   _ok
+    LDA   #MAX_HP
+  _ok:
+    STA   dp(Aoba::Sprite._calc0)
+    EOR   Game::Level.hp
+    AND   #$FF00
+    BZE   _no_update_ui
+
+    LDA   dp(Aoba::Sprite._calc0)
+    STA   Game::Level.hp
+    
+  _update_attribute:
+    __update_modified_attributes Game::Level::ModifiedAttribute::HP
+    RTS
+
+  _no_update_ui:
+    LDA   dp(Aoba::Sprite._calc0)
+    STA   Game::Level.hp
+  _rts:
+    RTS
+
+    ;; --
+
+  _death:
+    LDA   Game::Level.hp
+    BZE   _rts
+    STZ   Game::Level.hp
+    JSR   _update_attribute
+
+    SEI
+    LDA   Game::Level.global_ingame_flags
+    ORA   #Game::Level::GlobalIngameFlag.CONTROLS_DISABLED | Game::Level::GlobalIngameFlag::CUSTOM_BALL_ANIMATION
+    STA   Game::Level.global_ingame_flags
+    CLI
+
+    LDA   #Assets::Sfx::BallExplode
+    JSL   Aoba::Audio::Api.play_sfx_icb_long
+
+    LDX   Game::Ball::Movement.player
+    LDA   #Assets::Animation::BallExplode
+    JSL   Aoba::Sprite::Api.set_animation_icb_long
+  end
+
+end

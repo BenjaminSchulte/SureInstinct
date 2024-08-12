@@ -1,0 +1,23 @@
+module Aoba::Palette::Event::RestorePalette
+
+  ;; The event
+  class Event < Base
+    ;; Bitmap of palettes the modify
+    declare :palette_mask, as: :uint16
+
+    ;; The fade speed
+    declare :speed, as: :uint8
+  end
+
+  ;; Loads the palette
+  ;; @ignore-thread-safety
+  ID = List.create "RestorePalette" do
+    Y.is_a! Event
+
+    LDX   Y[:palette_mask]
+    LDA   Y[:speed]
+    TXY
+    JMP   Action::FadePalette.restore_all_palettes
+  end
+
+end

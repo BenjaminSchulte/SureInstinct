@@ -1,0 +1,361 @@
+module Script::Play
+
+  ;; Temporary RAM used for note playback
+  scope :TempRAM, in: Script.SharedTempScriptRAM
+  declare :note_16, as: :uint16, in: TempRAM
+  note = note_16+1
+  octave = note_16
+  declare :delay, as: :uint8, in: TempRAM
+  declare :calculated_pitch, as: :uint16, in: TempRAM
+  temp_calc_pitch = calculated_pitch
+  note_pitch_ease_high = calculated_pitch+1
+  declare :calculated_final_pitch, as: :uint16, in: TempRAM
+  declare :note_pitch, as: :uint16, in: TempRAM
+
+  script_address = note_16
+  repeat_block_depth = delay
+
+  ;; Note -> Pitch lookup table
+  ;;
+  ;; This list has been generated using the hz table of notes and has been aligned to note A being $4000.
+  ;; The list represents the maximum octave and is divided by 2 for every lower octave
+  datablock note_lookup_table
+    dw $260e ; 0 C
+    dw $2851 ; 1 C+
+    dw $2ab7 ; 2 D
+    dw $2d41 ; 3 D+ 
+    dw $2ff2 ; 4 E
+    dw $32cc ; 5 F
+    dw $35d2 ; 6 F+
+    dw $3905 ; 7 G
+    dw $3c69 ; 8 G+
+    dw $4000 ; 9 A
+    dw $43ce ;10 A+
+    dw $47d7 ;11 B
+    dw $4c1c ;12 C
+  end
+
+  ;; Delay -> Delay lookup table
+  datablock delay_lookup_table
+    db $bf
+    db $8f
+    db $5f
+    db $47
+    db $2f
+    db $23
+    db $1f
+    db $17
+    db $0f
+    db $0b
+    db $07
+    db $05
+    db $02
+  end
+
+  ;; Calculates the note and the delay
+  macro _calculate_note_and_delay
+    MOV   Y, #0
+    MOV   dp(note_16), Y
+    MOV   X, #$E
+    DIV   YA, X
+    MOV   dp(delay), A
+    MOV   dp(note), Y
+  end
+
+  ;; Calculates the octave and note
+  macro _calculate_note_and_octave
+    ; calculate the note/octave
+    MOV   A, Y
+    MOV   X, #$C
+    MOV   Y, #$0
+    ;CLRC???
+    DIV   YA, X
+    MOV   dp(octave), A
+    MOV   A, Y
+  end
+
+  ;; Calculates the absolute note value
+  macro _calculate_absolute_note_value
+    MOV   Y, dp(Channel.pointer)
+    MOV   A, addr(Channel.octaves, Y)
+    MOV   Y, #$C
+    MUL   YA
+    CLRC
+    ADC   A, dp(note)
+    MOV   dp(note), A
+  end
+
+  ;; Reads the note pitch value from the table
+  macro _read_note_pitch_value
+    ASL   A
+    MOV   X, A
+    MOV   A, addr(note_lookup_table.to_sym+1, X)
+    MOV   Y, A
+    MOV   A, addr(note_lookup_table, X)
+    MOVW  dp(note_pitch), YA
+  end
+
+  ;; Reads the next note for pitch value
+  macro _calculate_ease_to_next_note
+    MOV   A, addr(note_lookup_table.to_sym+3, X)
+    MOV   Y, A
+    MOV   A, addr(note_lookup_table.to_sym+2, X)
+    SUBW  YA, dp(note_pitch)
+    MOV   dp(note_pitch_ease_high), Y
+  end
+
+  ;; Calculates the final pitch with ease between notes
+  macro _calculate_final_pitch_with_ease
+    ; A = difference between notes low byte
+    MOV   Y, dp(calculated_pitch)
+    MUL   YA
+    MOV   dp(calculated_final_pitch), Y
+    MOV   dp(calculated_final_pitch.to_sym + 1), #0
+
+    MOV   Y, dp(calculated_pitch)
+    MOV   A, dp(note_pitch_ease_high)
+    MUL   YA
+    ADDW  YA, dp(calculated_final_pitch)
+    ADDW  YA, dp(note_pitch)
+    MOV   dp(calculated_final_pitch), A
+  end
+
+  ;; Sets the channels pitch
+  macro _set_channel_pitch
+    MOV   A, dp(octave)
+    AND   A, #7
+    ; Multiplicate with 3, to modify opcode below
+    MOV   dp(temp_calc_pitch), A
+    ASL   A
+    ADC   A, dp(temp_calc_pitch)
+    MOV   _op + 1, A
+
+    ; Shift depending on octave
+    MOV   A, Y ; A = calculated_final_pitch high byte
+  _op:
+    BRA   _op
+    LSR   A
+    ROR   dp(calculated_final_pitch)
+    LSR   A
+    ROR   dp(calculated_final_pitch)
+    LSR   A
+    ROR   dp(calculated_final_pitch)
+    LSR   A
+    ROR   dp(calculated_final_pitch)
+    LSR   A
+    ROR   dp(calculated_final_pitch)
+    LSR   A
+    ROR   dp(calculated_final_pitch)
+    LSR   A
+    ROR   dp(calculated_final_pitch)
+    MOV   Y, A
+
+    ; Update channel
+    MOV   A, dp(Channel.voice_base_pointer)
+    OR    A, #2
+    MOV   dp(SPC.DSP_ADDR), A
+    MOV   dp(SPC.DSP_DATA), dp(calculated_final_pitch)
+    INC   A
+    MOV   dp(SPC.DSP_ADDR), A
+    MOV   dp(SPC.DSP_DATA), Y
+  end
+
+  ;; Updates the pitch
+  def update_pitch
+    MOV   A, dp(Channel.voice_bit_pointer)
+    AND   A, dp(Channel.enabled_voices)
+    BEQ   _skip
+
+    ; lower byte is ease between notes
+    ; higher byte is absolute note (note + octave * 0x0C)
+
+    MOVW  YA, dp(Script.ch_current_pitch)
+    MOVW  dp(calculated_pitch), YA
+
+    _calculate_note_and_octave
+    _read_note_pitch_value
+    _calculate_ease_to_next_note
+    _calculate_final_pitch_with_ease
+    _set_channel_pitch
+
+  _skip:
+  end
+
+  ;; Calculates and updates the pitch
+  macro _calculate_and_update_pitch
+    ; Take the samples pitch
+    MOV   A, addr(Channel.sample_pitch_high_bytes, X)
+    MOV   Y, A
+    MOV   A, addr(Channel.sample_pitch_low_bytes, X)
+
+    ; Add the note value to it
+    ADDW  YA, dp(note_16)
+    MOVW  dp(note_16), YA
+
+    ; Add the pitch modifier
+    MOV   A, addr(Channel.modify_pitch_high_bytes, X)
+    MOV   Y, A
+    MOV   A, addr(Channel.modify_pitch_low_bytes, X)
+    ADDW  YA, dp(note_16)
+
+    ; Update pitch
+    MOVW  dp(ch_current_pitch), YA
+    update_pitch
+  end
+
+  ;; Start channel playback after timer iteration
+  macro _mark_channel_to_be_played
+    MOV   A, dp(Channel.voice_bit_pointer)
+    AND   A, dp(Channel.enabled_voices)
+    OR    A, dp(start_channels)
+    MOV   dp(start_channels), A
+  end
+
+  ;; Updates the channel sample, if necessary
+  macro _update_channel_sample
+    MOV   A, dp(Channel.changed_sample_voices)
+    AND   A, dp(Channel.voice_bit_pointer)
+    AND   A, dp(Channel.enabled_voices)
+    BZE   _sample_not_modified
+
+    EOR   A, dp(Channel.changed_sample_voices)
+    MOV   dp(Channel.changed_sample_voices), A
+
+    Sample.activate
+
+  _sample_not_modified:
+  end
+
+  ;; Calculates the delay value
+  macro _calculate_final_delay_value
+    MOV   Y, dp(delay)
+    BZE   _is_custom_delay
+
+    MOV   A, addr(delay_lookup_table.to_sym - 1, Y)
+    MOV   dp(Channel.timers, X), A
+    BRA   _finish
+
+  _is_custom_delay:
+    MOV   A, indirect(Script.address, Y)
+    INCW  dp(Script.address)
+    MOV   dp(Channel.timers, X), A
+
+  _finish:
+  end
+
+  ;; Initializes the vibrato effect, if enabled
+  macro _initialize_vibrato_effect_if_necessary
+    BBC0  dp(ch_effect_flags), _no_vibrato_effect
+
+  _initialize_vibrato_effect:
+    MOV1  C, ch_effect_flags, 1
+    MOV1  ch_effect_flags, 2, C
+    MOV   A, addr(Channel.vibrato_ticks, X)
+    MOV   addr(Channel.vibrato_current_ticks, X), A
+    MOV   A, addr(Channel.vibrato_delay, X)
+    MOV   addr(Channel.vibrato_current_delay, X), A
+
+  _no_vibrato_effect:
+  end
+
+  ;; Plays the note from the script
+  def play_note
+    ; Prepare values
+    _calculate_note_and_delay
+    CMP   Y, #$C ; == delay
+    BEQ   _note_is_C
+    BGE   _note_id_D
+    BRA   _default_note
+
+  _note_id_D:
+    SET1  dp(ch_control_flags)
+    JMP   _no_playback
+
+  _note_is_C:
+    OR    dp(ch_control_flags), #Channel.CTRL_IS_PLAYING | Channel.CTRL_IS_DELAY_ONLY
+    JMP   _no_playback
+
+  _default_note:
+    ; Playback related stuff
+    SET1  dp(ch_control_flags)
+
+    _calculate_absolute_note_value
+    MOV   X, dp(Channel.pointer)
+    ;MOV   addr(Channel.last_absolute_notes, X), A
+
+    _calculate_and_update_pitch
+
+    MOV   X, dp(Channel.pointer)
+    _mark_channel_to_be_played
+    _initialize_vibrato_effect_if_necessary
+    _update_channel_sample
+
+    ; Delay related stuff
+  _no_playback:
+    MOV   X, dp(Channel.pointer)
+    _calculate_final_delay_value
+
+    ; Look ahead the next note to figure out if it is a $D playback
+    MOV   A, addr(Channel.repeat_block_depth, X)
+    MOV   dp(repeat_block_depth), A
+    MOVW  YA, dp(Script.address)
+    MOVW  dp(script_address), YA
+  _loop_script_command_with_reset_Y:
+    MOV   Y, #0
+  _loop_script_command:
+    MOV   A, indirect(script_address, Y)
+    CMP   A, #$C4
+    BGE   _lookahead_is_command
+
+  _lookahead_is_note:
+    MOV   X, #$E
+    MOV   Y, #0
+    DIV   YA, X
+    CMP   Y, #$D
+    BEQ   _next_is_D
+    ;CMP   Y, #$C
+    ;BEQ   _next_is_normal
+
+  _next_is_normal:
+    CLR3  dp(ch_control_flags)
+    JMP   Script.process._after_script_loop
+  _next_is_D:
+    SET3  dp(ch_control_flags)
+    JMP   Script.process._after_script_loop
+
+  _lookahead_is_command:
+    CMP   A, #Action.CMD_END_REPEAT_LOOP
+    BEQ   _is_end_of_repeat
+
+    SETC
+    SBC   A, #$C4
+    MOV   X, A
+    MOV   A, addr(Action.action_sizes, X)
+    BEQ   _next_is_normal
+
+    MOV   A, Y
+    CLRC
+    ADC   A, addr(Action.action_sizes, X)
+    MOV   Y, A
+    BRA   _loop_script_command
+
+  _is_end_of_repeat:
+    MOV   A, dp(repeat_block_depth)
+    CALL  Action::Loop._depth_to_pointer.without_load_register
+
+    MOV   A, addr(Channel.repeat_times, X)
+    BEQ   _leave_repeat
+
+    MOV   A, addr(Channel.repeat_target_address_high, X)
+    MOV   Y, A
+    MOV   A, addr(Channel.repeat_target_address_low, X)
+    MOVW  dp(script_address), YA
+    BRA   _loop_script_command_with_reset_Y
+
+  _leave_repeat:
+    DEC   dp(repeat_block_depth)
+    INC   Y
+    BRA   _loop_script_command
+  end
+
+end

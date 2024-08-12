@@ -1,0 +1,13 @@
+name: AOBA mouse support
+id: com.aobastudio.aoba.mouse
+version: 1.0.0
+
+author:
+  - Benjamin Schulte
+
+dependencies:
+  com.aobastudio.aoba.core: 1.0.0
+
+includes:
+  - "aoba/mouse"
+  - "aoba/mouse/script"

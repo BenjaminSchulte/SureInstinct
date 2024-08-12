@@ -1,0 +1,232 @@
+module Aoba::GameVariable
+
+  read_variables = create_shared_routine_variables do
+    declare :address, as: :uint16
+    declare :address_base, as: :uint16
+    declare :config, as: :uint16
+    declare :calc, as: :uint32
+  end
+
+  ;; Loads a bit
+  ;; @ignore-thread-safety
+  def _load_bit
+    A.pretend_size 8
+    read_variables.use do |address, address_base, config, calc|
+      ;; Reads the bitshift
+      LDA   #0
+      XBA ;=config
+      AND   #7
+      TAY
+
+      ;; Reads the data
+      LDX   dp(address_base)
+      LDA   dp(address + 1)
+      BPL   _read_from_saveslot
+      ASL   A
+      BMI   _read_from_global
+    _read_from_temporary:
+      LDA   TempSlotRAM.long, X
+      BRA   _test_bit
+    _read_from_global:
+      LDA   SRAM_ADDRESS.long, X
+      BRA   _test_bit
+    _read_from_saveslot:
+      LDA   SaveSlotRAM.long, X
+
+      ;; Tests whether the value is set or clear
+    _test_bit:
+      TYX
+      AND   Aoba::PowerOfTwo8.long, X
+      BZE   _done
+      LDA   #1
+    _done:
+      CPU.set A: 16
+      AND   #$FF
+      TAX
+      LDY   #0
+    end
+  end
+
+  ;; Loads a byte
+  ;; @ignore-thread-safety
+  def _load_byte
+    read_variables.use do |address, address_base, config, calc|
+      ;; Reads the size to calc
+      XBA
+      AND   #7
+      STA   dp(calc)
+
+      ;; Reads the data
+      LDX   dp(address_base)
+      LDA   dp(address)
+      BPL   _read_from_saveslot
+      ASL   A
+      BMI   _read_from_global
+    _read_from_temporary:
+      LDA   TempSlotRAM.long, X
+      BRA   _after_read
+    _read_from_global:
+      LDA   SRAM_ADDRESS.long, X
+      BRA   _after_read
+    _read_from_saveslot:
+      LDA   SaveSlotRAM.long, X
+
+      ;; Shifts the value depending on the shift register
+    _after_read:
+      LDX   dp(calc)
+      BZE   _after_shift
+    _shift_loop:
+      LSR   A
+      DEX
+      BNZ   _shift_loop
+    _after_shift:
+
+      ;; Reads the size to X (times two)
+      TAY
+      LDA   dp(config + 1)
+      AND   #$FF
+      INC   A
+      ASL   A
+      TAX
+      TYA
+      AND   Aoba::PowerOfTwoBitmask16.long, X
+
+      ;; Copies the result to the target register
+      TAX
+      LDY   #0
+    end
+  end
+
+  ;; Loads a variable of size 10-25 bits
+  ;; @ignore-thread-safety
+  def _load_medium
+    read_variables.use do |address, address_base, config, calc|
+      ;; Copies the size to Y
+      AND   #$FF
+      INC   A
+      ASL   A
+      TAY
+
+      ;; Reads the shift to 'config'
+      LDA   dp(config)
+      AND   #7
+      STA   dp(calc + 2)
+
+      ;; Reads the data to A and dp(calc)
+      LDX   dp(address_base)
+      LDA   dp(address)
+      BPL   _read_from_saveslot
+      ASL   A
+      BMI   _read_from_global
+    _read_from_temporary:
+      LDA   TempSlotRAM.long + 2, X
+      STA   dp(calc)
+      LDA   TempSlotRAM.long, X
+      BRA   _after_read
+    _read_from_global:
+      LDA   SRAM_ADDRESS.long + 2, X
+      STA   dp(calc)
+      LDA   SRAM_ADDRESS.long, X
+      BRA   _after_read
+    _read_from_saveslot:
+      LDA   SaveSlotRAM.long + 2, X
+      STA   dp(calc)
+      LDA   SaveSlotRAM.long, X
+
+      ;; Shifts data
+    _after_read:
+      LDX   dp(calc + 2)
+      BZE   _after_shift
+    _shift_loop:
+      LSR   dp(calc)
+      ROR   A
+      DEX
+      BNZ   _shift_loop
+    _after_shift:
+
+      ;; Write low value to calc + 2
+      TYX
+      AND   Aoba.PowerOfTwoBitmask16.long, X
+      STA   dp(calc + 2)
+
+      ;; Calculates the bitmask size for the high word
+      LDY   #0
+      TXA
+      SEC
+      SBC   #16 * 2
+      BZE   _no_high_word
+      BMI   _no_high_word
+
+      ;; Calculates the high word
+      TAX
+      LDA   dp(calc)
+      AND   Aoba.PowerOfTwoBitmask16.long, X
+      TAY
+
+      ;; Store to result
+    _no_high_word:
+      LDX   dp(calc + 2)
+    end
+  end
+
+
+  ;; Loads the variable in register X
+  ;;
+  ;; @param A variable ID
+  ;; @return X low word
+  ;; @return Y high word
+  def load_number_long
+    routine do
+      is_thread_safe
+      input A
+      use_shared_variables read_variables
+
+      execute do |address, address_base, config, calc|
+        ;; Calculates the offset within the variableschema index
+        ASL   A
+        TAX
+        LDA   VariableAddresses.long, X
+        STA   dp(address)
+        AND   #$3FFF
+        STA   dp(address_base)
+        LDA   VariableConfigs.long, X
+        STA   dp(config)
+
+        ;; Resume depending on size
+        CPU.set A: 8
+        XBA   ; AH is important! Don't overwrite it
+        BZE   _read_bit
+        CMP   #10 - 1
+        BLT   _read_byte
+        CMP   #26 - 1
+        BGE   _read_long
+
+        ;; Reads a variable between 10 and 25 bits
+      _read_medium:
+        CPU.set A: 16
+        JSR   _load_medium
+        BRA   _after_load
+
+        ;; Reads a variable with less or equal to 9 bits
+      _read_byte:
+        CPU.set A: 16
+        JSR   _load_byte
+        BRA   _after_load
+
+        ;; Reads a variable with at least 26 bits
+      _read_long:
+        fatal_error "read_long is not yet supported"
+
+        ;; Reads a single bit
+      _read_bit:
+        JSR   _load_bit
+
+      _after_load:
+        CPU.set A: 16
+      end
+    end
+
+    RTL
+  end
+
+end

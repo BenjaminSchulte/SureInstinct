@@ -1,0 +1,26 @@
+module Script::Action::SetOctave
+
+  def process
+    MOV   X, A
+    MOV   A, indirect(Script.address, X)
+    INCW  dp(Script.address)
+  _set_octave:
+    AND   A, #$F
+    MOV   addr(Channel.octaves, Y), A
+    RET
+
+  _decrement_octave:
+    MOV   A, addr(Channel.octaves, Y)
+    DEC   A
+    BRA   _set_octave
+
+  _increment_octave:
+    MOV   A, addr(Channel.octaves, Y)
+    INC   A
+    BRA   _set_octave
+  end
+
+  decrement_octave = process._decrement_octave
+  increment_octave = process._increment_octave
+
+end

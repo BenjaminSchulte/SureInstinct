@@ -1,0 +1,308 @@
+module Aoba::Font::Render::Stage::LineLength
+
+  ;; RAM
+  scope :TempRAM, in: StageRAM
+
+  ;; The maximum width in pixel
+  declare :max_width_in_pixel, as: :uint16, in: TempRAM
+
+  ;; The current line width
+  declare :current_line_width, as: :uint16, in: TempRAM
+
+  ;; The current line width
+  declare :current_safe_line_width, as: :uint16, in: TempRAM
+
+  ;; The current end of the line
+  declare :current_end_of_line, as: :uint16, in: TempRAM
+
+  ;; The current character
+  declare :current_char, as: :uint16, in: TempRAM
+
+  ;; The current index
+  declare :current_index, as: :uint16, in: TempRAM
+
+  ;; Calculates the maximum width in pixel
+  macro _calculate_max_width_in_pixel
+    X.is_a! State
+    LDX   dp(state)
+    LDA   X[:max_num_tiles_per_row]
+    AND   dp(x00FF)
+    ASL   A
+    ASL   A
+    ASL   A
+    ASL   A
+    STA   dp(max_width_in_pixel)
+    STZ   dp(current_line_width)
+    STZ   dp(current_safe_line_width)
+  end
+
+  ;; Reads the flags of the current character in A
+  macro _read_character_flags_and_advance
+    ASL   A
+    TAY
+    LDA   font_address.long.indirect, Y
+    TAY
+    LDA   font_address.long.indirect, Y
+  end
+
+  ;; Calculates the alignment of the row (left/right/center)
+  macro _calculate_row_align
+    ;; Proceed depending on alignment
+    LDA   Y[:align] - 1
+    AND   #$FF00
+    BZE   _no_alignment
+    BPL   _align_center
+
+    ;; Right alignment
+  _align_right:
+    LDA   dp(max_width_in_pixel)
+    SEC
+    SBC   dp(current_safe_line_width)
+    BRA   _set_alignment
+  
+    ;; Center alignment
+  _align_center:
+    LDA   dp(max_width_in_pixel)
+    SEC
+    SBC   dp(current_safe_line_width)
+    LSR   A
+    BRA   _set_alignment
+
+    ;; Stores the result
+  _no_alignment:
+    LDA   #0
+  _set_alignment:
+    STA   Y[:line_x_offset]
+  end
+
+  ;; Calculates the line length of this row
+  def execute
+    Thread.assert_thread thread_id
+
+    _calculate_max_width_in_pixel
+
+    STZ   dp(current_end_of_line)
+
+    LDX   dp(current_line)
+  _loop:
+    ;; Reads the next character from the buffer
+    LDA   0, X
+    BMI   _process_command
+
+    ;; The character is no command
+  _is_character:
+    _read_character_flags_and_advance
+    BPL   _is_character_without_flags
+
+    ;; The character has special flags, test which flags
+  _is_character_with_flags:
+    STA   dp(current_char)
+    XBA
+
+    LSR   A
+    BCC   _flag_no_space
+
+    ;; This character is a space
+  _flag_space:
+    STX   dp(current_end_of_line)
+    STX   dp(current_next_line)
+    LDA   dp(current_line_width)
+    STA   dp(current_safe_line_width)
+    BRA   _resume_after_flag
+
+    ;; This character is no space character
+  _flag_no_space:
+    Debug.BRK
+    NOP
+    NOP
+    NOP
+
+    ;; This is actually a command
+  _process_command:
+    CMP   #$8000
+    BEQ   _end_of_text
+    JSR   _goto_command_subroutine
+    LDX   dp(current_index)
+    BRA   _loop
+
+  _resume_after_flag:
+    LDA   dp(current_char)
+    AND   dp(x00FF)
+
+    ;; The current character is a simple letter
+  _is_character_without_flags:
+    CLC
+    ADC   dp(current_line_width)
+    CMP   dp(max_width_in_pixel)
+    BGE   _end_of_line
+    STA   dp(current_line_width)
+
+    ;; Proceeds to the next character
+  _next_character:
+    INX
+    INX
+    BRA   _loop
+
+    ;; No space character has been found before the line break
+  _unexpected_word_end:
+    TXA
+    DEC   A
+    DEC   A
+    Y.is_a! State
+    STA   Y[:end_of_line]
+    LDA   dp(current_line_width)
+    LDA   dp(current_safe_line_width)
+    BRA   _test_empty_line
+
+    ;; End of text
+  _end_of_text:
+    STX   dp(current_end_of_line)
+    STX   dp(current_next_line)
+    LDA   dp(current_line_width)
+    STA   dp(current_safe_line_width)
+    LDA   #InternalStatus::END_OF_INPUT
+    Debug.access_8bit_through_16bit
+    TSB   dp(internal_status)
+
+    ;; We reached the end of the line
+  _end_of_line:
+    LDY   dp(state)
+    LDA   dp(current_end_of_line)
+    BZE   _unexpected_word_end
+
+    ;; Writes the end of the line to the buffer
+    STA   Y[:end_of_line]
+
+  _test_empty_line:
+    ; TODO:!!!!! Missing code here
+
+    LDA   Y[:current_line]
+    CMP   dp(current_end_of_line)
+    BNE   _no_empty_line
+
+    ;; The line is empty
+  _empty_line:
+    CLC
+    RTS
+
+  _goto_command_subroutine:
+    INX
+    INX
+    STX   dp(current_index)
+    AND   dp(x00FF)
+    ASL   A
+    TAX
+    JMP   command_action.indirect, X
+
+    ;; The line has at least one renderable character
+  _no_empty_line:
+    _calculate_row_align
+    SEC
+    RTS
+  end
+
+  ;; No action
+  def _nop
+  end
+
+  ;; Align
+  def _align_left
+    LDX   dp(state)
+    X.is_a! State
+    CPU.set A: 8
+    STZ   X[:align]
+    CPU.set A: 16
+  end
+
+  ;; Align
+  def _align_center
+    LDX   dp(state)
+    X.is_a! State
+    CPU.set A: 8
+    LDA   #1
+    STA   X[:align]
+    CPU.set A: 16
+  end
+
+  ;; Align
+  def _align_right
+    LDX   dp(state)
+    X.is_a! State
+    CPU.set A: 8
+    LDA   #-1
+    STA   X[:align]
+    CPU.set A: 16
+  end
+
+  ;; End of line
+  def _new_line
+    LDX   dp(current_index)
+    DEX
+    DEX
+    STX   dp(current_next_line)
+    STX   dp(current_end_of_line)
+    LDA   dp(current_line_width)
+    STA   dp(current_safe_line_width)
+    PLA
+    PEA   #execute._end_of_line - 1
+  end
+
+  ;; End of page
+  def _new_page
+    LDA   dp(internal_status)
+    ORA   #InternalStatus.END_OF_PAGE
+    STA   dp(internal_status)
+    LDA   dp(current_line_width)
+    STA   dp(current_safe_line_width)
+
+    JMP   _new_line
+  end
+
+  ;; Option
+  def _option
+    ;; Aligns the current text to a full tile
+    LDA   dp(current_line_width)
+    AND   #$F
+    BZE   _is_aligned
+    EOR   #$F
+    CLC
+    ADC   dp(current_line_width)
+    ADC   #OPTION_NUM_TILES * 16
+    STA   dp(current_line_width)
+    RTS
+
+    ;; --
+
+  _is_aligned:
+    CLC
+    LDA   dp(current_line_width)
+    ADC   #OPTION_NUM_TILES * 16
+    STA   dp(current_line_width)
+  end
+
+  ;; Skips a parameter
+  def _skip_param
+    INC   dp(current_index)
+  end
+
+  ;; Length of the command
+  datablock command_action
+    dw   _nop          ; $E0 - end of text
+    dw   _nop          ; $E1 - color 0
+    dw   _nop          ; $E2 - color 1
+    dw   _nop          ; $E3 - color 2
+    dw   _align_left   ; $E4 - align left
+    dw   _align_center ; $E5 - align middle
+    dw   _align_right  ; $E6 - align right
+    dw   _new_line     ; $E7 - new line
+    dw   _new_page     ; $E8 - new page
+    dw   _option       ; $E9 - option
+    dw   _nop          ; $EA - choose option
+    dw   _skip_param   ; $EB - delay
+    dw   _nop          ; $EC
+    dw   _nop          ; $ED
+    dw   _nop          ; $EE
+    dw   _nop          ; $EF
+  end
+
+end

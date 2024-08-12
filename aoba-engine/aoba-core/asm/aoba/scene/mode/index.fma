@@ -1,0 +1,2 @@
+require "scene_mode"
+require "manager"

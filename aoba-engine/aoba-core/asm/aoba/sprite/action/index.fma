@@ -1,0 +1,9 @@
+require "rendering"
+require "manage_palette"
+require "manage_sprite"
+
+require "move"
+require "move_target"
+require "move_sprite"
+
+require "camera"

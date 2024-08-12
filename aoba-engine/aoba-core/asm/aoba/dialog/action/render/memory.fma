@@ -1,0 +1,27 @@
+module Aoba::Dialog::Action::Render
+
+  ;; RAM
+  scope :RAM, in: ScriptTempRAM
+
+  ;; The current dialog
+  declare :current_dialog, as: :uint16, in: RAM
+
+  ;; The current render speed
+  declare :render_delay, as: :uint8, in: RAM
+
+  ;; The current X position within the line
+  declare :current_x_position, as: :uint16, in: RAM
+
+  ;; The next X position within the line
+  declare :next_x_position, as: :uint16, in: RAM
+
+  ;; The current X tile position within the line
+  declare :current_x_tile, as: :uint8, in: RAM
+
+  ;; The current Y tile position within the line (row * 2)
+  declare :current_tiles_y, as: :uint16, in: RAM
+
+  ;; The current X row (after )
+  current_tilemap_y = current_tiles_y + 1
+
+end

@@ -1,0 +1,76 @@
+module Aoba::Dialog::Action::Render
+
+  ;; Waits the delay time
+  macro _wait_delay_time
+    LDA   dp(render_delay)
+    AND   dp(Aoba::Script.x00FF)
+    TAY
+    JSL   Thread.delay_icb_long
+  end
+
+  ;; Waits the delay time
+  macro _wait_1_frame
+    LDY   #1
+    JSL   Thread.delay_icb_long
+  end
+
+  ;; Waits for the confirm button
+  ;; @ignore-thread-safety
+  macro _wait_for_confirm
+    LDX   #Aoba::Control::Key.bitmap(:a)
+    JSL   Aoba::Control::ScriptUtils.wait_for_key_icb_long
+  end
+  
+  ;; No render action
+  def _resume_after_action
+    __trigger_resume_text_rendering
+    JMP   _render_slow_row._loop
+  end
+
+  ;; Delay action
+  def _delay_action
+    LDX   dp(current_dialog)
+    X.is_a! Aoba::Dialog::Hdma::Configuration
+    LDA   X[:font_state] + Font::Render::State.offset_of(:action_parameter)
+    AND   dp(Aoba::Script.x00FF)
+    PHA
+    __trigger_resume_text_rendering
+    PLY
+    JSL   Thread.delay_icb_long
+    JMP   _render_slow_row._loop
+  end
+
+  ;; Confirm action
+  def _confirm_action
+    __trigger_resume_text_rendering
+
+    LDX   dp(current_dialog)
+    X.is_a! Aoba::Dialog::Hdma::Configuration
+    LDA   X[:font_state] + Font::Render::State.offset_of(:current_option_offset)
+    AND   dp(Aoba::Script.x00FF)
+    BNZ   _has_option
+
+  _without_option:
+    _wait_for_confirm
+    JMP   _render_slow_row._loop
+
+    ;; --
+
+  _has_option:
+    _choose_option_action
+    JMP   _render_slow_row._loop
+  end
+
+  ;; List of all actions (see Font::Render::Status)
+  datablock _process_action_command
+    dw   _resume_after_action  ; 0 - none
+    dw   _delay_action         ; 1 - delay
+    dw   _confirm_action       ; 2 - confirm
+    dw   _resume_after_action  ; 3
+    dw   _resume_after_action  ; 4
+    dw   _resume_after_action  ; 5
+    dw   _resume_after_action  ; 6
+    dw   _resume_after_action  ; 7
+  end
+
+end

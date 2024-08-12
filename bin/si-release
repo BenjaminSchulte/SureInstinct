@@ -1,0 +1,35 @@
+#!/bin/bash
+
+set -e
+
+VERSION=1.0.3
+
+if ! [[ -d "sureinstinct/assets" ]]; then
+  echo "Error: Script must be executed from project root."
+  exit 1
+fi
+
+AOBA_MODULE_PATH=`pwd`/aoba-engine ./aoba-build/build/src/cli/cli ./sureinstinct pal
+flags=`cat sureinstinct/obj/compile-flags.txt`
+./bin/audio-compile sureinstinct
+
+ROMNAME=SureInstinct-`date +%Y%m%d-%H%M%S`-PAL.sfc
+fma -l 65816 -o./sureinstinct/release/$ROMNAME $flags ./sureinstinct/obj/build.fma
+
+INZIPNAME="SureInstinct PAL (v$VERSION).sfc"
+cp ./sureinstinct/release/$ROMNAME "./sureinstinct/html/$INZIPNAME"
+(cd sureinstinct/html && zip "SureInstinct PAL (v$VERSION).sfc.zip" "$INZIPNAME")
+rm "./sureinstinct/html/$INZIPNAME"
+
+AOBA_MODULE_PATH=`pwd`/aoba-engine ./aoba-build/build/src/cli/cli ./sureinstinct ntsc
+flags=`cat sureinstinct/obj/compile-flags.txt`
+./bin/audio-compile sureinstinct
+
+ROMNAME=SureInstinct-`date +%Y%m%d-%H%M%S`-NTSC.sfc
+INZIPNAME="SureInstinct NTSC (v$VERSION).sfc"
+fma -l 65816 -o./sureinstinct/release/$ROMNAME $flags ./sureinstinct/obj/build.fma
+
+cp ./sureinstinct/release/$ROMNAME ./sureinstinct/html/SureInstinctNTSC.sfc
+cp ./sureinstinct/release/$ROMNAME "./sureinstinct/html/$INZIPNAME"
+(cd sureinstinct/html && zip "SureInstinct NTSC (v$VERSION).sfc.zip" "$INZIPNAME")
+rm "./sureinstinct/html/$INZIPNAME"

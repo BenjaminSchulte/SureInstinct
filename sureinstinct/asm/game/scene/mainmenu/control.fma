@@ -1,0 +1,56 @@
+module Game::Scene::MainMenu::Control
+
+  locate_at bank: CUSTOM_ROM_BANK
+
+  ;; The thread RAM
+  scope :RAM, in: ::Memory::ThreadRAM
+
+  ;; The event RAM
+  scope :ActionRAM, in: RAM, shared: true
+
+  ;; Temporary variable
+  declare :_calc0, as: :uint32, in: RAM
+  
+  ;; Event listener
+  declare :gamepad_listener, as: :uint16, in: RAM
+
+
+
+
+  ;; Controls thread
+  Thread = Aoba::Thread::Builder.create "MainMenu" do
+    locate_at bank: CUSTOM_ROM_BANK
+    priority LEVEL_CONTROL_PRIORITY
+
+    enable_script_support "MainMenu"
+    
+    use_dp_ram RAM
+    use_temporary _calc0
+
+    load do
+      LDA   Thread.thread_id
+      LDX   gamepad
+      LDY   #Aoba::Control::Key.bitmap(:a, :b, :x, :y, :start, :lmb, :rmb)
+      JSL   Aoba::Control.attach_new_listener_icb_long
+      STY   dp(gamepad_listener)
+    end
+
+    unload do
+      LDX   gamepad
+      LDY   dp(gamepad_listener)
+      JSL   Aoba::Control.detach_and_free_listener_icb_long
+    end
+
+    after_unload do
+      LDX   after_scene_script_bank
+      LDA   after_scene_script
+      ;LDX   #__com_aobastudio_sureinstinct_mainmenu_close.bank
+      ;LDA   #__com_aobastudio_sureinstinct_mainmenu_close
+      JSL   Aoba::Scene::Api.execute_script_long
+    end
+
+    on :keydown do
+      Thread.kill_from_self
+    end
+  end
+end

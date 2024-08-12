@@ -1,0 +1,66 @@
+module Script::Action::EasePitch
+
+  scope :TempEaseMemory, in: Script.SharedTempScriptRAM
+  declare :num_ticks, as: :uint8, in: TempEaseMemory
+
+  declare :value_0, as: :uint8, in: TempEaseMemory
+  declare :value_1, as: :uint8, in: TempEaseMemory
+  declare :value_2, as: :uint8, in: TempEaseMemory
+  declare :value_3, as: :uint8, in: TempEaseMemory
+
+  def process
+    CLR5  dp(ch_control_flags) ; Disable negative flag
+
+    MOV   X, A
+
+    ; Read number of ticks value
+    MOV   A, indirect(Script.address, X)
+    INCW  dp(Script.address)
+    DEC   A
+    MOV   dp(num_ticks), A
+    MOV   addr(Channel.ease_pitch_num_ticks, Y), A
+
+    ; Read value and convert to positive value
+    MOV   A, indirect(Script.address, X)
+    BPL   _is_positive
+    EOR   A, #$FF
+    INC   A
+    SET5  dp(ch_control_flags)
+  _is_positive:
+    INCW  dp(Script.address)
+
+    MOV   Y, #$0
+    MOV   X, dp(num_ticks)
+    BEQ   _is_zero
+
+    DIV   YA, X
+    MOV   dp(value_0), A
+
+    MOV   A, #$00
+    DIV   YA, X
+    MOV   dp(value_1), A
+
+    MOV   A, #$00
+    DIV   YA, X
+    MOV   dp(value_2), A
+
+    MOV   A, #$00
+    DIV   YA, X
+
+    MOV   X, dp(Channel.pointer_2x)
+    MOV   addr(Channel.ease_pitch_increment_word1+1, X), A
+
+    MOV   A, dp(value_2)
+    MOV   addr(Channel.ease_pitch_increment_word1, X), A
+
+    MOV   A, dp(value_1)
+    MOV   addr(Channel.ease_pitch_increment_word0+1, X), A
+
+    MOV   A, dp(value_0)
+    MOV   addr(Channel.ease_pitch_increment_word0, X), A
+
+    SET6  dp(ch_control_flags)
+  _is_zero:
+  end
+
+end

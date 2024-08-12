@@ -1,0 +1,64 @@
+module Aoba::Palette
+
+  ;; Sets a color directly
+  ;;
+  ;; @param REGA dialog image
+  Aoba::Script.callback "Palette_FadePalette", bank: PALETTE_ROM_BANK do
+
+    LDX   #Aoba::Palette::Event::FadePalette::Config.size
+    LDA   Aoba::Palette.thread_id
+    Thread.safe do
+      JSL   Aoba::Memory::allocate_miniblock_long
+    end
+
+    ;; Configures the config
+    X.is_a! Aoba::Palette::Event::FadePalette::Config
+    LDA   dp(Aoba::Script.stack_pointer)
+    DEC   A
+    DEC   A
+    STA   dp(Aoba::Script.stack_pointer)
+    TAY
+    LDA   0, Y
+    STA   X[:palette_address]
+    LDA   dp(Aoba::Script.register_a)
+    STA   X[:palette_mask]
+    CPU.set A: 8
+    LDA   dp(Aoba::Script.register_a + 2)
+    STA   X[:speed]
+    STX   dp(Aoba::Script.temp_calc)
+
+    ;; Triggers the event
+    LDA   #Aoba::Thread::Event::USEREVENT_ID
+    JSL   Aoba::Thread::Event.allocate_icb_long
+    X.is_a! Aoba::Palette::Event::FadePalette::Event
+    LDA   #Aoba::Palette::Event::FadePalette::ID
+    STA   X[:event_id]
+    CPU.set A: 16
+    LDA   dp(Aoba::Script.temp_calc)
+    STA   X[:config]
+
+    LDA   thread_id
+    JML   Aoba::Thread.send_event_icb_long
+  end
+
+
+  ;; Sets a color directly
+  ;;
+  ;; @param REGA dialog image
+  Aoba::Script.callback "Palette_RestorePalette", bank: PALETTE_ROM_BANK do
+    ;; Triggers the event
+    LDA   #Aoba::Thread::Event::USEREVENT_ID
+    JSL   Aoba::Thread::Event.allocate_icb_long
+    X.is_a! Aoba::Palette::Event::RestorePalette::Event
+    LDA   #Aoba::Palette::Event::RestorePalette::ID
+    STA   X[:event_id]
+    LDA   dp(Aoba::Script.register_a + 2)
+    STA   X[:speed]
+    CPU.set A: 16
+    LDA   dp(Aoba::Script.register_a)
+    STA   X[:palette_mask]
+    LDA   thread_id
+    JML   Aoba::Thread.send_event_icb_long
+  end
+
+end

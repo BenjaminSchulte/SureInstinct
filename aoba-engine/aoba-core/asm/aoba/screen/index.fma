@@ -1,0 +1,11 @@
+module Aoba
+
+  ;; The ROM bank
+  SCREEN_ROM_BANK ||= SYSTEM_ROM_BANK
+
+end
+
+require "configuration"
+require "memory"
+require "initialize"
+require "update"

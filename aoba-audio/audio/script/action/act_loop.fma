@@ -1,0 +1,105 @@
+module Script::Action::Loop
+
+  scope :TempLoopMemory, in: Script.SharedTempScriptRAM
+  declare :calc_temp, as: :uint8, in: TempLoopMemory
+
+  def set_loop_position
+    MOV   X, dp(Channel.pointer_2x)
+    MOVW  YA, dp(Script.address)
+    MOV   addr(Channel.script_loop_targets, X), A
+    MOV   A, Y
+    MOV   addr(Channel.script_loop_targets + 1, X), A
+  end
+
+  def stop_or_loop
+    MOV   X, dp(Channel.pointer_2x)
+    MOV   A, addr(Channel.script_loop_targets + 1, X)
+    BZE   _no_loop
+
+  _with_loop:
+    MOV   Y, A
+    MOV   A, addr(Channel.script_loop_targets, X)
+    MOVW  dp(Script.address), YA
+    RET
+
+  _no_loop:
+    ; Remove item from active channels
+    MOV   A, dp(Channel.voice_bit_pointer)
+    EOR   A, #$FF
+    AND   A, dp(Channel.processed_channels)
+    MOV   dp(Channel.processed_channels), A
+
+    ; Stop playback
+    MOV   dp(SPC.DSP_ADDR), #DSP.KOFF
+    MOV   A, dp(Channel.voice_bit_pointer)
+    AND   A, dp(Channel.enabled_voices)
+    MOV   dp(SPC.DSP_DATA), A
+  end
+
+  def begin_repeat
+    MOV   A, addr(Channel.octaves, Y)
+    MOV   dp(calc_temp), A
+
+    ; Calculate current depth
+    MOV   A, addr(Channel.repeat_block_depth, Y)
+    INC   A
+    MOV   addr(Channel.repeat_block_depth, Y), A
+    CALL  _depth_to_pointer.without_load_register
+
+    ; Read repeat amount
+    MOV   Y, #0
+    MOV   A, indirect(Script.address, Y)
+    INCW  dp(Script.address)
+    MOV   addr(Channel.repeat_times, X), A
+
+    ; Store old octave
+    MOV   A, dp(calc_temp)
+    MOV   addr(Channel.repeat_old_octaves, X), A
+
+    ; Store repeat position
+    MOVW  YA, dp(Script.address)
+    MOV   addr(Channel.repeat_target_address_low, X), A
+    MOV   A, Y
+    MOV   addr(Channel.repeat_target_address_high, X), A
+  end
+
+  def loop_repeat
+    ; Calculate loop position
+    _depth_to_pointer
+
+    ; Is there any repeat requested?
+    MOV   A, addr(Channel.repeat_times, X)
+    BEQ   _disable_repeat
+
+    ; Decrement loop times
+    DEC   A
+    MOV   addr(Channel.repeat_times, X), A
+
+    ; Restore octave
+    MOV   A, addr(Channel.repeat_old_octaves, X)
+    MOV   addr(Channel.octaves, Y), A
+
+    ; Restore values from RAM
+    MOV   A, addr(Channel.repeat_target_address_high, X)
+    MOV   Y, A
+    MOV   A, addr(Channel.repeat_target_address_low, X)
+    MOVW  dp(Script.address), YA
+    RET
+
+    ; Disable loop
+  _disable_repeat:
+    MOV   A, addr(Channel.repeat_block_depth, Y)
+    DEC   A
+    MOV   addr(Channel.repeat_block_depth, Y), A
+  end
+
+  def _depth_to_pointer
+    MOV   A, addr(Channel.repeat_block_depth, Y)
+  without_load_register:
+    CLRC
+    ADC   A, dp(Channel.pointer)
+    ADC   A, dp(Channel.pointer_2x)
+    MOV   X, A
+  end
+
+end

@@ -1,0 +1,23 @@
+module Command::SetMasterVolume
+
+  ;; Sets the master volume
+  def process
+    MOV   A, dp(SPC.PORT1)
+    MOV   dp(SPC.PORT0), dp(IPC.last_ipc_value)
+
+    MOV   dp(DSP.master_volume), A
+    set_master_volume
+    JMP   Command::SetupEcho.setup_echo
+  end
+
+  ;; Updates the master volume
+  def set_master_volume
+    MOV   X, #SPC.DSP_DATA
+    MOV   A, dp(DSP.master_volume)
+    MOV   dp(SPC.DSP_ADDR), #DSP.MVOL_L
+    MOV   indirect(X), A
+    MOV   dp(SPC.DSP_ADDR), #DSP.MVOL_R
+    MOV   indirect(X), A
+  end
+
+end

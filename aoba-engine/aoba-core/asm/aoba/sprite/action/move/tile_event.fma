@@ -1,0 +1,157 @@
+module Aoba::Sprite::Action::Move::TileEvent
+
+  ;; Processes the leave event
+  macro process_leave_event(config, test_mask, test_matches, mask, shift, add)
+    X.is_a! Instance
+    LDA   X[:last_tile_data]
+    AND   #test_mask
+    CMP   #test_matches
+    BNE   _skip
+    LDA   X[:last_tile_data]
+    AND   #mask unless mask == 0
+    add.add_to_A
+    shift.shift_A
+    TXY
+    TAX
+    JSR   config.leave_events.index.indirect, X
+    LDX   dp(current_sprite)
+    X.is_a! Instance
+    
+  _skip:
+    LDA   dp(config.tile_data)
+    STA   X[:last_tile_data]
+    LDA   dp(config.tile_index)
+    STA   X[:last_tile_index]
+  end
+
+  ;; Stores the move event
+  macro process_enter_event(config, test_mask, test_matches, mask, shift, add)
+    X.is_a! Instance
+
+    LDA   dp(config.tile_data)
+    config._test_mask test_mask, test_matches do
+      AND   #mask unless mask == 0
+      add.add_to_A
+      shift.shift_A
+      TXY
+      TAX
+      JSR   config.enter_events.index.indirect, X
+      LDX   dp(current_sprite)
+    end
+  end
+
+  ;; Stores the move event
+  macro store_move_event(config, test_mask, test_matches, mask, shift, add)
+    X.is_a! Instance
+    STZ   X[:on_move_event]
+
+    LDA   dp(config.tile_data)
+    config._test_mask test_mask, test_matches do
+      AND   #mask unless mask == 0
+      add.add_to_A
+      shift.shift_A
+      STA   X[:on_move_event]
+    end
+  end
+
+  ;; Tests if diagonal movement changes more than one tile
+  macro _prevent_diagonal_crossing(tile_format)
+    LDA   dp(pos_x)
+    EOR   X[:x]
+    AND   #$FFFF ^ tile_format.tile_width.bitmask
+    BZE   _single_change
+
+    LDA   dp(pos_y)
+    EOR   X[:y]
+    AND   #$FFFF ^ tile_format.tile_height.bitmask
+    BZE   _single_change
+
+    LDA   dp(pos_x)
+    PHA
+    LDA   dp(pos_x_decimal)
+    PHA
+    LDA   dp(speed_x)
+    PHA
+    LDA   dp(speed_x_decimal)
+    PHA
+    LDA   X[:x]
+    STA   dp(pos_x)
+    LDA   X[:x_decimal]
+    STA   dp(pos_x_decimal)
+    STZ   dp(speed_x)
+    STZ   dp(speed_x_decimal)
+    JSR   on_tile_event.after_recursive_call
+
+    Debug.access_8bit_through_16bit
+    LDA   dp(move_flags)
+    BIT   #MOVE_PREVENT_DIAGONAL
+    BZE   _resume_normal
+    PLA
+    PLA
+    PLA
+    PLA
+    RTS
+
+    ;; --
+
+  _resume_normal:
+    
+    config.tile_events.event.invoke :diagonal_tile_movement
+
+    PLA
+    STA   dp(speed_x_decimal)
+    PLA
+    STA   dp(speed_x)
+    PLA
+    STA   dp(pos_x_decimal)
+    PLA
+    STA   dp(pos_x)
+
+  _single_change:
+  end
+
+  ;; Applies the move event
+  def on_tile_event
+    return if config.tile_events.nil?
+
+    LDX   dp(current_sprite)
+    X.is_a! Instance
+    config.tile_events.event.invoke :before_test_recursive_call
+    config.tile_events.event.invoke :test_recursive_call
+
+  after_recursive_call:
+
+    ;; Prepares the tile event
+    X.is_a! Instance
+    config.tile_events.event.invoke :prepare
+    CPU.set A: 8
+    config.tile_events.event.invoke :prepare8
+
+    ;; Tests if the tile events should be processed
+    config.tile_events.event.invoke :test8, _rts8
+    CPU.set A: 16
+    config.tile_events.event.invoke :test16, _rts
+    BRA   _resume
+  _rts8:
+    CPU.set A: 16
+  _rts:
+    RTS
+
+    ;; ---
+
+  _resume:
+    config.tile_events.event.invoke :before_change16
+
+    config.tile_events.event.invoke :read_tile_data
+    LDX   dp(current_sprite)
+
+    ;;;Debug.BRK
+    config.tile_events.event.invoke :change16
+    CPU.set A: 8
+    config.tile_events.event.invoke :change8
+    config.tile_events.event.invoke :after_change8
+    CPU.set A: 16
+    config.tile_events.event.invoke :after_change16
+  end
+
+end

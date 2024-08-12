@@ -1,0 +1,39 @@
+game_code:
+  name: Game code
+  description: An unique four digit game code as identifier for the game
+  type: string
+  max_length: 4
+  property: Aoba::GAME_CODE
+
+game_title:
+  name: Game title
+  description: Name of the game
+  type: string
+  max_length: 21
+  property: Aoba::GAME_TITLE
+
+destination:
+  name: Destination
+  description: Destination of the game
+  type: enum
+  values:
+    japan: Japan
+    north_america: North America
+    all_of_europe: All of Europa
+    scandinavia: Scandinavia
+    france: France
+    netherlands: Netherlands
+    spain: Spain
+    germany: Germany
+    italy: Italy
+    china: China
+    korea: Korea
+    common: Common
+    canada: Canada
+    brazil: Brazil
+    australia: Australia
+    X: X
+    "Y": "Y"
+    Z: Z
+  default: common
+  property: Aoba::DESTINATION

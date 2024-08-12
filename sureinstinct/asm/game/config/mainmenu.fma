@@ -1,0 +1,23 @@
+module AssetConfig::MainMenu
+
+  vram_layout = Aoba::Scene::VramLayout.create do
+    add sprites: AssetConfig::Ingame.sprite_vram
+  end
+
+  scene = Aoba::Scene::SceneMode.create "MainMenuScene" do
+    use vram_layout
+    enable_script_support "MainMenu"
+
+    add AssetConfig::Ingame.sprite_thread, as: :sprites, vram: :sprites
+    add AssetConfig.static_camera
+
+    ;bg_mode :BG_4_4_2, priority: true
+    ;main_screens 1, 2, :obj
+    ;sub_screens 1, 2, :obj
+    ;screen 3, tilemap: ui_tilemap.address, tileset: ui_tiles.address
+  end
+
+  scene.VariableRAM.include Game::Scene::MainMenu::SceneVariableRAM
+  scene.FixedRAM.include Game::Scene::MainMenu::SceneFixedRAM
+
+end

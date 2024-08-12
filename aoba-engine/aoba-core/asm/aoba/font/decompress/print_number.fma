@@ -1,0 +1,27 @@
+module Aoba::Font::Decompress
+
+
+  ;; Prints the number in Y
+  def _print_number
+    variables.use do |source_address, buffer, calc|
+      CPU.set A: 16
+
+      ;; Loads the number to the X/Y register
+      INY
+      LDA   source_address.long.indirect, Y
+      INY
+      PHY
+      JSL   GameVariable.load_number_long
+LDX   #12345
+LDY   #0
+      LDA   dp(buffer)
+      JSR   HexDec.write_icb
+      STY   dp(buffer)
+
+      ;; Resumes with the code
+      PLY
+      CPU.set A: 8
+    end
+  end
+
+end

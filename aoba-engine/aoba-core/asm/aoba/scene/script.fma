@@ -1,0 +1,11 @@
+module Aoba::Scene
+
+  ;; Enables the level screen mode
+  macro __create_scene_mode_script_commands(name, scene)
+    Aoba::Script.callback "#{name}_EnableSceneMode", bank: LEVEL_ROM_BANK do
+      LDA   #scene.id
+      JML   Aoba::Scene::Api.set_scene_mode_long
+    end
+  end
+
+end

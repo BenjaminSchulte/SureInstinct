@@ -1,0 +1,18 @@
+module Aoba::Level::Loader
+ 
+  class UserParameter < ReservedParameter
+    macro initialize(type, address)
+      super type
+      @address = address
+    end
+
+    macro preconfigure
+      _self = self
+      @loader.event.on "load#{@type.size_in_bytes*8}" do
+        _self.loader.read_header_at _self.offset
+        STA   _self.address
+      end
+    end
+  end
+
+end

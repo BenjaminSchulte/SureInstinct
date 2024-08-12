@@ -1,0 +1,23 @@
+module AssetConfig::StageSelect
+
+  vram_layout = Aoba::Scene::VramLayout.create do
+    add sprites: AssetConfig::Ingame.sprite_vram
+  end
+
+  scene = Aoba::Scene::SceneMode.create "StageSelectScene" do
+    use vram_layout
+    enable_script_support "StageSelect"
+
+    add AssetConfig::Ingame.sprite_thread, as: :sprites, vram: :sprites
+    add AssetConfig.static_camera
+
+    ;bg_mode :BG_4_4_2, priority: true
+    ;main_screens 1, 2, 3, :obj
+    ;sub_screens 1, 2, 3, :obj
+    ;screen 3, tilemap: ui_tilemap.address, tileset: ui_tiles.address
+  end
+
+  scene.VariableRAM.include Game::Scene::StageSelect::SceneVariableRAM
+  scene.FixedRAM.include Game::Scene::StageSelect::SceneFixedRAM
+
+end

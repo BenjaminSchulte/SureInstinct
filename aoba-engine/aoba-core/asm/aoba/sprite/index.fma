@@ -1,0 +1,25 @@
+module Aoba
+
+  ;; The ROM bank
+  SPRITE_ROM_BANK ||= $C5
+
+end
+
+
+require "configuration"
+require "slot"
+require "object"
+require "memory"
+require "oam"
+require "crowd"
+
+require "format"
+require "action"
+require "event"
+require "vram"
+
+require "collision"
+
+require "thread"
+require "api"
+require "debug"

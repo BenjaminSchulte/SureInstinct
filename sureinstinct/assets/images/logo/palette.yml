@@ -1,0 +1,6 @@
+animations:
+  - effect: rotate
+    row: 0
+    first: 1
+    count: 15
+    speed: 1

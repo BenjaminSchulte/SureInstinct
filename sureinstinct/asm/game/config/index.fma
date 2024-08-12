@@ -1,0 +1,5 @@
+require "shared"
+require "ingame"
+require "mainmenu"
+require "stageselect"
+require "engine"

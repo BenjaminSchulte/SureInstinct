@@ -1,0 +1,15 @@
+module Aoba::Thread::Timer
+  module Flag
+    ;; Whether the timer is queued
+    QUEUED = $40
+
+    ;; Whether the timer should be deleted automatically
+    AUTODESTROY = $20
+  end
+end
+
+require "memory"
+require "allocate"
+require "update"
+require "queue"
+require "utils"

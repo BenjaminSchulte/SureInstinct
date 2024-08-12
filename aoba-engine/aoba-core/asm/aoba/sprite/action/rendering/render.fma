@@ -1,0 +1,470 @@
+module Aoba::Sprite::Action::Rendering
+
+  ;; Queues a row
+  ;; @ignore-thread-safety
+  def _queue_vram_sprite_row_copy
+    X.pretend_size 16 
+
+    ; Test whether we need to break the row apart into two copy commands
+    LDX   dp(sprite_size_per_row)
+    TXA
+    LSR   A
+    CLC
+    ADC   dp(sprite_row_address)
+    EOR   dp(sprite_row_address)
+    BIT   #$FF00
+    BZE   _copy_row_direct
+
+    ;; Tries to copy the row in multiple parts
+  _row_exceeded:
+    EOR   dp(sprite_row_address)
+    AND   dp(x00FF) ; A = start of row address
+    ASL   A
+    STA   dp(_calc0)
+
+    LDA   dp(sprite_size_per_row)
+    SEC
+    SBC   dp(_calc0)
+    AND   #$1FF
+    BNZ   _row_exceeded_is_half_row
+    LDA   #$200
+  _row_exceeded_is_half_row:
+    STA   dp(_calc0) ; _calc0 = size of data which has been copied
+    JSR   _copy_row
+
+    _row_address = _calc0 + 2
+    _last_copy_size = _calc0
+    _source_address = _calc1
+    _size_left = _calc1 + 2
+
+    ;; Copies calculation registers
+    LDA   dp(sprite_source_address)
+    STA   dp(_source_address)
+    LDA   dp(sprite_row_address)
+    STA   dp(_row_address)
+    LDA   dp(sprite_size_per_row)
+    SEC
+    SBC   dp(_last_copy_size)
+    STA   dp(_size_left)
+    BZE   _finished
+
+  _loop_row_exceeded:
+    ;; Copy second row
+    Aoba::VBlank::Job.allocate_job_icb_long :vram
+    ;;;;;LDA   #Aoba::VBlank::Target::VRAM
+    ;;;;;JSL   Aoba::VBlank::Job.allocate_icb_long
+    X.is_a! Aoba::VBlank::Job::JobInstance
+
+    ;; Writes the source address
+    LDA   dp(_source_address)
+    CLC
+    ADC   dp(_last_copy_size)
+    STA   dp(_source_address)
+    STA   X[:source_address]
+    CPU.set A: 8
+    LDA   dp(sprite_source_address + 2)
+    STA   X[:source_address] + 2
+    CPU.set A: 16
+
+    ;; Writes the write target
+    LDA   dp(_last_copy_size)
+    LSR   A
+    CLC
+    ADC   dp(_row_address)
+    ADC   #$100
+    STA   dp(_row_address)
+    STA   X[:target_address]
+
+    ;; Writes the data size
+    LDA   dp(_size_left)
+    CMP   #$200
+    BLT   _resume_without_second_exceeded
+    LDA   #$200
+  _resume_without_second_exceeded:
+    STA   X[:data_size]
+    STA   dp(_last_copy_size)
+    JSL   Aoba::VBlank::Job.try_queue_icb_long
+
+    ;; Tests if data is left to be copied
+    LDA   dp(_size_left)
+    SEC
+    SBC   dp(_last_copy_size)
+    STA   dp(_size_left)
+    BNZ   _loop_row_exceeded
+    
+  _finished:
+    RTS
+
+  _copy_row_direct:
+    STX   dp(_calc0)
+
+  _copy_row:
+    Aoba::VBlank::Job.allocate_job_icb_long :vram
+    ;;;;;LDA   #Aoba::VBlank::Target::VRAM
+    ;;;;;JSL   Aoba::VBlank::Job.allocate_icb_long
+    ;;;;;X.is_a! Aoba::VBlank::Job::JobInstance
+    LDA   dp(sprite_source_address)
+    STA   X[:source_address]
+    LDA   dp(sprite_source_address + 1)
+    STA   X[:source_address] + 1
+    LDA   dp(_calc0)
+    STA   X[:data_size]
+    LDA   dp(sprite_row_address)
+    STA   X[:target_address]
+    JSL   Aoba::VBlank::Job.try_queue_icb_long
+  end
+
+  ;; @param Y sprite rom header
+  def _queue_vblank_copy_image
+    Y.is_a! FrameRomHeader
+
+    AND   #$7F
+    STA   dp(_calc0)
+    ASL   A
+    ASL   A
+    ASL   A
+    ASL   A
+    STA   dp(sprite_size_per_row)
+    LDA   #2
+    STA   dp(sprite_rows)
+
+    ;; Calculates the base RAM address
+    LDA   VARIABLE_RAM_BANK.as_bank(Slot::SlotAllocation.offset_of(:slot_index)).long, X
+    CLC
+    ADC   dp(target_slot_index)
+    AND   dp(x00FF)
+    ASL   A
+    PHA
+    PHX
+    TAX
+    LDA   slot_index_to_character_index.to_sym.long, X
+    PLX
+
+    ;; Copy image data 
+    ;STA   dp(target_slot_index)
+    ;LDA   dp(target_slot_index)
+    ASL   A
+    ASL   A
+    ASL   A
+    ASL   A
+    ORA   dp(vram_address)
+    STA   dp(sprite_row_address)
+
+    ;; Stores the source address 
+    LDA   Y[:image_address] + 1
+    STA   dp(sprite_source_address) + 1
+    LDA   Y[:image_address]
+    STA   dp(sprite_source_address)
+    PHX
+    PHY
+
+    ;; Switches the bank to the variable ram bank
+    CPU.with_bank! VARIABLE_RAM_BANK do
+    _loop_per_row:
+      ;; Renders the row
+      _queue_vram_sprite_row_copy
+
+      ;; Loop per row
+      DEC   dp(sprite_rows)
+      BZE   _end_of_loop
+      
+      ;; Increments the row address
+      LDA   dp(sprite_row_address)
+      CLC
+      ADC   #$100
+      STA   dp(sprite_row_address)
+
+      ;; Increments the source address
+      LDA   dp(sprite_source_address)
+      CLC
+      ;ADC   dp(sprite_size_per_row)
+      ADC   dp(sprite_size_per_row)
+      STA   dp(sprite_source_address)
+      BRA   _loop_per_row
+
+    _end_of_loop:
+    end
+
+    PLY
+    PLX
+    PLA
+  end
+
+  ;; @param Y sprite rom header
+  ;; @ignore-thread-safety
+  macro _queue_vblank_copy
+    Y.is_a! FrameRomHeader
+
+    ;; Reads num row/column from ROM
+    STZ   dp(target_slot_index)
+    LDA   Y[:rows_and_size]
+    BIT   #$80
+    BZE   _no_static_image
+
+  _has_static_image:
+    STA   dp(_calc0)
+    LDA   Y[:image_address] + 1
+    CMP   VARIABLE_RAM_BANK.as_bank(Slot::SlotAllocation.offset_of(:static_image_loaded) + 1).long, X
+    BNE   _update_static_image
+    CPU.set A: 8
+    LDA   Y[:image_address]
+    CMP   VARIABLE_RAM_BANK.as_bank(Slot::SlotAllocation.offset_of(:static_image_loaded)).long, X
+    CPU.set A: 16
+    BEQ   _skip_static_image
+
+    LDA   Y[:image_address] + 1
+  _update_static_image:
+    STA   VARIABLE_RAM_BANK.as_bank(Slot::SlotAllocation.offset_of(:static_image_loaded) + 1).long, X
+    CPU.set A: 8
+    LDA   Y[:image_address]
+    STA   VARIABLE_RAM_BANK.as_bank(Slot::SlotAllocation.offset_of(:static_image_loaded)).long, X
+    LDA   Y[:rows_and_size]
+    CPU.set A: 16
+    _queue_vblank_copy_image
+    STA   dp(index_flag)
+    BRA   _copy_dynamic_image
+
+    ;; --
+
+  _skip_static_image:
+    LDA   VARIABLE_RAM_BANK.as_bank(Slot::SlotAllocation.offset_of(:slot_index)).long, X
+    CLC
+    AND   dp(x00FF)
+    ASL   A
+    STA   dp(index_flag)
+
+  _copy_dynamic_image:
+    LDA   Y[:rows_and_size]
+    AND   #$7F
+    LSR   A
+    LSR   A
+    CLC
+    ADC   dp(target_slot_index)
+    STA   dp(target_slot_index)
+    INY
+    INY
+    INY
+    INY
+    LDA   Y[:rows_and_size]
+    _queue_vblank_copy_image
+    BRA   _rts
+
+    ;; --
+
+  _no_static_image:
+    _queue_vblank_copy_image
+    STA   dp(index_flag)
+    LDA   #0
+    STA   VARIABLE_RAM_BANK.as_bank(Slot::SlotAllocation.offset_of(:static_image_loaded) + 1).long, X
+
+  _rts:
+  end
+
+  ;; Converts the slot index to a character index
+  datablock slot_index_to_character_index
+    dw   $0000, $0002, $0004, $0006, $0008, $000A, $000C, $000E
+    dw   $0020, $0022, $0024, $0026, $0028, $002A, $002C, $002E
+    dw   $0040, $0042, $0044, $0046, $0048, $004A, $004C, $004E
+    dw   $0060, $0062, $0064, $0066, $0068, $006A, $006C, $006E
+    dw   $0080, $0082, $0084, $0086, $0088, $008A, $008C, $008E
+    dw   $00A0, $00A2, $00A4, $00A6, $00A8, $00AA, $00AC, $00AE
+    dw   $00C0, $00C2, $00C4, $00C6, $00C8, $00CA, $00CC, $00CE
+    dw   $00E0, $00E2, $00E4, $00E6, $00E8, $00EA, $00EC, $00EE
+  end
+
+  ;; Copies all sprite characters
+  def _copy_sprite_characters
+    Y.is_a! FrameRomHeader
+
+    LDA   VARIABLE_RAM_BANK.as_bank(Instance.offset_of(:slot_pointer)).long, X
+    TAX
+
+    CPU.set A: 8
+    STZ   dp(priority_counter)
+    STZ   dp(index_flag)
+    LDA   Y[:num_parts]
+
+    BPL   _is_small_size
+    DEC   dp(index_flag)
+    AND   #$7F
+
+  _is_small_size:
+    ;; Store amount of slots
+    STA   dp(loop_counter)
+    STZ   dp(loop_counter + 1)
+    STA   VARIABLE_RAM_BANK.as_bank(Slot::SlotAllocation.offset_of(:used_slot_size)).long, X
+
+    ;; Stores the size bits
+    LDA   dp(index_flag)
+    XBA
+    LDA   dp(index_flag)
+    CPU.set A: 16
+    STA   VARIABLE_RAM_BANK.as_bank(Slot::SlotAllocation.offset_of(:slot_size_bits)).long, X
+    STA   VARIABLE_RAM_BANK.as_bank(Slot::SlotAllocation.offset_of(:slot_size_bits) + 2).long, X
+    _queue_vblank_copy
+
+  _loop:
+    CPU.set A: 8
+    ;; Reads the priority flag if set
+    LSR   dp(priority_counter)
+    BNZ   _skip_read_priority_byte
+  _has_priority_byte:
+    LDA   Y[:parts_index]
+    INY
+    STA   dp(priority_flag)
+    DEC   dp(priority_counter)
+  _skip_read_priority_byte:
+    CPU.set A: 16
+
+    ;; Reads X/Y position of the slot
+    LDA   Y[:parts_index]
+    CPU.set A: 8
+    CLC
+    ADC   dp(relative_slot_x)
+    XBA
+    CLC
+    ADC   dp(relative_slot_y)
+    XBA
+    CPU.set A: 16
+    STA   VARIABLE_RAM_BANK.as_bank(Slot::SlotAllocation.offset_of(:slot_oam_data)).long, X
+
+    ;; Reads image index
+    LDA   Y[:parts_index] + 2
+    AND   dp(x00FF)
+    CLC
+    ADC   dp(index_flag)
+    PHX
+    TAX
+    LDA   slot_index_to_character_index.to_sym.long, X
+    PLX
+    CPU.set A: 8
+    XBA
+    ORA   dp(slot_flag)
+    LSR   dp(priority_flag)
+    BCC   _no_priority
+    ORA   #$10
+  _no_priority:
+    ;XBA
+    CPU.set A: 16
+    STA   VARIABLE_RAM_BANK.as_bank(Slot::SlotAllocation.offset_of(:slot_oam_data)).long + 2, X
+    INX
+    INX
+    INX
+    INX
+    INY
+    INY
+    INY
+    DEC   dp(loop_counter)
+    BNZ   _loop
+  end
+
+  macro _prepare_render_next_frame
+    LDA   dp(sprite_script_pointer)
+    STA   VARIABLE_RAM_BANK.as_bank(Instance.offset_of(:animation_script_pointer)).long, X
+    LDA   dp(sprite_frame_reference_pointer)
+    STA   VARIABLE_RAM_BANK.as_bank(Instance.offset_of(:previous_animation_frame_reference_pointer)).long, X
+  end
+
+  ;; Converts the frame ID to a frame header pointer
+  def _frame_id_to_frame_header
+    TAX
+    INC   A
+    STA   dp(sprite_frame_reference_pointer)
+
+    LDA   FRAME_REFERENCE_ROM_BANK.as_bank.long, X
+    AND   dp(x00FF)
+    ASL   A
+    CLC
+    LDX   dp(sprite_header_pointer)
+    X.is_a! SpriteRomHeader
+    ADC   X[:frame_index_pointer]
+    TAX
+    LDA   0, X
+    STA   dp(frame_pointer)
+  end
+
+  ;; Loads the frame configuration
+  macro _load_frame_configuration
+    LDX   dp(sprite_frame_reference_pointer)
+    INC   dp(sprite_frame_reference_pointer)
+    INC   dp(sprite_frame_reference_pointer)
+    LDA   FRAME_REFERENCE_ROM_BANK.as_bank.long, X
+
+    STA   dp(_calc0)
+    LDX   dp(sprite_instance)
+    CPU.set A: 8
+
+    ;; Save Y position
+    LSR
+    LSR
+    LSR
+    LSR
+    BIT   #$8
+    BZE   _positive_x
+    ORA   #$F0
+  _positive_x:
+    STA   dp(relative_slot_x)
+
+    ;; Save X position
+    LDA   dp(_calc0)
+    AND   #$F
+    BIT   #$8
+    BZE   _positive_y
+    ORA   #$F0
+  _positive_y:
+    STA   dp(relative_slot_y)
+
+    ;; Save delay and flags
+    LDA   dp(_calc0 + 1)
+    AND   #$C0
+    STA   dp(slot_flag)
+
+    ;; Updates the script pointer
+    CPU.set A: 16
+    LDA   dp(sprite_frame_reference_pointer)
+    STA   VARIABLE_RAM_BANK.as_bank(Instance.offset_of(:animation_frame_reference_pointer)).long, X
+  end
+
+  ;; Renders the frame in A
+  def _render_frame_in_A
+    _frame_id_to_frame_header
+    _load_frame_configuration
+
+    LDX   dp(sprite_instance)
+    X.is_a! Instance
+    LDA   VARIABLE_RAM_BANK.as_bank(Instance.offset_of(:renderable_configuration_flags)).long, X
+    BIT   #RenderableConfigurationFlag::IS_VISIBLE_ON_SCREEN | RenderableConfigurationFlag::NO_CAMERA_RELATIVE
+    BZE   _skip_rendering
+
+    ;; Reset force flag
+    AND   #$FFFF ^ RenderableConfigurationFlag::FORCE_REUPLOAD_TO_VRAM
+    STA   VARIABLE_RAM_BANK.as_bank(Instance.offset_of(:renderable_configuration_flags)).long, X
+
+    LDY   dp(frame_pointer)
+    Y.is_a! FrameRomHeader
+
+    _copy_sprite_characters
+
+  _skip_rendering:
+  end
+
+  ;; Renders the next frame in the frame index
+  macro _render_next_frame
+    _prepare_render_next_frame
+    _render_frame_in_A
+  end
+
+  ;; Renders the frame that has been rendered last time
+  def _render_previous_frame
+    CPU.set A: 16
+    LDA   VARIABLE_RAM_BANK.as_bank(Instance.offset_of(:previous_animation_frame_reference_pointer)).long, X
+    CMP   #$FFFF
+    BEQ   _skip_render_previous_frame
+
+    _render_frame_in_A
+
+  _skip_render_previous_frame:
+    CPU.set A: 8
+  end
+
+end

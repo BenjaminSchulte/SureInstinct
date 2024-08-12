@@ -1,0 +1,77 @@
+module Aoba
+
+  __next_static_routine_id = 1
+
+  class StaticRoutineClass
+    macro initialize
+    end
+
+    macro setup_static_routines
+      _self = self
+
+      args = @@__static_locate_at_args || @__static_locate_at_args || []
+      kwargs = @@__static_locate_at_kwargs || @__static_locate_at_kwargs || {}
+      reg_A = @@__static_register_A || nil
+      reg_XY = @@__static_register_XY || nil
+      
+      all_data = @@__static_data || {}
+      all_data.keys.each do |key|
+        block = all_data[key]
+        func = DataBlock.new "#{_self.class.name}.#{key}.#{__next_static_routine_id}" do
+          block.call with_context _self
+        end
+        func.override_located_at *args, **kwargs
+        _self[key] = func
+        __next_static_routine_id += 1
+      end
+
+      all_routines = @@__static_routines || {}
+      all_routines.keys.each do |key|
+        instance_routine key, &all_routines[key]
+      end
+    end
+
+    macro instance_routine(name, &block)
+      args = @@__static_locate_at_args || @__static_locate_at_args || []
+      kwargs = @@__static_locate_at_kwargs || @__static_locate_at_kwargs || {}
+      reg_A = @@__static_register_A || nil
+      reg_XY = @@__static_register_XY || nil
+
+      _self = self
+      func = Function.new "#{_self.class.name}.#{name}.#{__next_static_routine_id}" do
+        A.pretend_size reg_A unless reg_A.nil?
+        X.pretend_size reg_XY unless reg_XY.nil?
+        block.call with_context _self
+
+        Debug.fatal "NO RTS IN #{_self.class.name}.#{name}"
+        RTS
+      end
+      func.override_located_at *args, **kwargs
+      _self[name] = func
+      __next_static_routine_id += 1
+    end
+
+    macro self.locate_at(*args, **kwargs)
+      @__static_locate_at_args = args
+      @__static_locate_at_kwargs = kwargs
+    end
+
+    macro self.register(A=nil, XY=nil)
+      @__static_register_A = A unless A.nil?
+      @__static_register_XY = XY unless XY.nil?
+    end
+
+    macro self.data(name, &block)
+      @__static_data ||= {}
+      @__static_data[name] = block
+    end
+
+    macro self.routine(name, &block)
+      @__static_routines ||= {}
+      raise "Routine #{name} has already been defined" if @__static_routines.key?(name)
+      @__static_routines[name] = block
+    end
+
+  end
+
+end

@@ -1,0 +1,177 @@
+module Aoba::Compression::LZW
+
+  lz_byte = :has_more
+
+  macro __read_from_source_no_Y
+    LDA   State.offset_of(:source_address).indirect.long
+  end
+
+  macro __read_from_source
+    LDA   State.offset_of(:source_address).indirect.long, Y
+  end
+
+  macro __read_from_dict
+    LDA   State.offset_of(:dictionary_address).indirect.long, Y
+  end
+
+
+  ;; Initializes the decompression
+  macro _initialize
+    CPU.set A: 16
+    STX   dp(State.offset_of(:end_of_buffer))
+    __read_from_source_no_Y
+    AND   #$7FFF
+    CLC
+    ADC   dp(State.offset_of(:end_of_buffer))
+    STA   dp(State.offset_of(:end_of_buffer))
+    STZ   dp(State.offset_of(:dictionary_address))
+    CPU.set A: 8
+    STZ   dp(State.offset_of(lz_byte) + 1)
+    LDY   #2
+  end
+
+  ;; Copy only one character
+  macro _copy_single_character
+    __read_from_source
+    INY
+    STA   $0, X
+    INX
+  end
+
+  ;; Calculate the start of the dictionary
+  macro _calculate_dictionary_point
+    ; Reads the offset
+    AND   #LZW_OFFSET_MASK
+    INC   A
+    STA   dp(State.offset_of(lz_byte))
+    ; Calculates the read origin point
+    CPU.set A: 16
+    TXA
+    SEC
+    SBC   dp(State.offset_of(lz_byte))
+    TAY
+    CPU.set A: 8
+  end
+  
+  ;; Calculate the dictionary copy length
+  macro _calculate_dictionary_copy_length
+    CLC
+    LZW_OFFSET_LENGTH.times do |i|
+      LSR A
+    end
+    INC   A
+    INC   A
+    STA   dp(State.offset_of(:counter_for_decompress))
+  end
+  
+  ;; Copy data from dict
+  macro _process_copy_from_dictionary
+  copy_loop:
+    __read_from_dict
+    STA   $0, X
+    INX
+    INY
+    DEC   dp(State.offset_of(:counter_for_decompress))
+    BNZ   copy_loop
+  end
+
+  ;; Copies the data from the dictionary
+  macro _copy_from_dictionary
+    __read_from_source
+    INY
+    PHY
+    PHA
+    _calculate_dictionary_point
+    PLA
+
+    _calculate_dictionary_copy_length
+    _process_copy_from_dictionary
+    PLY
+  end
+
+
+
+  ;; Decompress resume
+  macro resume
+    BRA   read_control_character
+
+  read_next_character:
+    DEC   dp(State.offset_of(:control_char_size))
+    BNZ   after_read_control_char
+
+  read_control_character:
+    __read_from_source
+    INY
+    STA   dp(State.offset_of(:control_char))
+    LDA   #LZW_CONTROL_CHAR_SIZE
+    STA   dp(State.offset_of(:control_char_size))
+  
+  after_read_control_char:
+    LSR   dp(State.offset_of(:control_char))
+    BCS   copy_from_dictionary
+
+  copy_character:
+    _copy_single_character
+    BRA   after_current_action
+
+  copy_from_dictionary:
+    _copy_from_dictionary
+
+  after_current_action:
+    CPX   dp(State.offset_of(:end_of_buffer))
+    BNE   read_next_character
+    
+  end_of_decompress_buffer:
+    CPU.set A: 16
+
+    ; Store has_more and data size to X
+    __read_from_source_no_Y
+    ASL
+    CPU.set A: 8
+    STZ   dp(State.offset_of(:has_more))
+    ROL   dp(State.offset_of(:has_more))
+    CPU.set A: 16
+    LSR
+    TAX
+
+    ; Advance pointer
+    TYA
+    CLC
+    ADC   dp(State.offset_of(:source_address))
+    STA   dp(State.offset_of(:source_address))
+
+    LDY   dp(State.offset_of(:target_address))
+  end
+
+  ;; Decompress
+  ;; @ignore-thread-safety
+  @register A: 16, XY: 16
+  def decompress
+    PHD
+    TCD
+    CPU.set A: 8
+
+    ; Configure current bank
+    PHB
+    LDA   dp(State.offset_of(:target_address) + 2)
+    STA   dp(State.offset_of(:dictionary_address) + 2)
+    PHA
+    PLB
+
+    ; Configure end of buffer
+    LDX   dp(State.offset_of(:target_address))
+    _initialize
+    resume
+    PLB
+
+    CPU.set A: 16
+    PLD
+  end
+
+  ;; Decompress
+  def decompress_long
+    decompress
+    RTL
+  end
+
+end

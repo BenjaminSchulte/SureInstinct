@@ -1,0 +1,94 @@
+module Aoba::Audio::Driver::Upload
+  
+  scope :InitializeTempBuffer, in: ActionRAM
+  declare :current_apu_byte, as: :uint8, in: InitializeTempBuffer
+
+  ;; Sends the transfer address
+  macro send_transfer_address
+    LDX   #code_offset
+    STX   CPU.APUIO2
+    LDA   #1
+    STZ   CPU.APUIO0
+    STA   CPU.APUIO1
+  end
+
+  ;; Waits for the ready signal
+  macro wait_for_transfer_start_ready
+    LDA   #BootSector.SPC_READY_SIGNAL >> 8
+  _loop:
+    CMP   CPU.APUIO1
+    BEQ   _loop
+  end
+
+  ;; Writes the main code
+  macro copy_main_code
+    LDX   #0
+    STZ   dp(current_apu_byte)
+
+  _loop:
+    ; Reads the next 3 bytes
+    CPU.set A: 16
+    LDA   code_block.long, X
+    TAY
+    CPU.set A: 8
+    LDA   (code_block.to_sym + 2).long, X
+    XBA
+
+    ; Waits for ack
+    LDA   dp(current_apu_byte)
+  _wait_for_ack:
+    CMP   CPU.APUIO0
+    BNE   _wait_for_ack
+
+    ; Sends new data
+    EOR   #$1
+    CPU.set A: 16
+    STY   CPU.APUIO2
+    CPU.set A: 8
+    XBA
+    STA   CPU.APUIO1
+    XBA
+    STA   CPU.APUIO0
+
+    ; Continue
+    STA   dp(current_apu_byte)
+    INX
+    INX
+    INX
+    CPX   #code_size
+    BLT   _loop
+
+    ; Wait for ack again
+  _last_byte_sent:
+    CMP   CPU.APUIO0
+    BNE   _last_byte_sent
+  end
+
+  ;; Starts the main code
+  macro start_main_code
+    LDX   #main_offset
+    STX   CPU.APUIO1
+    LDA   #$80
+    STA   CPU.APUIO0
+
+    NOP
+    NOP
+    NOP
+  _wait_for_ack:
+    CMP   CPU.APUIO0
+    BNE   _wait_for_ack
+
+    LDA   #$00
+    STA   CPU.APUIO0
+    STA   last_ipc_value.long
+  end
+
+  ;; Uploads the driver
+  macro upload
+    send_transfer_address
+    wait_for_transfer_start_ready
+    copy_main_code
+    start_main_code
+  end
+  
+end

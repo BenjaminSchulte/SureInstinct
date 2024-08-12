@@ -1,0 +1,5 @@
+module Aoba::Tilemap
+
+  locate_at bank: TILEMAP_ROM_BANK
+
+end

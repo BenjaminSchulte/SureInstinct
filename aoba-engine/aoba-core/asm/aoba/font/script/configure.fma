@@ -1,0 +1,16 @@
+module Aoba::Font
+
+  ;; Loads the dialog graphic
+  ;;
+  ;; @param REGA dialog image
+  Aoba::Script.callback "Font_SetLanguage", bank: DIALOG_ROM_BANK do
+    CPU.set A: 8
+    LDA   dp(Script.register_a)
+    ASL   A
+    CLC
+    ADC   dp(Script.register_a)
+    STA   locale_id.long
+    CPU.set A: 16
+  end
+
+end

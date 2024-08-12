@@ -1,0 +1,258 @@
+module Aoba::Sprite::Event::DestroySprite
+
+  ;; The event
+  class Event < Base 
+    ;; The config address
+    declare :sprite_id, as: :uint8
+  end
+
+  ;; Temporary RAM
+  scope :TempRAM, in: ActionRAM
+
+  ;; The sender thread
+  declare :sender_thread_id, as: :uint8, in: TempRAM
+
+  ;; Current instance
+  declare :instance, as: :uint16, in: TempRAM
+
+  ;; Marks the sprite to be destroyed
+  macro RTS_if_sprite_is_already_destroyed
+    SEI
+    LDA   X[:basic_flags]
+    BIT   #BasicFlag::DESTROYED
+    BZE   _do_destroy
+    CPU.set A: 16
+    CLI
+    RTS
+    A.pretend_size 8
+
+  _do_destroy:
+    ORA   #BasicFlag::DESTROYED
+    STA   X[:basic_flags]
+    CLI
+  end
+
+  ;; Unloads graphics
+  def _unload_graphics
+    X.is_a! Instance
+    
+    ;; Frees the slots
+    LDA   X[:slot_pointer]
+    TAX
+    Slot.free_icb
+
+    ;; Removes the instance from the render update list
+    LDX   dp(instance)
+    Action::Rendering.unqueue_sprite
+
+    LDX   dp(instance)
+    Action::ManagePalette.free_sprite_slot
+
+    ;; Removes the sprite slot if necessary
+    LDX   dp(instance)
+    X.is_a! Instance
+    LDA   X[:basic_flags]
+    BIT   #BasicFlag.HAS_DETACHED_SPRITE_SLOT_ALLOCATION
+    BZE   _skip_destroy_sprite_slot
+    LDA   X[:slot_pointer]
+    TAX
+    SEI
+    JSL   Memory.free_miniblock_long
+    CLI
+  _skip_destroy_sprite_slot:
+  end
+
+  ;; Proceeds with destroy after unloading the automation script
+  ;; @param X sprite instance
+  ;; @ignore-thread-safety
+  def resume_after_script_unload
+    X.is_a! Aoba::Sprite::Instance
+    STX   dp(instance)
+
+    CPU.set A: 8
+    LDA   X[:sprite_killed_thread]
+    STA   dp(sender_thread_id)
+    CPU.set A: 16
+
+    ;; Removes the entry in the sprite table
+    LDA   X[:id]
+    ASL   A
+    ASL   A
+    XBA
+    AND   #3
+    STA   dp(_calc0)
+    LDA   X[:id]
+    AND   #MAX_NUM_SPRITES.bitmask
+    ASL   A
+    TAY
+    LDA   dp(_calc0)
+    STA   sprite_index_table, Y
+
+    LDA   X[:renderable_configuration_flags]
+    BIT   #RenderableConfigurationFlag.NO_SPRITE
+    BNZ   _skip_unload_graphics
+    _unload_graphics
+  _skip_unload_graphics:
+
+    ;; Frees the instance itself
+    LDX   dp(instance)
+    LDY   #Instance.size
+    JSL   Memory.free_long
+
+    ;; Notify sender thread about destroyed NPC
+    CPU.set A: 8
+    LDA   #Aoba::Thread::Event::READYEVENT_ID
+    JSL   Aoba::Thread::Event.allocate_icb_long
+    X.is_a! Aoba::Thread::Event::ReadyEvent
+    LDA   #READY_ID
+    STA   X[:event_id]
+    LDA   dp(sender_thread_id)
+    JSL   Aoba::Thread.send_event_icb_long
+    CPU.set A: 16
+  end
+
+  ;; A thread has been killed
+  ;; @ignore-thread-safety
+  def on_thread_killed
+    X.is_a! Instance
+    Y.is_a! Instance
+
+    A.pretend_size 8
+    LDX   first_destroyed_sprite
+    BZE   _rts
+
+    ;; Looks up for the destroyed sprite
+  _find_destroyed:
+    CMP   X[:automation_script_id]
+    BEQ   _found_sprite
+    LDY   X[:next_sprite]
+    TYX
+    BRA   _find_destroyed
+
+  _found_sprite:
+    CPU.set A: 16
+    LDA   X[:next_sprite]
+    LDY   X[:previous_sprite]
+    BNZ   _is_mid_sprite
+
+  _is_first_sprite:
+    STA   first_destroyed_sprite
+    BRA   _resume_destroyed
+
+  _is_mid_sprite:
+    STA   Y[:next_sprite]
+
+  _resume_destroyed:
+    TYA
+    LDY   X[:next_sprite]
+    BZE   _is_last_sprite
+
+    Y.is_a! Instance
+    STA   Y[:previous_sprite]
+
+  _is_last_sprite:
+    CPU.set A: 16
+    JMP   resume_after_script_unload
+
+    ;; ---
+
+  _rts:
+    CPU.set A: 16
+  end
+
+  ;; Sends the kill event to the script
+  macro _kill_sprite_script
+    LDY   X[:id]
+    TYX
+    JSL   Aoba::Thread.send_kill_event_icb_long
+  end
+
+  ;; Destroys the sprite
+  ;; @ignore-thread-safety
+  ID = List.create "DestroySprite" do
+    Y.is_a! Event
+    X.is_a! Instance
+
+    CPU.set A: 8
+    LDA   Y[:sender_thread_id]
+    STA   dp(sender_thread_id)
+    CPU.set A: 16
+
+    LDA   Y[:sprite_id]
+    Action::ManageSprite.find_sprite_by_sprite_id
+    STX   dp(instance)
+
+    CPU.set A: 8
+    RTS_if_sprite_is_already_destroyed
+
+    ;; Unqueues the sprite
+    Action::ManageSprite.unqueue
+    LDX   dp(instance)
+
+    CPU.set A: 16
+    ;; Destroy crowd event timer
+    LDA   X[:crowd_event_timer]
+    BZE   _no_crowd_event_timer
+    TAX
+    JSL   Aoba::Thread::Timer.free_icb_long   
+    LDX   dp(instance)
+  _no_crowd_event_timer:
+  
+    X.is_a! Instance
+    LDA   X[:attached_sprite_above]
+    BZE   _no_attached_sprite_above
+    Debug.BRK
+    NOP
+  _no_attached_sprite_above:
+  
+
+    ;; Adds sprite to our own queue
+    Collision::Group.remove_from_npc_group
+    Collision::Group.remove_from_player_group
+
+    X.is_a! Instance
+    LDA   X[:automation_script_id]
+    AND   #$FF
+    BZE   _skip_add_to_destroyed_sprite_list
+
+    STZ   X[:previous_sprite]
+    LDA   first_destroyed_sprite
+    STA   X[:next_sprite]
+    BZE   _skip_set_previous_sprite
+    TAY
+    TXA
+    Y.is_a! Instance
+    STA   Y[:previous_sprite]
+  _skip_set_previous_sprite:
+    STX   first_destroyed_sprite
+
+  _skip_add_to_destroyed_sprite_list:
+    CPU.set A: 8
+
+    ;; Reads the automation script ID
+    SEI
+    LDA   dp(sender_thread_id)
+    STA   X[:sprite_killed_thread]
+    LDA   X[:automation_script_id]
+    ;; !! DO NOT OVERRIDE REGISTER A FROM BEFORE !!
+    STZ   X[:move_event_thread_id]
+    CLI
+    BZE   _no_automation_script_id
+
+    ;; !! DO NOT OVERRIDE REGISTER A FROM BEFORE !!
+
+    _kill_sprite_script
+    CPU.set A: 16
+    RTS
+
+    ; ---
+
+  _no_automation_script_id:
+    CPU.set A: 16
+    JMP   resume_after_script_unload
+  end
+
+  ;; The ready event ID
+  READY_ID = ID | $80
+
+end

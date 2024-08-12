@@ -1,0 +1,58 @@
+module Game::Level::UserInterface::ReadyGo
+
+  effect = Aoba::Effect.create "ReadyGo" do
+    start do
+      LDA   #MenuState.READY
+      STA   menu_state
+
+      open_menu -10, 30, 46
+
+      LDX   #Assets::Stream::Ready
+      LDA   #$7F80
+      JSL   Aoba::Audio::Api.play_stream_icb_long
+
+      queue_update 50
+    end
+
+    update do
+      SEI
+      LDA   menu_state
+      CMP   #MenuState.KILL
+      BEQ   _rts
+      CMP   #MenuState.READY
+      BEQ   _make_go
+      CMP   #MenuState.GO
+      BNE   _rts
+
+    _finish:
+      close_menu
+    _rts:
+      CLI
+      trigger_finish
+      RTS
+
+    _make_go:
+      INC   A
+      STA   menu_state
+
+      LDX   #Assets::Stream::Go
+      LDA   #$7F80
+      JSL   Aoba::Audio::Api.play_stream_icb_long
+
+      ;;SEI is already
+      LDA   global_ingame_flags
+      AND   #$FFFF ^ GlobalIngameFlag.TIME_PAUSED ^ GlobalIngameFlag.GAME_PAUSED ^ GlobalIngameFlag.CONTROLS_DISABLED
+      Debug.access_8bit_through_16bit
+      STA   global_ingame_flags
+      CLI
+
+      open_menu 36, 35, 48
+      queue_update 30
+    end
+  end
+
+  Aoba::Script.callback "Ingame_Start", bank: CUSTOM_ROM_BANK do
+    effect.start
+  end
+
+end

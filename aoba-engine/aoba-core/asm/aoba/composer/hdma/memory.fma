@@ -1,0 +1,42 @@
+module Aoba::Composer::Hdma
+
+  locate_at bank: HDMA_COMPOSER_ROM_BANK
+
+  ;; RAM for HDMA must be globally accessible in order to update during VBLANK
+  scope :RAM, in: ::Memory::VariableRAM
+
+  ;; Shared RAM for HDMA modes
+  scope :ModeRAM, in: RAM, shared: true
+
+  ;; The current HDMA mode
+  declare :hdma_mode, as: :uint8, in: RAM
+
+  ;; The current userdata
+  declare :userdata, as: :uint16, in: RAM
+
+  ;; The current HDMA mode
+  declare :release_hdma_mode, as: :uint8, in: RAM
+
+  ;; The current userdata
+  declare :release_userdata, as: :uint16, in: RAM
+
+  ;; The current HDMA mode
+  declare :queued_hdma_mode, as: :uint8, in: RAM
+
+  ;; The current userdata
+  declare :queued_userdata, as: :uint16, in: RAM
+
+  ;; the current enabled HDMA channel list
+  declare :HDMAEN, as: :uint8, in: RAM
+
+  ;; The HDMA header RAM
+  declare :hdma_header_ram, in: RAM, as: :uint16
+
+
+  ::Aoba::Event.on :system_initialize_A8_VARRAM do
+    STZ   queued_hdma_mode
+    STZ   release_hdma_mode
+    STZ   hdma_mode
+  end
+
+end

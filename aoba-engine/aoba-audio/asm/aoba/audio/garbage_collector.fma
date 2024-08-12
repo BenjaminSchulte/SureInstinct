@@ -1,0 +1,122 @@
+module Aoba::Audio::GarbageCollector
+
+  ;; Initializes the RAM
+  macro initialize_ram
+    LDX   #(MAX_INSTRUMENTS / 4) - 2
+    LDA   #0
+  _loop:
+    STA   Aoba::Audio.loaded_instruments.to_sym.long, X
+    DEX
+    DEX
+    BPL   _loop
+  end
+
+  ;; Decrements the instrument ID
+  ;;
+  ;; @param A instrument ID
+  decrement_instrument_usage = create_sa1_ram_routine bank: AUDIO_ROM_BANK do
+    A.pretend_size 8
+
+    XBA
+    LDA   #0
+    XBA
+    LSR   A
+    BCC   _is_offset_0_or_4
+
+  _is_offset_2_or_6:
+    LSR   A
+    BCC   _is_offset_2
+
+  _is_offset_6:
+    TAX
+    LDA   loaded_instruments.to_sym.long, X
+    SEC
+    SBC   #$40
+    STA   loaded_instruments.to_sym.long, X
+    AND   #$C0
+    RTS
+
+  _is_offset_2:
+    TAX
+    LDA   loaded_instruments.to_sym.long, X
+    SEC
+    SBC   #$04
+    STA   loaded_instruments.to_sym.long, X
+    AND   #$0C
+    RTS
+
+  _is_offset_0_or_4:
+    LSR   A
+    BCC   _is_offset_0
+
+  _is_offset_4:
+    TAX
+    LDA   loaded_instruments.to_sym.long, X
+    SEC
+    SBC   #$10
+    STA   loaded_instruments.to_sym.long, X
+    AND   #$30
+    RTS
+
+  _is_offset_0:
+    TAX
+    LDA   loaded_instruments.to_sym.long, X
+    DEC
+    STA   loaded_instruments.to_sym.long, X
+    AND   #$03
+    RTS
+  end
+
+  ;; Increments the usage of the instrument
+  ;;
+  ;; @param A instrument ID
+  increment_instrument_usage = create_sa1_ram_routine bank: AUDIO_ROM_BANK do
+    A.pretend_size 8
+    
+    XBA
+    LDA   #0
+    XBA
+    LSR   A
+    BCC   _is_offset_0_or_4
+
+  _is_offset_2_or_6:
+    LSR   A
+    BCC   _is_offset_2
+
+  _is_offset_6:
+    TAX
+    LDA   Aoba::Audio.loaded_instruments.to_sym.long, X
+    CLC
+    ADC   #$40
+    STA   Aoba::Audio.loaded_instruments.to_sym.long, X
+    RTS
+
+  _is_offset_2:
+    TAX
+    LDA   Aoba::Audio.loaded_instruments.to_sym.long, X
+    CLC
+    ADC   #$04
+    STA   Aoba::Audio.loaded_instruments.to_sym.long, X
+    RTS
+
+  _is_offset_0_or_4:
+    LSR   A
+    BCC   _is_offset_0
+
+  _is_offset_4:
+    TAX
+    LDA   Aoba::Audio.loaded_instruments.to_sym.long, X
+    CLC
+    ADC   #$10
+    STA   Aoba::Audio.loaded_instruments.to_sym.long, X
+    RTS
+
+  _is_offset_0:
+    TAX
+    LDA   Aoba::Audio.loaded_instruments.to_sym.long, X
+    INC   A
+    STA   Aoba::Audio.loaded_instruments.to_sym.long, X
+    RTS
+  end
+
+end

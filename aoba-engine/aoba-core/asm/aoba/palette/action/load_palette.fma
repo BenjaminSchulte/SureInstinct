@@ -1,0 +1,112 @@
+module Aoba::Palette::Action::LoadPalette
+
+  ;; Temporary RAM
+  scope :TempRAM, in: Aoba::Palette::TempRAM
+
+  ;; Shared RAM for other tasks
+  scope :SharedTempRAM, in: TempRAM, shared: true
+
+  ;; The current counter size
+  declare :size, as: :uint16, in: TempRAM
+
+  ;; The current color
+  declare :current_color, as: :uint16, in: TempRAM
+
+  ;; Loads a single color
+  ;; @param A color
+  ;; @param Y offset
+  def load_color
+    STA   cgram, Y
+  end
+
+  ;; Loads the palette
+  ;;
+  ;; @param A CGRAM index
+  ;; @param X source address
+  ;; @param Y size
+  def load_custom_palette_to_cgram
+    Thread.assert_thread thread_id
+
+    CPU.with_bank! FIXED_RAM_BANK do
+      STY   dp(size)
+      STX   dp(_calc0)
+      STA   dp(_calc0 + 2)
+
+      ;; Index to palette ID
+      LSR   A
+      LSR   A
+      LSR   A
+      LSR   A
+
+      TAX
+      Debug.access_8bit_through_16bit
+      LDA   palette_flags, X
+      LDX   dp(_calc0)
+      LSR   A
+      BCC   _load_to_cgram
+
+    _load_to_original:
+      LDA   dp(_calc0 + 2)
+      ASL   A
+      TAY
+    _loop_original:
+      LDA   DATA_ROM_BANK.as_bank(0).long, X
+      STA   original_cgram, Y
+      INX
+      INX
+      INY
+      INY
+      DEC   dp(size)
+      BNZ   _loop_original
+      BRA   _after_load
+
+      ;; --
+
+    _load_to_cgram:
+      LDA   dp(_calc0 + 2)
+      ASL   A
+      TAY
+
+    _loop:
+      LDA   DATA_ROM_BANK.as_bank(0).long, X
+      STA   cgram, Y
+      STA   dp(current_color)
+      AND   #$1F
+      XBA
+      STA   cgram_red, Y
+      LDA   dp(current_color)
+      AND   #$1F << 5
+      STA   cgram_green, Y
+      LDA   dp(current_color)
+      AND   #$1F << 10
+      STA   cgram_blue, Y
+      INX
+      INX
+      INY
+      INY
+      DEC   dp(size)
+      BNZ   _loop
+
+    _after_load:
+    end
+  end
+
+  ;; Loads the palette to the cache
+  ;; @ignore-thread-safety
+  macro load_palette_to_cache
+    LDY   #16
+    LDA   #256
+    load_custom_palette_to_cgram
+  end
+
+  ;; Loads the palette (X) to CGRAM index (A)
+  ;; @ignore-thread-safety
+  def load_palette_to_cgram
+    INC   A
+    INX
+    INX
+    LDY   #15
+    JMP   load_custom_palette_to_cgram
+  end
+
+end

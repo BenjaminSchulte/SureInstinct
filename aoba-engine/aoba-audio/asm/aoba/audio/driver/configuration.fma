@@ -1,0 +1,35 @@
+module Aoba::Audio
+  module Driver
+    ;; The driver block
+    code_block = nil
+
+    ;; The code offset
+    code_offset = 0
+
+    ;; The code size
+    code_size = 0
+
+    ;; The initialize block
+    init_block = nil
+
+    ;; The initialize offset
+    init_offset = 0
+
+    ;; The init code size
+    init_size = 0
+
+    ;; The main offset
+    main_offset = 0 
+  end
+
+  ;; Configures the audio driver
+  macro configure_driver(code_filename, init_filename, code_start, code_end, init_start, init_end, main_start)
+    Driver.code_block = DataBlock.new("audioengine_driver_main", fs::File.read("#{Aoba::OBJECT_PATH}/#{code_filename}"))
+    Driver.init_block = DataBlock.new("audioengine_driver_boot", fs::File.read("#{Aoba::OBJECT_PATH}/#{init_filename}"))
+    Driver.code_offset = code_start
+    Driver.code_size = code_end - code_start + 1
+    Driver.init_offset = init_start
+    Driver.init_size = init_end - init_start + 1
+    Driver.main_offset = main_start
+  end
+end

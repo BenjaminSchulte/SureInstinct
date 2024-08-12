@@ -1,0 +1,201 @@
+module Aoba::Scene
+
+  class SceneModeBuilder
+    macro initialize(scene)
+      @scene = scene
+    end
+
+    macro enable_script_support(name)
+      __create_scene_mode_script_commands name, @scene
+    end
+
+    macro use(other)
+      other.include_to_scene_mode @scene
+    end
+
+    macro add(other, **kwargs)
+      other.include_as_scene_object @scene, **kwargs
+    end
+
+    macro on(event, &block)
+      @scene.event.on event, &block
+    end
+
+    macro __screen_list(screens)
+      _bitmask = 0
+      screens.each do |screen|
+        if screen.to_s == :obj
+          _bitmask |= $10
+        else
+          _bitmask |= 1 << (screen - 1)
+        end
+      end
+      return _bitmask
+    end
+
+    macro bg_mode(mode, priority=false, large_bg1=false, large_bg2=false, large_bg3=false, large_bg4=false)
+      ppu8 :BGMODE, PPU::Background.bg_mode_value(mode, priority, large_bg1, large_bg2, large_bg3, large_bg4)
+    end
+
+    macro ppu8(id, value)
+      on :load8 do
+        LDA   #value
+        STA   Screen.register[id]
+      end
+      @scene._bitmap8 |= Screen::Flag[id]
+    end
+
+    macro screen(num, tilemap=nil, tileset=nil, mirror_x=false, mirror_y=false)
+      _tilemap_ora = 0
+      _tilemap_ora |= 1 if mirror_x
+      _tilemap_ora |= 2 if mirror_y
+      @scene._screen_tilemaps[num-1] = ((tilemap >> 9) & $FC) | _tilemap_ora unless tilemap.nil?
+      @scene._screen_tilesets[num-1] = tileset unless tileset.nil?
+    end
+
+    macro main_screens(*screens)
+      ppu8 :TM, __screen_list(screens)
+    end
+
+    macro sub_screens(*screens)
+      ppu8 :TS, __screen_list(screens)
+    end
+
+    macro setup8(&block)
+      on :load8, &block
+    end
+
+    macro setup(&block)
+      on :load16, &block
+    end
+
+    macro release(&block)
+      on :unload16, &block
+    end
+  end
+
+  class SceneMode < StaticRoutineClass
+    locate_at bank: SCENE_ROM_BANK
+    register A: 16, XY: 16
+
+    macro initialize(id, name)
+      @id = id
+      @name = name
+      @event = Aoba::Event::Emitter.new
+
+      @FixedRAM = MemoryScope.new("#{name}_FixedRAM", in: SceneModeFixedRAM)
+      @VariableRAM = MemoryScope.new("#{name}_VariableRAM", in: SceneModeVariableRAM)
+      @VRAM = MemoryScope.new("#{name}_VRAM", in: SceneModeVRAM)
+
+      @vram_layout = nil
+      @_all_objects = []
+      @_screen_tilemaps = [nil, nil, nil, nil]
+      @_screen_tilesets = [nil, nil, nil, nil]
+      @_bitmap8 = 0
+      @_bitmap16 = 0
+      @objects = {}
+    end
+
+    macro __all_engine_objects
+      _result = []
+      _queue = []
+
+      @_all_objects.each do |scene_object|
+        unless scene_object.nil?
+          _queue << scene_object.engine_object
+          _queue = _queue + scene_object.engine_object.all_parent_objects
+        end
+      end
+
+      _ids = []
+      _queue.each do |item|
+        unless _ids.include?(item.engine_object_id)
+          _result << item 
+          _ids << item.engine_object_id
+        end
+      end
+      return _result
+    end
+
+    macro __load_object_ram
+      _self = self
+      __all_engine_objects.each do |obj|
+        obj.configure_for_scene _self
+      end
+    end
+
+    macro __configure_screen_tilemap(register, flag, address)
+      return if address.nil?
+      @event.on :load8 do
+        LDA   #address
+        STA   register
+      end
+      @_bitmap8 |= flag
+    end
+
+    macro __configure_screen_tileset(register, flag, address1, address2)
+      return if address1.nil? && address2.nil?
+      address1 = 0 if address1.nil?
+      address2 = 0 if address2.nil?
+
+      @event.on :load8 do
+        LDA   #((address1 >> 13) & $F) | ((address2 >> 9) & $F0)
+        STA   register
+      end
+
+      @_bitmap8 |= flag
+    end
+
+    macro __configure_screens
+      __configure_screen_tilemap Screen.register.BG1SC, Screen::Flag.BG1SC, @_screen_tilemaps[0]
+      __configure_screen_tilemap Screen.register.BG2SC, Screen::Flag.BG2SC, @_screen_tilemaps[1]
+      __configure_screen_tilemap Screen.register.BG3SC, Screen::Flag.BG3SC, @_screen_tilemaps[2]
+      __configure_screen_tilemap Screen.register.BG4SC, Screen::Flag.BG4SC, @_screen_tilemaps[3]
+      __configure_screen_tileset Screen.register.BG12NBA, Screen::Flag.BG12NBA, @_screen_tilesets[0], @_screen_tilesets[1]
+      __configure_screen_tileset Screen.register.BG34NBA, Screen::Flag.BG34NBA, @_screen_tilesets[2], @_screen_tilesets[3]
+    end
+
+    macro finalize
+      __configure_screens
+      __load_object_ram
+      setup_static_routines
+    end
+
+    routine :load do
+      Debug.log "=== LOAD SCENE MODE #{@name} ==="
+      Debug.full_dump
+
+      JSL   Aoba::Screen.initialize_icb_long
+      CPU.with_bank FIXED_RAM_BANK, from_bank: VARIABLE_RAM_BANK do
+        @event.invoke :load16_fixed
+        CPU.set A: 8
+        @event.invoke :load8_fixed
+      end
+      @event.invoke :load8
+      if @_bitmap8 != 0
+        SEI
+        LDA   Screen.update_registers_8
+        ORA   #_bitmap8
+        STA   Screen.update_registers_8
+        CLI
+      end
+      CPU.set A: 16
+      @event.invoke :load16
+      RTS
+    end
+
+    routine :unload do
+      @event.invoke :unload16
+      RTS
+    end
+
+    macro self.create(name, &block)
+      mode = SceneMode.new(Manager::all_scene_modes.length + 1, name)
+      builder = SceneModeBuilder.new(mode)
+      block.call with_context builder
+      mode.finalize
+      Manager.register_scene_mode mode
+      return mode
+    end
+  end
+end

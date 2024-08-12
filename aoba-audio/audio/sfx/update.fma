@@ -1,0 +1,34 @@
+module SFX
+
+  ;; Update routine invoked by timer
+  macro update
+    ; Store channel bits which should be processed
+    MOV    A, dp(sfx_active_channels)
+    BZE    _no_timer_triggered
+    MOV    dp(Channel.processed_channels), A
+    AND    A, dp(Stream.stream_disabled_voices)
+    MOV    dp(Channel.enabled_voices), A
+
+    ; Copy local attributes
+    MOV    dp(Script.main_volume), dp(volume)
+
+    ; Prepare execute script iteration
+    MOV    dp(Channel.num_channels), #NUM_SFX_CHANNELS
+    MOV    A, #SFX_CHANNEL_INDEX
+    Channel.channel_index_to_channel_pointer
+
+    Script.process
+
+    ; Store values back
+    MOV    A, dp(Channel.processed_channels)
+    MOV    dp(sfx_active_channels), A
+
+    ; Update channels which samples need to be reloaded
+    EOR    A, dp(Channel.enabled_voices)
+    OR     A, dp(Channel.changed_sample_voices)
+    MOV    dp(Channel.changed_sample_voices), A
+
+  _no_timer_triggered:
+  end
+
+end

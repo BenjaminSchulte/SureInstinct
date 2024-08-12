@@ -1,0 +1,7 @@
+require "tilemap_loader"
+require "parameter"
+require "tileset_parameter"
+require "tilemap_size_parameter"
+require "screen_mode_parameter"
+require "tilemap_layer_parameter"
+require "tilemap_layer_location_parameter"

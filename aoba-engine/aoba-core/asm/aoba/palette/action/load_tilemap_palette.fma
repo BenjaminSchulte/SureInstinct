@@ -1,0 +1,211 @@
+module Aoba::Palette::Action::LoadTilemapPalette
+
+  ;; RAM for tilemap palette
+  scope :TempRAM, in: LoadPalette::SharedTempRAM
+
+  ;; Pointer to the palette index
+  declare :palette_index_address, as: :uint16, in: TempRAM
+
+  ;; Number of palettes to load
+  declare :num_palettes_left, as: :uint16, in: TempRAM
+
+  ;; The current palette index
+  declare :current_palette_index, as: :uint16, in: TempRAM
+
+
+  ;; Loads the background color
+  macro _load_background_color
+
+  end
+
+
+  ;; Loads the actual palettes
+  def load_palettes
+    STX   dp(palette_index_address)
+    LDA   DATA_ROM_BANK.as_bank.long, X
+    STA   dp(num_palettes_left)
+    STY   dp(current_palette_index)
+    PHX
+
+  _loop:
+    ;; Loads the palette index
+    LDA   DATA_ROM_BANK.as_bank(2).long, X
+
+    ;; Loads the palette
+    TAX
+    LDA   dp(current_palette_index)
+    16.multiplicated_register_A
+    LoadPalette.load_palette_to_cgram
+
+    ;; Increment values
+    LDX   dp(palette_index_address)
+    INX
+    INX
+    STX   dp(palette_index_address)
+    INC   dp(current_palette_index)
+    DEC   dp(num_palettes_left)
+    BNZ   _loop
+
+    ;; Loads the first color as background color
+  _done:
+    PLX
+  end
+
+  ;; Loads palette effects
+  def _do_load_palette_effects
+    STA   dp(num_palettes_left)
+    STX   dp(palette_index_address)
+
+  _loop:
+    ;; Looksup for a free effect slot
+    LDX   #tilemap_effects
+    LDY   #NUM_TILEMAP_PALETTE_EFFECTS
+    X.is_a! PaletteEffectSlot
+  _loop_slot_search:
+    LDA   X[:timer]
+    BZE   _found_slot
+    TXA
+    CLC
+    ADC   #PaletteEffectSlot.size
+    TAX
+    DEY
+    BNZ   _loop_slot_search
+    fatal_error "No free palette effect slot"
+
+    ;; Uses the slot
+  _found_slot:
+    STX   dp(current_palette_index) ;= slot in effects list
+    LDA   thread_id.long
+    JSL   Aoba::Thread::Timer.allocate_long
+    TXA
+    LDY   dp(current_palette_index) ;= slot in effects list
+    Y.is_a! PaletteEffectSlot
+    X.is_a! Aoba::Thread::Timer::TimerInstance
+    STA   Y[:timer]
+    STA   dp(current_palette_index) ;= timer
+    TYA
+    STA   VARIABLE_RAM_BANK.as_bank(Aoba::Thread::Timer::TimerInstance.offset_of(:userdata)).long, X
+    LDX   dp(palette_index_address) ;= ROM address
+
+    ;; Read first word
+    LDA   DATA_ROM_BANK.as_bank(2).long, X
+    STA   dp(_calc0)
+    CPU.set A: 8
+    AND   #$F
+    ASL   A
+    STA   Y[:effect_id]
+    LDA   dp(_calc0 + 1)
+    AND   #$F
+    STA   Y[:color_index]
+    CPU.set A: 16
+    LDA   dp(_calc0)
+    LSR   A
+    LSR   A
+    LSR   A
+    LSR   A
+    CPU.set A: 8
+    AND   #$F
+    STA   Y[:palette]
+    XBA
+    AND   #$F
+    STA   Y[:size]
+
+    ;; Reads the speed
+    INX
+    INX
+    LDA   DATA_ROM_BANK.as_bank(2).long, X
+    INX
+    STX   dp(palette_index_address)
+
+    ;; Configures the timer
+    
+    CPU.set A: 16
+    AND   dp(x00FF)
+    TAY
+    LDX   dp(current_palette_index)
+    JSL   Aoba::Thread::Timer.queue_long
+
+    DEC   dp(num_palettes_left)
+    BZE   _rts
+    JMP   _loop
+
+  _rts:
+    RTS
+  end
+
+  ;; Loads all palette effects
+  macro _load_palette_effects
+    ;; Loads the number of palettes
+    LDX   dp(palette_index_address)
+    LDA   DATA_ROM_BANK.as_bank(2).long, X
+    INX
+    AND   dp(x00FF)
+    BZE   _skip_load_effects
+    _do_load_palette_effects
+  _skip_load_effects:
+  end
+
+  ;; Unloads the palette effects before loading the new
+  def _unload_palette_effects
+    LDX   #tilemap_effects
+    LDY   #NUM_TILEMAP_PALETTE_EFFECTS
+    X.is_a! PaletteEffectSlot
+  _loop_slot_search:
+    LDA   X[:timer]
+    BZE   _skip_slot
+
+  _unload_slot:
+    STX   dp(_calc0)
+    STY   dp(_calc0) + 2
+
+    STZ   X[:timer]
+    TAX
+    JSL   Aoba::Thread::Timer.free_long
+
+    LDY   dp(_calc0) + 2
+    LDX   dp(_calc0)
+
+  _skip_slot:
+    TXA
+    CLC
+    ADC   #PaletteEffectSlot.size
+    TAX
+    DEY
+    BNZ   _loop_slot_search
+  end
+
+  ;; Invokes the action
+  def invoke
+    Thread.assert_thread thread_id
+
+    CPU.with_bank FIXED_RAM_BANK, from_bank: VARIABLE_RAM_BANK do
+      STX   dp(palette_index_address)
+      LDA   tilemap_palette_address
+      CMP   #$FFFF
+      BEQ   _is_first_palette
+      CMP   dp(palette_index_address)
+      BEQ   _is_already_loaded
+      _unload_palette_effects
+      LDX   dp(palette_index_address)
+
+    _is_first_palette:
+      STX   tilemap_palette_address
+      LDY   #TILEMAP_PALETTE_OFFSET
+      load_palettes
+
+      ;; Loads the first color as background color
+      LDA   DATA_ROM_BANK.as_bank(2).long, X
+      TAX
+      LDA   DATA_ROM_BANK.as_bank(0).long, X
+      LDY   #0
+      LoadPalette.load_color
+      
+      _load_palette_effects
+
+    _is_already_loaded:
+    end
+
+    CGRAM.upload_tileset_cgram
+  end
+
+end

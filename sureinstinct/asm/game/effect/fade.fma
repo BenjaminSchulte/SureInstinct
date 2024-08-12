@@ -1,0 +1,286 @@
+module Game::Effect::Fade
+  locate_at bank: Aoba::EFFECT_ROM_BANK
+
+  _header_size = Aoba::Composer::Hdma::HDMA_CHANNEL_HEADER_SIZE
+
+  declare :fade_active, as: :uint8, in: ::Memory::VariableRAM
+
+  class Configuration
+    declare :buffer, as: :uint16
+    declare :current_frame, as: :uint16
+    declare :data_valid, as: :uint16
+    declare :front_buffer, as: :uint16
+    declare :back_buffer, as: :uint16
+    declare :lookup_table, as: :uint16
+  end
+
+  def _setup_fade_effect
+    SEI
+    STX   Aoba::Screen.register[:WH0]
+    STX   Aoba::Screen.ppu_register[:WH0]
+
+    LDY   dp(Aoba::Effect.current_memory)
+    Y.is_a! Configuration
+    STA   Y[:lookup_table]
+
+    LDA   #0
+    STA   Y[:current_frame]
+    STA   Y[:data_valid]
+    STA   Aoba::Screen.register[:TMW]
+    LDA   #$3333
+    STA   Aoba::Screen.register[:W12SEL]
+    CPU.set A: 8
+    ; $33
+    STA   Aoba::Screen.register[:WOBJSEL]
+    LDA   #$A2
+    STA   Aoba::Screen.register[:CGWSEL]
+    LDA   #$F
+    STA   Aoba::Screen.register[:INIDISP]
+    CPU.set A: 16
+    STZ   Aoba::Screen.register[:WBGLOG]
+    LDA   Aoba::Screen.update_registers_8
+    ORA   #Aoba::Screen::Flag[:WH0] | Aoba::Screen::Flag[:WH1] | Aoba::Screen::Flag[:W12SEL] | Aoba::Screen::Flag[:W34SEL] | Aoba::Screen::Flag[:WBGLOG] | Aoba::Screen::Flag[:WOBJLOG] | Aoba::Screen::Flag[:TMW] | Aoba::Screen::Flag[:TSW] | Aoba::Screen::Flag[:CGWSEL] | Aoba::Screen::Flag[:WOBJSEL]
+    STA   Aoba::Screen.update_registers_8
+
+    LDX   #224 * 2 * 2
+    JSL   Aoba::Memory.allocate_from_behind_long
+    CLI
+    LDY   dp(Aoba::Effect.current_memory)
+    Y.is_a! Configuration
+    TXA
+    STA   Y[:buffer]
+    STA   Y[:front_buffer]
+    CLC
+    ADC   #224 * 2
+    STA   Y[:back_buffer]
+
+  next_frame:
+    LDX   dp(Aoba::Effect.current_memory)
+    X.is_a! Configuration
+    LDY   X[:back_buffer]
+    LDA   X[:lookup_table]
+    TAX
+
+    LDA   #224
+    STA   dp(Aoba::Effect._calc0)
+  _loop:
+    LDA   (fadein_lookup.to_sym & $FF0000).long, X
+    STA   0, Y
+    INY
+    INY
+    INX
+    INX
+    DEC   dp(Aoba::Effect._calc0)
+    BNZ   _loop
+
+    LDX   dp(Aoba::Effect.current_memory)
+    X.is_a! Configuration
+    LDY   X[:back_buffer]
+    LDA   X[:front_buffer]
+    STA   X[:back_buffer]
+    TYA
+    STA   X[:front_buffer]
+    LDA   X[:lookup_table]
+    CLC
+    ADC   #224 * 2
+    STA   X[:lookup_table]
+    STA   X[:data_valid]
+    INC   X[:current_frame]
+  end
+
+  def _update_fade_effect
+    LDY   dp(Aoba::Effect.current_memory)
+    Y.is_a! Configuration
+    LDA   Y[:data_valid]
+    BNZ   _wait
+
+    LDA   Y[:current_frame]
+    CMP   #18
+    BEQ   _release
+    BGE   _finish
+
+    JSR   _setup_fade_effect.next_frame
+
+  _wait:
+    SEC
+    RTS
+
+  _release:
+    LDA   #0
+    TYX
+    STA   X[:front_buffer]
+    INC   X[:data_valid]
+    INC   X[:current_frame]
+    SEC
+    RTS
+
+  _finish:
+    CLC
+    RTS
+  end
+
+  macro _build_vblank_update(wh0)
+    Y.is_a! Configuration
+    LDA   Y[:data_valid]
+    BZE   _no_frontbuffer_update
+
+    LDX   Aoba::Composer::Hdma.hdma_header_ram
+    LDA   Y[:front_buffer]
+    BZE   _disable
+
+    LDA   #$FF
+    STA   6 * _header_size + 0, X
+    STA   6 * _header_size + 3, X
+    LDA   Y[:front_buffer]
+    STA   6 * _header_size + 1, X
+    CLC
+    ADC   #127 * 2
+    STA   6 * _header_size + 4, X
+    LDA   #0
+    STA   Y[:data_valid]
+    RTS
+    
+    ;; --
+    
+  _disable:
+    LDA   #wh0
+    STA   Aoba::Screen.register[:WH0]
+    STA   Aoba::Screen.ppu_register[:WH0]
+    LDA   #1
+    STA   6 * _header_size + 0, X
+    LDA   #Aoba::Screen.ppu_register.WH0
+    STA   6 * _header_size + 1, X
+    STZ   6 * _header_size + 3, X
+    LDA   #0
+    STA   Y[:data_valid]
+
+  _no_frontbuffer_update:
+  end
+
+  def _free_fade_effect
+    LDY   dp(Aoba::Effect.current_memory)
+    Y.is_a! Configuration
+    LDX   Y[:buffer]
+    LDY   #224 * 2 * 2
+    SEI
+    JSL   Aoba::Memory.free_long
+    CLI
+    LDA   fade_active
+    AND   #$FF00
+    Debug.access_8bit_through_16bit
+    STA   fade_active
+
+    SEI
+    LDA   #$FF00
+    Debug.allow_invalid_ram_access 2
+    STA   Aoba::Screen.register.WH0
+    LDA   Aoba::Screen.update_registers_8
+    ORA   #Aoba::Screen::Flag[:WH0] | Aoba::Screen::Flag[:WH1]
+    STA   Aoba::Screen.update_registers_8
+    CLI
+  end
+
+  ;; The actual effect
+  FadeInEffect = Aoba::Effect.create "FadeIn" do
+    with_variables Configuration
+
+    start do
+      LDX   #$FF
+      LDA   #fadein_lookup
+      _setup_fade_effect
+      queue_update 2
+    end
+
+    vblank_update do
+      _build_vblank_update $FF00
+    end
+
+    update do
+      _update_fade_effect
+      BCS   _resume
+      trigger_finish
+      RTS
+
+    _resume:
+      queue_update 2
+    end
+
+    finish do
+      _free_fade_effect
+    end
+  end
+
+  ;; The actual effect
+  FadeOutEffect = Aoba::Effect.create "FadeOut" do
+    with_variables Configuration
+
+    start do
+      LDX   #$FF00
+      LDA   #fadeout_lookup
+      _setup_fade_effect
+      queue_update 2
+    end
+
+    vblank_update do
+      _build_vblank_update $FF
+    end
+
+    update do
+      _update_fade_effect
+      BCS   _resume
+      CPU.set A: 8
+      LDA   #$80
+      STA   Aoba::Screen.register[:INIDISP]
+      CPU.set A: 16
+      trigger_finish
+      RTS
+
+    _resume:
+      queue_update 2
+    end
+
+    finish do
+      _free_fade_effect
+    end
+  end
+  
+  Aoba::Script.callback "Effect_FadeIn", bank: Aoba::EFFECT_ROM_BANK do
+    Debug.allow_invalid_ram_access 2
+    LDA   fade_active
+    ORA   #$FF
+    STA   fade_active
+
+    FadeInEffect.start
+
+  _wait_for_fade:
+    LDA   fade_active
+    AND   #$FF
+    BZE   _rts
+    LDY   #1
+    JSL   Aoba::Thread::delay_long
+    BRA   _wait_for_fade
+
+  _rts:
+    RTL
+  end
+  
+  Aoba::Script.callback "Effect_FadeOut", bank: Aoba::EFFECT_ROM_BANK do
+    LDA   fade_active
+    ORA   #$FF
+    STA   fade_active
+
+    FadeOutEffect.start
+
+  _wait_for_fade:
+    LDA   fade_active
+    AND   #$FF
+    BZE   _rts
+    LDY   #1
+    JSL   Aoba::Thread::delay_long
+    BRA   _wait_for_fade
+
+  _rts:
+    RTL
+  end
+
+end

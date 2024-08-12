@@ -1,0 +1,17 @@
+module Aoba::Thread
+
+  ;; @ignore-thread-safety
+  def on_exit
+    ;; Destroys this thread
+    SEI
+    PLX
+    Debug.info "Thread {byte(long(add(X16,2),$7F))}: Stopped"
+    Debug.profile_thread_destroy
+    JSR   destroy_icb
+
+    ;; Enters the next thread
+    STZ   current_thread
+    pause_current_thread_icb
+  end
+
+end

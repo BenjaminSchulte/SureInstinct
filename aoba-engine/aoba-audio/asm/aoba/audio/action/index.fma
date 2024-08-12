@@ -1,0 +1,8 @@
+require "load_instrument"
+require "load_instrument_list"
+require "load_song"
+require "play_song"
+require "play_sfx"
+require "play_stream"
+require "volume"
+require "stop_song"

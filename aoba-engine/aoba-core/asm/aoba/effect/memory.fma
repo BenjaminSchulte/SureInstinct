@@ -1,0 +1,38 @@
+module Aoba::Effect
+
+  locate_at bank: EFFECT_ROM_BANK
+
+  ;; The thread RAM
+  scope :RAM, in: ::Memory::ThreadRAM
+
+  ;; The event RAM
+  scope :ActionRAM, in: RAM, shared: true
+
+  ;; The static RAM
+  scope :StaticRAM, in: ::Memory::FixedRAM
+
+  ;; The vblank update list
+  declare :vblank_update_list, as: :uint16, in: ::Memory::VariableRAM
+
+  ;; Free vblank records
+  declare :free_vblank_update_list, as: :uint16, in: ::Memory::VariableRAM
+
+  ;; Free vblank records
+  declare :vblank_update_list_ram, as: :uint16, in: ::Memory::VariableRAM
+
+  ;; The current effect timer
+  declare :current_effect_timer, as: :uint16, in: RAM
+
+  ;; The current effect timer
+  declare :_calc0, as: :uint32, in: RAM
+
+  ;; The current event
+  declare :current_event, as: :uint16, in: RAM
+
+  ;; The current event
+  declare :current_memory, as: :uint16, in: RAM
+
+  Aoba::Event.on :system_initialize_A16_VARRAM do
+    STZ   vblank_update_list
+  end
+end

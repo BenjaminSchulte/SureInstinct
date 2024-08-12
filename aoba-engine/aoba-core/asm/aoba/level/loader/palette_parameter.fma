@@ -1,0 +1,35 @@
+module Aoba::Level::Loader
+ 
+  class PaletteParameter < Parameter
+    macro initialize
+      super
+    end
+
+    macro size_in_bytes
+      return 2
+    end
+
+    macro load
+      @loader.read_header_at @offset
+      PHA
+
+      CPU.set A: 8
+      LDA   #Aoba::Thread::Event.USEREVENT_ID
+      JSL   Aoba::Thread::Event.allocate_icb_long
+      X.is_a! Aoba::Palette::Event::LoadTilemapPalette::Event
+
+      LDA   #Aoba::Palette::Event::LoadTilemapPalette::ID
+      STA   X[:event_id]
+      CPU.set A: 16
+
+      PLA
+      STA   X[:palette_address]
+
+      LDA   Aoba::Palette.thread_id
+      JSL   Aoba::Thread.send_event_icb_long
+
+      LDX   dp(@loader._current_level)
+    end
+  end
+
+end

@@ -1,0 +1,47 @@
+module Aoba::Camera
+
+  class BasicBuilder < BaseBuilder
+  end
+
+  class Basic < Base
+    macro initialize
+      super
+
+      @x = MemoryVariable.new("camera_x", in: @RAM, as: :uint16)
+      @y = MemoryVariable.new("camera_y", in: @RAM, as: :uint16)
+    end
+
+    macro self.create(&block)
+      camera = Basic.new
+      builder = BasicBuilder.new(camera)
+      block.call with_context builder
+      camera.finalize
+      return camera
+    end
+
+    routine :_update_composer_scrolling do
+      LDA   @x.long
+      TAX
+      LDA   @y.long
+      TAY
+      JSL   Aoba::Composer::Api.update_scrolling_bg1_long
+      JSL   Aoba::Composer::Api.update_scrolling_bg2_long
+      RTS
+    end
+
+    macro update_composer_scrolling
+      _update_composer_scrolling
+    end
+
+    macro configure_for_scene(scene)
+      super scene
+
+      _self = self
+      scene.event.on :load16_fixed do
+        STZ   _self.x
+        STZ   _self.y
+      end
+    end
+  end
+
+end

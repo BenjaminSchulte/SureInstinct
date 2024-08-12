@@ -1,0 +1,215 @@
+module Aoba::Sprite::Action::Move::MoveTarget
+
+  ;; Stores the new position without any further tests
+  macro _store_new_position_direct
+    LDA   dp(pos_x_decimal)
+    STA   X[:x_decimal]
+    LDA   dp(pos_x)
+    STA   X[:x]
+
+    LDA   dp(pos_y_decimal)
+    STA   X[:y_decimal]
+    LDA   dp(pos_y)
+    STA   X[:y]
+  end
+
+  ;; Updates the X position
+  macro _update_X_position
+    CLC
+    LDA   dp(speed_x_decimal)
+    ADC   X[:x_decimal]
+    STA   X[:x_decimal]
+    LDA   dp(speed_x)
+    ADC   X[:x]
+    STA   X[:x]
+  end
+
+  ;; Updates the X position
+  macro _update_Y_position
+    CLC
+    LDA   dp(speed_y_decimal)
+    ADC   X[:y_decimal]
+    STA   X[:y_decimal]
+    LDA   dp(speed_y)
+    ADC   X[:y]
+    STA   X[:y]
+  end
+
+  ;; Tests an axis
+  macro _test_axis_movement(axis, on_success, on_nomove=nil)
+    on_nomove = on_success if on_nomove.nil?
+
+    ;; Tests whether any X movement is required
+    LDA   X["move_target_#{axis}"]
+    BEQ   on_nomove
+
+    ;; Tests the target reached depending on its direction
+    CMP   X[axis]
+    BEQ   _position_is_ok
+    BLT   _position_is_lower
+  _position_is_greater:
+    LDY   X["speed_#{axis}"]
+    BPL   on_success
+    BRA   _position_is_ok
+  _position_is_lower:
+    LDY   X["speed_#{axis}"]
+    BMI   on_success
+    
+    ;; We walked too far to the right or left
+  _position_is_ok:
+  end
+
+  ;; Returns the positive distance to the goal
+  ;; @param A move_target_axis
+  macro _get_positive_distance_value(axis)
+    SEC
+    SBC   X[axis]
+    BPL   _skip_negate
+    EOR   #$FFFF
+    INC   A
+  _skip_negate:
+  end
+
+  ;; Forces the goal to be reached
+  macro _force_set_goal(axis)
+    LDA   X["move_target_#{axis}"]
+    STA   X[axis]
+    STZ   X["speed_#{axis}"]
+    STZ   X["speed_#{axis}_decimal"]
+    STZ   X["move_target_#{axis}"]
+  end
+
+  ;; @param A target X position
+  ;; @param Y target Y position
+  ;; @ignore-thread-safety
+  def _move_sprite_to_xy
+    X.is_a! Instance
+    SEC
+    SBC   X[:x]
+    STA   dp(_calc0)
+    TYA
+    SEC
+    SBC   X[:y]
+    TAY
+    LDX   dp(_calc0)
+    JSL   Math.xy_to_direction_long
+
+    LDX   dp(current_sprite)
+    X.is_a! Instance
+    CPU.set A: 8
+    STA   X[:move_angle]
+    MoveSprite.set_movespeed_from_angle_and_speed
+    CPU.set A: 16
+  end
+
+  ;; @ignore-thread-safety
+  def store_new_position
+    Thread.assert_thread thread_id
+    X.is_a! Instance
+
+    LDA   dp(collision_x_bitmask)
+    STA   X[:collision_x_bitmask]
+    LDA   dp(collision_y_bitmask)
+    STA   X[:collision_y_bitmask]
+
+    ;; Tests if there is any move target
+    LDA   X[:move_target_x]
+    ORA   X[:move_target_y]
+    BNZ   _test_move_target
+
+  _direct_commit:
+    _store_new_position_direct
+    RTS   ;; Early return!
+
+    ;; Tests the movement on the X axis
+  _test_move_target:
+    _update_X_position
+    _test_axis_movement :x, on_success: _test_y_axis
+
+    ;; We reached our goal on the X axis
+  _x_goal_reached:
+    _get_positive_distance_value :x
+
+    ;; Tests if we went too far
+    CMP   #MAX_DISTANCE_TO_FORCE_SET_MOVE_GOAL
+    BLT   _do_force_set_x
+    LDY   X[:move_target_y]
+    BZE   _do_force_set_x
+    ;; Refines the current direction, because we went too far
+    LDA   X[:move_target_x]
+    _move_sprite_to_xy
+    BRA   _test_y_axis
+
+    ;; Jumps directly to the goal
+  _do_force_set_x:
+    _force_set_goal :x
+
+    ;; Tests if there is a Y goal
+    LDY   X[:move_target_y]
+    BZE   _test_y_axis
+    ;;;;LDA   X[:x] ; is already set
+    _move_sprite_to_xy
+
+    ;; Tests the movement on the Y axis
+  _test_y_axis:
+    _update_Y_position
+    _test_axis_movement :y, on_success: _rts, on_nomove: _yfinished_test_x_axis
+    
+    ;; We reached our goal on the Y axis
+  _y_goal_reached:
+    _get_positive_distance_value :y
+
+    ;; Tests if we went too far
+    CMP   #MAX_DISTANCE_TO_FORCE_SET_MOVE_GOAL
+    BLT   _do_force_set_y
+    LDA   X[:move_target_x]
+    BZE   _do_force_set_y
+    LDY   X[:move_target_y]
+    _move_sprite_to_xy
+    RTS
+
+    ;; We reached our goal on Y axis
+  _do_force_set_y:
+    _force_set_goal :y
+
+  _yfinished_test_x_axis:
+    ;; Tests if there is a X goal
+    LDA   X[:move_target_x]
+    BZE   _target_reached
+    LDY   X[:y]
+    _move_sprite_to_xy
+  
+  _rts:
+    RTS
+
+  _target_reached:
+    CPU.set A: 8
+    LDA   X[:renderable_configuration_flags]
+    AND   #$FF ^ RenderableConfigurationFlag.FORCE_LOOP_ANIMATION
+    STA   X[:renderable_configuration_flags]
+    LDA   X[:automation_flags]
+    AND   #$FF ^ AutomationFlag.SPEED_IS_LOCKED
+    STA   X[:automation_flags]
+    LDA   X[:move_event_thread_id]
+    CPU.set A: 16
+    AND   dp(x00FF)
+    BZE   _rts
+
+  _notify_caller_thread:
+    CPU.set A: 8
+    LDA   #Aoba::Thread::Event::READYEVENT_ID
+    JSL   Aoba::Thread::Event.allocate_icb_long
+    X.is_a! Aoba::Thread::Event::ReadyEvent
+    LDA   #Aoba::Script::EventId.SPRITE_TARGET_REACHED
+    STA   X[:event_id]
+    CPU.set A: 16
+    LDY   dp(current_sprite)
+    Y.is_a! Instance
+    LDA   Y[:id]
+    STA   X[:userdata]
+
+    LDA   Y[:move_event_thread_id]
+    JSL   Aoba::Thread::send_event_icb_long
+  end
+
+end

@@ -1,0 +1,399 @@
+module Aoba::Sprite::Collision::Tile
+
+  class CollisionDetect < StaticRoutineClass
+    locate_at bank: SPRITE_ROM_BANK
+    register A: 16, XY: 16
+
+    macro initialize(parent)
+      @parent = parent
+      setup_static_routines
+    end
+
+    ;; Tests collision
+    routine :process_collision do
+      Thread.assert_thread thread_id
+      X.is_a! Instance
+
+      _RTS_if_current_tile_did_not_change
+
+      STZ   dp(@parent.tile_collision_target)
+
+    _test_direction:
+      LDA   dp(Action::Move.speed_x)
+      BMI   _left
+      BNZ   _right
+      LDA   dp(Action::Move.speed_x_decimal)
+      BNZ   _right
+
+    _no_x:
+      LDA   dp(Action::Move.speed_y)
+      BMI   _up
+      JMP   _collide_with_tiles_down
+    _up:
+      JMP   _collide_with_tiles_up
+
+    _left:
+      LDA   dp(Action::Move.speed_y)
+      BMI   _left_up
+      BNZ   _left_down
+      LDA   dp(Action::Move.speed_y_decimal)
+      BNZ   _left_down
+      JMP   _collide_with_tiles_left
+    _left_up:
+      JMP   _collide_with_tiles_left_up
+    _left_down:
+      JMP   _collide_with_tiles_left_down
+
+    _right:
+      LDA   dp(Action::Move.speed_y)
+      BMI   _right_up
+      BNZ   _right_down
+      LDA   dp(Action::Move.speed_y_decimal)
+      BNZ   _right_down
+      JMP   _collide_with_tiles_right
+    _right_up:
+      JMP   _collide_with_tiles_right_up
+    _right_down:
+      JMP   _collide_with_tiles_right_down
+    end
+
+    ;; Returns if the current tile did not change
+    macro _RTS_if_current_tile_did_not_change
+      LDA   X[:movable_flags] - 1
+      BMI   _force_collision_test
+
+      LDA   dp(Action::Move.pos_y)
+      AND   #$FFF8
+      CMP   X[:last_collision_test_y]
+      BNE   _resume
+
+      LDA   dp(Action::Move.pos_x)
+      AND   #$FFF8
+      CMP   X[:last_collision_test_x]
+      BNE   _resume
+
+      CLC
+      RTS
+
+    _force_collision_test:
+      AND   #$7FFF
+      STA   X[:movable_flags] - 1
+    _resume:
+    end
+
+    ;; Caches the collision
+    ;; @ignore_thread_safety
+    routine :cache_collision do
+      X.is_a! Instance
+      LDA   dp(Action::Move.pos_y)
+      AND   #$FFF8
+      STA   X[:last_collision_test_y]
+      
+      LDA   dp(Action::Move.pos_x)
+      AND   #$FFF8
+      STA   X[:last_collision_test_x]
+      RTS
+    end
+
+    ;; @ignore_thread_safety
+    routine :_NO_COLLISION do
+      RTS
+    end
+
+    ; ===================================================================
+    ;   X
+    ; ===================================================================
+    data :block_x_routines do
+      dw _NO_COLLISION
+      dw _block_x_move_down
+      dw _block_x_move_up
+      dw _block_x
+    end
+
+    ;; @ignore_thread_safety
+    routine :_block_x_move_up do
+      STZ   dp(Action::Move.speed_x_decimal)
+      STZ   dp(Action::Move.speed_x)
+      DEC   dp(Action::Move.speed_y)
+      RTS
+    end
+
+    ;; @ignore_thread_safety
+    routine :_block_x_move_down do
+      STZ   dp(Action::Move.speed_x_decimal)
+      STZ   dp(Action::Move.speed_x)
+      INC   dp(Action::Move.speed_y)
+      RTS
+    end
+
+    ;; @ignore_thread_safety
+    routine :_block_x do
+      STZ   dp(Action::Move.speed_x_decimal)
+      STZ   dp(Action::Move.speed_x)
+      RTS
+    end
+
+    ;; @ignore_thread_safety
+    routine :_block_x_diag do
+      LDX   dp(current_sprite)
+      X.is_a! Instance
+
+      STZ   dp(Action::Move.speed_x_decimal)
+      LDA   dp(Action::Move.speed_x)
+      BMI   _left
+
+    _right:
+      LDA   X[:x]
+      AND   #7
+      EOR   #7
+      STA   dp(Action::Move.speed_x)
+      RTS
+
+    _left:
+      LDA   X[:x]
+      AND   #7
+      EOR   #$FFFF
+      INC   A
+      STA   dp(Action::Move.speed_x)
+      RTS
+
+    _no_right:
+      STZ   dp(Action::Move.speed_x)
+      RTS
+    end
+
+
+    ; ===================================================================
+    ;   Y
+    ; ===================================================================
+    data :block_y_routines do
+      dw   _NO_COLLISION    ;000
+      dw   _block_y_right   ;001
+      dw   _block_y         ;010
+      dw   _block_y_right   ;011
+      dw   _block_y_left    ;100
+      dw   _block_y         ;101
+      dw   _block_y_left    ;110
+      dw   _block_y         ;111
+    end
+
+    ;; @ignore_thread_safety
+    routine :_block_y_left do
+      STZ   dp(Action::Move.speed_y_decimal)
+      STZ   dp(Action::Move.speed_y)
+      DEC   dp(Action::Move.speed_x)
+
+      ;; Fixes that player might walk into a wall on the right
+      ;; after this routine moved him left
+      LDX   dp(current_sprite)
+      X.is_a! Instance
+      LDA   X[:x]
+      CLC
+      ADC   dp(Action::Move.speed_x)
+      AND   #7
+      BNZ   _skip_dec_twice
+      DEC   dp(Action::Move.speed_x)
+    _skip_dec_twice:
+      RTS
+    end
+
+    ;; @ignore_thread_safety
+    routine :_block_y_right do
+      STZ   dp(Action::Move.speed_y_decimal)
+      STZ   dp(Action::Move.speed_y)
+      INC   dp(Action::Move.speed_x)
+      RTS
+    end
+
+    ;; @ignore_thread_safety
+    routine :_block_y do
+      STZ   dp(Action::Move.speed_y_decimal)
+      STZ   dp(Action::Move.speed_y)
+      RTS
+    end
+
+    ;; @ignore_thread_safety
+    routine :_block_x_and_y do
+      STZ   dp(Action::Move.speed_y_decimal)
+      STZ   dp(Action::Move.speed_y)
+      STZ   dp(Action::Move.speed_x_decimal)
+      STZ   dp(Action::Move.speed_x)
+      RTS
+    end
+
+
+    ; ===================================================================
+    ;   DIAGONAL
+    ; ===================================================================
+    data :block_diagonal_routines do
+      dw _NO_COLLISION   ;0000
+      dw _block_x_diag   ;0001
+      dw _block_x_and_y  ;0010
+      dw _block_x_diag   ;0011
+      dw _block_y        ;0100
+      dw _block_x_and_y  ;0101
+      dw _block_y        ;0110
+      dw _block_x_and_y  ;0111
+      dw _block_y        ;1000
+      dw _block_x_and_y  ;1001
+      dw _block_y        ;1010
+      dw _block_x_and_y  ;1011
+      dw _block_y        ;1100
+      dw _block_x_and_y  ;1101
+      dw _block_y        ;1110
+      dw _block_x_and_y  ;1111
+    end
+
+    macro _collide_with_tiles_diagonal(xl, xr, y)
+      LDA   #$0001
+      STA   dp(@parent.tile_collision_target_bit)
+      LDA   #xl
+      LDY   #0-8-y
+      @parent._test.test_collision
+
+      LDA   #$0002
+      STA   dp(@parent.tile_collision_target_bit)
+      LDA   #xl
+      LDY   #y
+      @parent._test.test_collision
+
+      LDA   #$0004
+      STA   dp(@parent.tile_collision_target_bit)
+      LDA   #$0000
+      LDY   #y
+      @parent._test.test_collision
+
+      LDA   #$0008
+      STA   dp(@parent.tile_collision_target_bit)
+      LDA   #xr
+      LDY   #y
+      @parent._test.test_collision
+
+      LDA   dp(@parent.tile_collision_target)
+      ASL   A
+      TAX
+      JMP   block_diagonal_routines.indirect, X
+    end
+
+
+    ; ===================================================================
+    ;   LEFT
+    ; ===================================================================
+    ;; @ignore_thread_safety
+    routine :_collide_with_tiles_left_up do
+      _collide_with_tiles_diagonal xl: -8, xr: 7, y: -8
+      RTS
+    end
+
+    ;; @ignore_thread_safety
+    routine :_collide_with_tiles_left do
+      LDA   #$0001
+      STA   dp(@parent.tile_collision_target_bit)
+      LDA   #-8
+      LDY   #-8
+      @parent._test.test_collision
+
+      ASL   dp(@parent.tile_collision_target_bit)
+      LDA   #-8
+      LDY   #$0000
+      @parent._test.test_collision
+
+      LDA   dp(@parent.tile_collision_target)
+      ASL   A
+      TAX
+      JMP   block_x_routines.indirect, X
+    end
+
+    ;; @ignore_thread_safety
+    routine :_collide_with_tiles_left_down do
+      _collide_with_tiles_diagonal xl: -8, xr: 7, y: 0
+      RTS
+    end
+
+    ; ===================================================================
+    ;   RIGHT
+    ; ===================================================================
+    ;; @ignore_thread_safety
+    routine :_collide_with_tiles_right_up do
+      _collide_with_tiles_diagonal xl: 8, xr: -7, y: -8
+      RTS
+    end
+
+    ;; @ignore_thread_safety
+    routine :_collide_with_tiles_right do
+      LDA   #$0001
+      STA   dp(@parent.tile_collision_target_bit)
+      LDA   #8
+      LDY   #-8
+      @parent._test.test_collision
+
+      INC   dp(@parent.tile_collision_target_bit)
+      LDA   #8
+      LDY   #$0000
+      @parent._test.test_collision
+
+      LDA   dp(@parent.tile_collision_target)
+      ASL   A
+      TAX
+      JMP   block_x_routines.indirect, X
+    end
+
+    ;; @ignore_thread_safety
+    routine :_collide_with_tiles_right_down do
+      _collide_with_tiles_diagonal xl: 8, xr: -7, y: 0
+      RTS
+    end
+
+    ; ===================================================================
+    ;   NO X AXIS
+    ; ===================================================================
+    ;; @ignore_thread_safety
+    routine :_collide_with_tiles_up do
+      LDA   #$0001
+      STA   dp(@parent.tile_collision_target_bit)
+      LDA   #-8
+      LDY   #-8
+      @parent._test.test_collision
+
+      ASL   dp(@parent.tile_collision_target_bit)
+      LDA   #$0000
+      LDY   #-8
+      @parent._test.test_collision
+
+      ASL   dp(@parent.tile_collision_target_bit)
+      LDA   #7
+      LDY   #-8
+      @parent._test.test_collision
+
+      LDA   dp(@parent.tile_collision_target)
+      ASL   A
+      TAX
+      JMP   block_y_routines.indirect, X
+    end
+    
+    ;; @ignore_thread_safety
+    routine :_collide_with_tiles_down do
+      LDA   #$0001
+      STA   dp(@parent.tile_collision_target_bit)
+      LDA   #-8
+      LDY   #$0000
+      @parent._test.test_collision
+
+      ASL   dp(@parent.tile_collision_target_bit)
+      LDA   #$0000
+      TAY
+      @parent._test.test_collision
+
+      ASL   dp(@parent.tile_collision_target_bit)
+      LDA   #7
+      LDY   #$0000
+      @parent._test.test_collision
+
+      LDA   dp(@parent.tile_collision_target)
+      ASL   A
+      TAX
+      JMP   block_y_routines.indirect, X
+    end
+  end
+
+end

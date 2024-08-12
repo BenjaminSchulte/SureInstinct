@@ -1,0 +1,92 @@
+module Aoba::Script
+
+  ;; The stack size
+  STACK_SIZE ||= $100
+
+  ;; First supported bank
+  SCRIPT_ACTION_FIRST_BANK = $C0
+
+  ;; First custom script bank (WARNING: Must be maskable by $F0)
+  CUSTOM_SCRIPT_FIRST_BANK = $C0
+
+  ;; Supported callback banks
+  SUPPORTED_BANK_RANGE = $C0..$CF
+
+
+  module EventId
+    ;; Script ready event ID
+    READYEVENT = $01
+
+    ;; Script NPC movement target reached ID (userdata = sprite_id)
+    SPRITE_TARGET_REACHED = $02
+
+    ;; Script NPC collided (userdata = sprite_id)
+    SPRITE_COLLISION = $03
+
+    ;; Sprite triggered (userdata = sprite_id)
+    SPRITE_TRIGGER_START = $04
+
+    ;; Sprite triggered (userdata = sprite_id)
+    SPRITE_TRIGGER_END = $05
+
+    ;; Crowd idle duration expired
+    CROWD_TIMER_TRIGGERED = $06
+
+    ;; Crowd NPC removed
+    CROWD_NPC_REMOVED = $07
+
+    ;; Sprite trigger result
+    CLOSE_SPRITE_RESULT = $08
+
+    ;; Start pushing other NPCs
+    START_PUSH_NPC = $09
+
+    ;; Stop pushing other NPCs
+    STOP_PUSH_NPC = $0A
+
+    ;; Enter event of sprite has been triggered
+    ENTER_SPRITE_AREA = $0B
+
+    ;; Leave event of sprite has been triggered
+    LEAVE_SPRITE_AREA = $0C
+  end
+
+  
+  ;; Maximum number of custom timers
+  MAX_CUSTOM_TIMERS = 4
+
+
+  ;; Flags
+  module Flag
+    ;; The script has been stopped
+    RETURN = $80
+
+    ;; Whether to notify when the script finished
+    NOTIFY_FINISH = $40
+  end
+
+  ;; Create flags
+  module CreateFlag
+    ;; Receives a context after the script has been executed
+    RECEIVE_CONTEXT = $01
+
+    ;; Whether to notify when the script finished
+    NOTIFY_FINISH = $40
+  end
+
+  ;; Event configuration for start event
+  class EventConfig < Aoba::Thread::Event::Base
+    ;; The script address
+    declare :script_address, as: :uint24
+
+    ;; Flags for script creation
+    declare :script_create_flags, as: :uint8
+  end
+
+  ;; Context config
+  class ContextConfig < Aoba::Thread::Event::Base
+    ;; The context
+    declare :context, as: :uint16
+  end
+
+end

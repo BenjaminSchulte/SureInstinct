@@ -1,0 +1,112 @@
+module Aoba::Mouse
+
+  locate_at bank: MOUSE_ROM_BANK
+
+  module GlobalFlag
+    MOUSE_ENABLED = $8000
+    TIMER_ENABLED = $4000
+  end
+
+  module RegionFlag
+    HOVER = $01
+    MOUSEDOWN = $02
+    MOUSEUP = $04
+  end
+
+  class Region
+    ;; Next region
+    declare :next_region, as: :uint16
+
+    ;; Top position
+    declare :left, as: :uint16
+
+    ;; Top position
+    declare :top, as: :uint16
+
+    ;; Top position
+    declare :right, as: :uint16
+
+    ;; Top position
+    declare :bottom, as: :uint16
+
+    ;; Flags
+    declare :flags, as: :uint8
+
+    ;; The thread ID to invoke
+    declare :thread_id, as: :uint8
+
+    ;; The event ID to invoke
+    declare :event_id, as: :uint8
+
+    ;; Userdata ID
+    declare :userdata, as: :uint8
+  end
+
+  ;; The thread RAM
+  scope :RAM, in: ::Memory::ThreadRAM
+
+  ;; The event RAM
+  scope :ActionRAM, in: RAM, shared: true
+
+  ;; The static RAM
+  scope :StaticRAM, in: ::Memory::FixedRAM
+
+  ;; Global flags
+  declare :global_flags, as: :uint16, in: ::Memory::VariableRAM
+
+  ;; The current effect timer
+  declare :_calc0, as: :uint32, in: RAM
+
+  ;; The boundary
+  declare :boundary_left, as: :uint16, in: RAM
+  declare :boundary_right, as: :uint16, in: RAM
+  declare :boundary_top, as: :uint16, in: RAM
+  declare :boundary_bottom, as: :uint16, in: RAM
+
+  ;; The mouse sprite
+  declare :mouse_sprite, as: :uint16, in: ::Memory::VariableRAM
+
+  ;; The mouse listener
+  declare :mouse_listener, as: :uint16, in: ::Memory::VariableRAM
+
+  ;; The mouse gamepad
+  declare :mouse_gamepad, as: :uint16, in: ::Memory::VariableRAM
+
+  ;; The mouse gamepad
+  declare :mouse_timer, as: :uint16, in: ::Memory::VariableRAM
+
+  ;; First free region
+  declare :free_region, as: :uint16, in: ::Memory::VariableRAM
+
+  ;; First free region
+  declare :first_region, as: :uint16, in: ::Memory::VariableRAM
+
+  ;; First free region
+  declare :regions_ram, as: :uint16, in: ::Memory::VariableRAM
+
+  ;; The current hover region
+  declare :current_hover_region, as: :uint16, in: ::Memory::VariableRAM
+
+  module Event
+    class Base < Aoba::Thread::Event::Base
+      declare :event_id, as: :uint8
+    end
+  end
+
+  macro initialize_ram
+    STZ   global_flags
+    STZ   mouse_gamepad
+    STZ   mouse_timer
+    STZ   mouse_sprite
+    STZ   mouse_listener
+    STZ   current_hover_region
+    STZ   dp(boundary_left)
+    STZ   dp(boundary_top)
+    LDA   #SNES::Arch::SCREEN_WIDTH - 1
+    STA   dp(boundary_right)
+    LDA   #SNES::Arch::SCREEN_HEIGHT - 1
+    STA   dp(boundary_bottom)
+    _initialize_regions
+  end
+
+end

@@ -1,0 +1,3 @@
+Aoba::Script.callback "Debug_Crash", bank: Aoba::SYSTEM_ROM_BANK do
+  BRK
+end

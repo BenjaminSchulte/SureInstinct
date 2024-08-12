@@ -1,0 +1,41 @@
+module Script::Action::Vibrato
+
+  scope :TempEaseMemory, in: Script.SharedTempScriptRAM
+  declare :high_byte, as: :uint8, in: TempEaseMemory
+
+  def process
+    CLR1  dp(ch_effect_flags)
+
+    MOV   X, A
+
+    ; Read number of ticks
+    MOV   A, indirect(Script.address, X)
+    INCW  dp(Script.address)
+    MOV   addr(Channel.vibrato_current_ticks, Y), A
+    MOV   addr(Channel.vibrato_ticks, Y), A
+
+    ; Read power and make it unsigned
+    MOV   A, #0
+    MOV   dp(high_byte), A
+    MOV   addr(Channel.vibrato_delay, Y), A
+
+    MOV   A, indirect(Script.address, X)
+    BPL   _is_positive
+    EOR   A, #$FF
+    INC   A
+    SET1  dp(ch_effect_flags)
+  _is_positive:
+    INCW  dp(Script.address)
+
+    ASL   A
+    ROL   dp(high_byte)
+    ASL   A
+    ROL   dp(high_byte)
+
+    MOV   addr(Channel.vibrato_power_low, Y), A
+    MOV   A, dp(high_byte)
+    MOV   addr(Channel.vibrato_power_high, Y), A
+    SET0  dp(ch_effect_flags)
+  end
+
+end

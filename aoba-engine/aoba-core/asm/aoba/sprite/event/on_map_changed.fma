@@ -1,0 +1,53 @@
+module Aoba::Sprite::Event::OnMapChanged
+
+  ;; The event
+  class Event < Base
+    declare :width_in_pixel, as: :uint16
+    declare :height_in_pixel, as: :uint16
+  end
+
+  ;; Temporary RAM
+  ;scope :TempRAM, in: ActionRAM
+
+  ;; calculation
+  ;declare :calc0, as: :uint8, in: TempRAM
+
+  ;; Calculates the map boundary
+  macro _calculate_map_boundary
+    LDA   Y[:width_in_pixel]
+    SEC
+    SBC   #256
+    BPL   _skip_min_zero_x
+    LDA   #0
+  _skip_min_zero_x:
+    STA   max_scroll_x
+
+    LDA   Y[:height_in_pixel]
+    SEC
+    SBC   #225
+    BPL   _skip_min_zero_y
+    LDA   #0
+  _skip_min_zero_y:
+    STA   max_scroll_y
+  end
+
+  ;; Center camera to map
+  macro _center_camera
+    Action::Camera.calculate_target_camera_position
+
+    LDA   target_scroll_x
+    STA   scroll_x
+    LDA   target_scroll_y
+    STA   scroll_y
+  end
+
+  ;; Creates the sprite
+  ;; @ignore-thread-safety
+  ID = List.create "OnMapChanged" do
+    Y.is_a! Event
+    _calculate_map_boundary
+    _center_camera
+    JMP   Action::Camera.recalculate_view_bitmask
+  end
+
+end

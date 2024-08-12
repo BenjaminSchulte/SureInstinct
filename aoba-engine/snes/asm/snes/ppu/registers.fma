@@ -1,0 +1,53 @@
+module PPU
+  class _BGOFFSET
+    declare :horizontal, as: :uint8
+    declare :vertical, as: :uint8
+  end
+
+  scope :_scope, in: SNES::MemoryMap.SYSTEM, bank: $00
+
+  declare :INIDISP, as: :uint8, at: $2100, in: _scope
+  declare :OBSEL, as: :uint8, at: $2101, in: _scope
+  declare :OAMADD, as: :uint16, at: $2102, in: _scope
+  declare :OAMDATA, as: :uint8, at: $2104, in: _scope
+  declare :BGMODE, as: :uint8, at: $2105, in: _scope
+  declare :MOSAIC, as: :uint8, at: $2106, in: _scope
+  declare :BGSC, as: :uint8, at: $2107, in: _scope, length: 4
+  declare :BG12NBA, as: :uint8, at: $210B, in: _scope
+  declare :BG34NBA, as: :uint8, at: $210C, in: _scope
+  declare :BGOFFSET, as: _BGOFFSET, at: $210D, in: _scope, length: 4
+  declare :VMAIN, as: :uint8, at: $2115, in: _scope
+  declare :VMADD, as: :uint16, at: $2116, in: _scope
+  declare :VMDATA, as: :uint16, at: $2118, in: _scope
+
+  module M7
+    declare :sel, as: :uint8, at: $211A, in: _scope
+    declare :a, as: :uint8, at: $211B, in: _scope
+    declare :b, as: :uint8, at: $211C, in: _scope
+    declare :c, as: :uint8, at: $211D, in: _scope
+    declare :d, as: :uint8, at: $211E, in: _scope
+    declare :x, as: :uint8, at: $211F, in: _scope
+    declare :y, as: :uint8, at: $2120, in: _scope
+  end
+
+  declare :CGADD, as: :uint8, at: $2121, in: _scope
+  declare :CGDATA, as: :uint8, at: $2122, in: _scope
+  declare :W12SEL, as: :uint8, at: $2123, in: _scope
+  declare :W34SEL, as: :uint8, at: $2124, in: _scope
+  declare :WOBJSEL, as: :uint8, at: $2125, in: _scope
+  declare :WH, as: :uint8, at: $2126, in: _scope, length: 4
+  WH0 = WH[0]
+  WH1 = WH[1]
+  WH2 = WH[2]
+  WH3 = WH[3]
+  declare :WBGLOG, as: :uint8, at: $212A, in: _scope
+  declare :WOBJLOG, as: :uint8, at: $212B, in: _scope
+  declare :TM, as: :uint8, at: $212C, in: _scope
+  declare :TS, as: :uint8, at: $212D ,in: _scope
+  declare :TMW, as: :uint8, at: $212E, in: _scope
+  declare :TSW, as: :uint8, at: $212F, in: _scope
+  declare :CGWSEL, as: :uint8, at: $2130, in: _scope
+  declare :CGADSUB, as: :uint8, at: $2131, in: _scope
+  declare :COLDATA, as: :uint8, at: $2132, in: _scope
+  declare :SETINI, as: :uint8, at: $2133, in: _scope
+end

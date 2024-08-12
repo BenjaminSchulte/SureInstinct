@@ -1,0 +1,48 @@
+module Aoba::Composer::Api
+
+  ;; Sets the HDMA mode
+  ;; @param A ID
+  ;; @param X param
+  def set_hdma_mode_long
+    CPU.set A: 8
+    PHX
+    PHA
+    LDA   #Aoba::Thread::Event.USEREVENT_ID
+    JSL   Aoba::Thread::Event.allocate_icb_long
+    X.is_a! Aoba::Composer::Event::SetHdmaMode::Event
+    
+    LDA   #Aoba::Composer::Event::SetHdmaMode.ID
+    STA   X[:event_id]
+    PLA
+    STA   X[:mode]
+    CPU.set A: 16
+    PLA
+    STA   X[:param]
+
+    LDA   Aoba::Composer.thread_id
+    JML   Aoba::Thread::send_event_icb_long
+  end
+
+  ;; Requests the ready event
+  def request_ready_event_long
+    ;; Send the ready event request to the composer thread
+    CPU.set A: 8
+    LDA   #Aoba::Thread::Event.USEREVENT_ID
+    JSL   Aoba::Thread::Event.allocate_icb_long
+    X.is_a! Aoba::Thread::ReadyEvent::Event
+    LDA   #Aoba::Composer::Event::ReadyEvent::ID
+    STA   X[:event_id]
+    STA   X[:response_id]
+    LDA   Aoba::Composer.thread_id
+    CPU.set A: 16
+    JML   Aoba::Thread.send_event_icb_long
+  end
+
+  ;; Waits for the ready event
+  def wait_for_ready_event_long
+    LDA   Aoba::Composer.thread_id
+    AND   #$FF
+    ORA   #Aoba::Composer::Event::ReadyEvent::ID << 8
+    JML   Aoba::Thread.wait_for_ready_icb_long
+  end
+end

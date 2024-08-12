@@ -1,0 +1,17 @@
+module Aoba::Tilemap
+
+  class RomHeader
+    ;; The tileset address
+    declare :tileset_address, as: :uint16
+
+    ;; The map width
+    declare :map_width, as: :uint8
+
+    ;; The map height
+    declare :map_height, as: :uint8
+
+    ;; The screen mode
+    declare :screen_mode, as: :uint8
+  end
+
+end

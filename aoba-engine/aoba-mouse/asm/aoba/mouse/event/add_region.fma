@@ -1,0 +1,19 @@
+module Aoba::Mouse::Event::AddRegion
+
+  class Event < Base
+    declare :region, as: :uint16
+  end
+
+  scope :TempRAM, in: ActionRAM
+
+  ID = MouseThread.event_list.create "AddRegion" do
+    
+    Y.is_a! Event
+    LDX   Y[:region]
+    X.is_a! Region
+    LDA   first_region
+    STA   X[:next_region]
+    STX   first_region
+  end
+
+end

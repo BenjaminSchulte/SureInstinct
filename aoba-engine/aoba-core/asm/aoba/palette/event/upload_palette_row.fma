@@ -1,0 +1,18 @@
+module Aoba::Palette::Event::UploadPaletteRow
+
+  ;; The event
+  class Event < Base
+    declare :row, as: :uint8
+  end
+
+  ;; Loads the palette
+  ;; @ignore-thread-safety
+  ID = List.create "UploadPaletteRow" do
+    Y.is_a! Event
+
+;;;;Debug.todo "UpdatePaletteRow should only update requested palette row"
+
+    CGRAM.upload_tileset_cgram
+  end
+
+end

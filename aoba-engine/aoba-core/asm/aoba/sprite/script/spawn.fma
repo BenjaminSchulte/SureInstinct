@@ -1,0 +1,145 @@
+module Aoba::Sprite
+
+  ;; Loads a sprite
+  Aoba::Script.callback "Sprite_Create", bank: SPRITE_ROM_BANK do
+    ;; Allocates the configuration RAM
+    LDA   thread_id
+    LDX   #Event::CreateSprite::EventConfig.size
+    Thread.safe do
+      JSL   Memory.allocate_miniblock_long
+    end
+    STX   dp(Aoba::Script.register_x)
+    X.is_a! Event::CreateSprite::EventConfig
+
+    ;; Prepares the stack pointer
+    LDA   dp(Aoba::Script.stack_pointer)
+    SEC
+    SBC   #10
+    STA   dp(Aoba::Script.stack_pointer)
+    TAY
+
+    ;; Copy values from script to the config
+    LDA   0, Y
+    STA   X[:x]
+    LDA   2, Y
+    STA   X[:y]
+    LDA   4, Y
+    STA   X[:animation]
+    LDA   6, Y
+    STA   X[:direction] ;+flags
+    LDA   8, Y
+    STA   X[:palette_group_address]
+    LDA   dp(Aoba::Script.register_a)
+    STA   X[:sprite_id]
+
+    ;; Create the event
+    JSL   Aoba::Sprite::Api.create_sprite_icb_long
+
+    ;; C = sprite pointer
+    STX   dp(Aoba::Script.register_c0)
+    X.is_a! Instance
+    LDA   X[:id]
+    STA   dp(Aoba::Script.register_x)
+  end
+
+  ;; Loads a sprite
+  Aoba::Script.callback "Sprite_Queue", bank: SPRITE_ROM_BANK do
+    LDA   #Aoba::Thread::Event::USEREVENT_ID
+    JSL   Thread::Event.allocate_icb_long
+    X.is_a! Event::QueueSprite::Event
+    CPU.set A: 8
+    LDA   #Event::QueueSprite::ID
+    STA   X[:event_id]
+    LDY   dp(Aoba::Script.register_c0)
+    Y.is_a! Instance
+    LDA   Y[:id]
+    STA   X[:sprite_id]
+    STZ   X[:parent_sprite_id]
+    LDA   thread_id
+    CPU.set A: 16
+    JML   Thread.send_event_icb_long
+  end
+
+  ;; Attaches a sprite
+  Aoba::Script.callback "Sprite_AttachToCurrentSprite", bank: SPRITE_ROM_BANK do
+    LDA   #Aoba::Thread::Event::USEREVENT_ID
+    JSL   Thread::Event.allocate_icb_long
+    X.is_a! Event::QueueSprite::Event
+    CPU.set A: 8
+    LDA   #Event::QueueSprite::ID
+    STA   X[:event_id]
+    LDY   dp(Aoba::Script.register_c0)
+    Y.is_a! Instance
+    LDA   Y[:id]
+    STA   X[:sprite_id]
+    LDA   dp(Aoba::Script.register_x)
+    STA   X[:parent_sprite_id]
+    LDA   thread_id
+    CPU.set A: 16
+    JML   Thread.send_event_icb_long
+  end
+
+  ;; Loads a sprite
+  ;;
+  ;; @param REGA character address
+  Aoba::Script.callback "Character_Spawn", bank: SPRITE_ROM_BANK do
+
+    ;; Allocates the configuration RAM
+    LDA   thread_id
+    LDX   #Event::CreateCharacter::EventConfig.size
+    Thread.safe do
+      JSL   Memory.allocate_miniblock_long
+    end
+    STX   dp(Aoba::Script.register_x)
+    X.is_a! Event::CreateCharacter::EventConfig
+
+    ;; Prepares the stack pointer
+    LDA   dp(Aoba::Script.stack_pointer)
+    SEC
+    SBC   #8
+    STA   dp(Aoba::Script.stack_pointer)
+    TAY
+
+    ;; Copy values from script to the config
+    LDA   0, Y
+    STA   X[:x]
+    LDA   2, Y
+    STA   X[:y]
+    LDA   4, Y
+    STA   X[:animation]
+    LDA   dp(Aoba::Script.register_a)
+    STA   X[:creature_address]
+    LDA   6, Y
+    STA   X[:direction] ; +flags
+    CPU.set A: 8
+    STZ   X[:movement_flags]
+    
+    ;; Create the event
+    LDA   #Aoba::Thread::Event::USEREVENT_ID
+    JSL   Thread::Event.allocate_icb_long
+    X.is_a! Event::CreateCharacter::Event
+
+    ;; Configures the event
+    LDA   #Event::CreateCharacter::ID
+    STA   X[:event_id]
+    CPU.set A: 16
+    LDA   dp(Aoba::Script.register_x)
+    STA   X[:config_address]
+
+    ;; Sends the event
+    CPU.set A: 8
+    LDA   thread_id
+    JSL   Thread.send_event_icb_long
+
+    ;; Waits for the sprite create response
+    LDA   #Event::CreateCharacter::ID
+    XBA
+    LDA   thread_id
+    JSL   Thread.wait_for_ready_icb_long
+    CPU.set A: 16
+
+    ;; C = sprite pointer
+    STX   dp(Aoba::Script.register_c0)
+  end
+
+end

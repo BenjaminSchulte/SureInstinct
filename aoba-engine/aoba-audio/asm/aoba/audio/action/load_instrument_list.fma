@@ -1,0 +1,45 @@
+module Aoba::Audio::Action::LoadInstrumentList
+
+  ;; Temporary RAM
+  scope :TempRAM, in: ActionRAM
+
+  ;; The list size
+  declare :list_size, as: :uint8, in: TempRAM
+
+  ;; The list offset
+  declare :list_offset, as: :uint16, in: TempRAM
+
+  ;; Loads the list
+  ;;
+  ;; @param X pointer to sample list
+  ;; @param DB bank of sample list
+  ;; @returns X pointer after sample list
+  ;; @ignore-thread-safety
+  load_list = create_sa1_ram_routine bank: AUDIO_ROM_BANK do
+    A.pretend_size 8
+
+    LDA   0, X
+    BZE   _end_of_list
+
+    STA   dp(list_size)
+  _loop:
+    INX
+    LDA   0, X
+    STX   dp(list_offset)
+
+    PHA
+    SNES_RAM_JMP GarbageCollector.increment_instrument_usage, :JSR, :JSR
+    PLA
+    
+    SNES_RAM_JMP LoadInstrument.load, :JSR, :JSR
+    
+    LDX   dp(list_offset)
+    DEC   dp(list_size)
+    BNZ   _loop
+
+  _end_of_list:
+    INX
+    RTS
+  end
+
+end

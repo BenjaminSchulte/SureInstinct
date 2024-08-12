@@ -1,0 +1,203 @@
+module Aoba::Script
+
+  macro __create_ram_command(type, bank, input_size, relative=nil)
+    read_current_script_value
+    unless relative.nil?
+      CLC
+      ADC   dp(relative)
+    end
+    TAX
+    CPU.set A: 8 if input_size == 8
+    case type
+    when :sta
+      LDA   dp(register_a)
+      STA   (bank << 16).long, X
+    when :ora
+      LDA   dp(register_a)
+      ORA   (bank << 16).long, X
+      STA   (bank << 16).long, X
+    when :and
+      LDA   dp(register_a)
+      AND   (bank << 16).long, X
+      STA   (bank << 16).long, X
+    when :lda
+      LDA   (bank << 16).long, X
+      STA   dp(register_a)
+      STZ   dp(register_a + 1) if input_size == 8
+    end
+    CPU.set A: 16 if input_size == 8
+    STZ   dp(register_a + 2) if type == :lda
+    INY
+    INY
+  end
+
+
+  command Opcode::STA8_RAM_7E, :sta8_ram_7E do
+    __create_ram_command :sta, FIXED_RAM_BANK, 8
+  end
+
+  command Opcode::STA8_RAM_7F, :sta8_ram_7F do
+    __create_ram_command :sta, VARIABLE_RAM_BANK, 8
+  end
+
+  command Opcode::STA16_RAM_7E, :sta16_ram_7E do
+    __create_ram_command :sta, FIXED_RAM_BANK, 16
+  end
+
+  command Opcode::STA16_RAM_7F, :sta16_ram_7F do
+    __create_ram_command :sta, VARIABLE_RAM_BANK, 16
+  end
+
+  command Opcode::ORA8_RAM_7E, :ora8_ram_7E do
+    __create_ram_command :ora, FIXED_RAM_BANK, 8
+  end
+
+  command Opcode::ORA8_RAM_7F, :ora8_ram_7F do
+    __create_ram_command :ora, VARIABLE_RAM_BANK, 8
+  end
+
+  command Opcode::ORA16_RAM_7E, :ora16_ram_7E do
+    __create_ram_command :ora, FIXED_RAM_BANK, 16
+  end
+
+  command Opcode::ORA16_RAM_7F, :ora16_ram_7F do
+    __create_ram_command :ora, VARIABLE_RAM_BANK, 16
+  end
+
+  command Opcode::AND8_RAM_7E, :and8_ram_7E do
+    __create_ram_command :and, FIXED_RAM_BANK, 8
+  end
+
+  command Opcode::AND8_RAM_7F, :and8_ram_7F do
+    __create_ram_command :and, VARIABLE_RAM_BANK, 8
+  end
+
+  command Opcode::AND16_RAM_7E, :and16_ram_7E do
+    __create_ram_command :and, FIXED_RAM_BANK, 16
+  end
+
+  command Opcode::AND16_RAM_7F, :and16_ram_7F do
+    __create_ram_command :and, VARIABLE_RAM_BANK, 16
+  end
+
+  command Opcode::LDA8_RAM_7E, :lda8_ram_7E do
+    read_current_script_value
+    TAX
+    LDA   FIXED_RAM_BANK.as_bank.long, X
+    AND   dp(x00FF)
+    STA   dp(register_a)
+    STZ   dp(register_a + 2)
+    INY
+    INY
+  end
+
+  command Opcode::LDA8_RAM_7F, :lda8_ram_7F do
+    read_current_script_value
+    TAX
+    LDA   VARIABLE_RAM_BANK.as_bank.long, X
+    AND   dp(x00FF)
+    STA   dp(register_a)
+    STZ   dp(register_a + 2)
+    INY
+    INY
+  end
+
+  command Opcode::LDA16_RAM_7E, :lda16_ram_7E do
+    read_current_script_value
+    TAX
+    LDA   FIXED_RAM_BANK.as_bank.long, X
+    STA   dp(register_a)
+    STZ   dp(register_a + 2)
+    INY
+    INY
+  end
+
+  command Opcode::LDA16_RAM_7F, :lda16_ram_7F do
+    read_current_script_value
+    TAX
+    LDA   VARIABLE_RAM_BANK.as_bank.long, X
+    STA   dp(register_a)
+    STZ   dp(register_a + 2)
+    INY
+    INY
+  end
+
+  command Opcode::STA8_RAM_C0, :sta8_ram_7F_rel_c do
+    __create_ram_command :sta, VARIABLE_RAM_BANK, 8, register_c0
+  end
+
+  command Opcode::STA16_RAM_C0, :sta16_ram_7F_rel_c do
+    __create_ram_command :sta, VARIABLE_RAM_BANK, 16, register_c0
+  end
+
+  command Opcode::ORA8_RAM_C0, :ora8_ram_7F_rel_c do
+    __create_ram_command :ora, VARIABLE_RAM_BANK, 8, register_c0
+  end
+
+  command Opcode::ORA16_RAM_C0, :ora16_ram_7F_rel_c do
+    __create_ram_command :ora, VARIABLE_RAM_BANK, 16, register_c0
+  end
+
+  command Opcode::AND8_RAM_C0, :and8_ram_7F_rel_c do
+    __create_ram_command :and, VARIABLE_RAM_BANK, 8, register_c0
+  end
+
+  command Opcode::AND16_RAM_C0, :and16_ram_7F_rel_c do
+    __create_ram_command :and, VARIABLE_RAM_BANK, 16, register_c0
+  end
+
+  command Opcode::LDA8_RAM_C0, :lda8_ram_7F_rel_c do
+    __create_ram_command :lda, VARIABLE_RAM_BANK, 8, register_c0
+  end
+
+  command Opcode::LDA16_RAM_C0, :lda16_ram_7F_rel_c do
+    __create_ram_command :lda, VARIABLE_RAM_BANK, 16, register_c0
+  end
+
+
+
+  def _get_ram_pointer_u
+    LDX   dp(script_data)
+    X.is_a! ScriptData
+
+    read_current_script_value
+    INY
+    AND   dp(x00FF)
+    CLC
+    ADC   X[:userdata]
+    TAX
+  end
+
+  command Opcode::LDA8_RAM_U, :lda8_ram_u do
+    _get_ram_pointer_u
+    
+    LDA   0, X
+    AND   dp(x00FF)
+    STA   dp(register_a)
+    STZ   dp(register_a + 2)
+  end
+
+  command Opcode::LDA16_RAM_U, :lda16_ram_u do
+    _get_ram_pointer_u
+
+    LDA   0, X
+    STA   dp(register_a)
+    STZ   dp(register_a + 2)
+  end
+
+  command Opcode::STA8_RAM_U, :sta8_ram_u do
+    _get_ram_pointer_u
+    CPU.set A: 8
+    LDA   dp(register_a)
+    STA   0, X
+    CPU.set A: 16
+  end
+
+  command Opcode::STA16_RAM_U, :sta16_ram_u do
+    _get_ram_pointer_u
+
+    LDA   dp(register_a)
+    STA   0, X
+  end
+
+end

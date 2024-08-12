@@ -1,0 +1,63 @@
+module Aoba::VBlank::Job
+
+  ;; VBLANK job
+  class JobInstance
+    ;; Points to the next job
+    declare :next_job, as: JobInstance.pointer(:uint16)
+
+    ;; Flags for this job
+    declare :flags, as: :uint8
+
+    ;; DMA flags
+    declare :dma_flags, as: :uint8
+    ;; - no space here -
+    ;; Copy flags
+    declare :custom_flags, as: :uint8
+
+    ;; The thread ID
+    declare :thread_id, as: :uint8
+
+    ;; The source address
+    declare :source_address, as: :uint24
+
+    ;; The target address
+    declare :target_address, as: :uint16
+
+    ;; The data size
+    declare :data_size, as: :uint16
+  end
+
+  ;; Points to the instance list RAM
+  declare :instance_ram_pointer, as: :uint16, in: ::Memory::VariableRAM
+
+  ;; The first free job
+  declare :free_jobs, as: JobInstance.pointer(:uint16), in: ::Memory::VariableRAM
+
+  ;; All currently queued jobs
+  declare :queued_jobs, as: JobInstance.pointer(:uint16), in: ::Memory::VariableRAM
+
+  ;; Initializes the RAM
+  macro initialize_ram
+    ;; Allocates the RAM
+    LDX   #JobInstance.size * NUM_VBLANK_JOBS
+    Memory.allocate
+    STX   instance_ram_pointer
+
+    ;; Prepare RAM
+    STZ   queued_jobs
+
+    ;; Sets up the linked list
+    STX   free_jobs
+    X.is_a! JobInstance
+    LDY   #NUM_VBLANK_JOBS - 1
+    TXA
+  _loop:
+    CLC
+    ADC   #JobInstance.size
+    STA   X[:next_job]
+    TAX
+    DEY
+    BNZ   _loop
+    STZ   X[:next_job]
+  end
+end

@@ -1,0 +1,105 @@
+module Aoba::Composer
+
+  locate_at bank: COMPOSER_ROM_BANK
+
+  ;; The static RAM
+  scope :StaticRAM, in: ::Memory::FixedRAM
+
+  ;; The static RAM
+  scope :RAM, in: ::Memory::ThreadRAM
+
+  ;; The shared RAM
+  scope :SharedRAM, in: RAM, shared: true
+
+  ;; The event RAM
+  scope :ActionRAM, in: RAM, shared: true
+
+
+  declare :bg_scroll_x, as: :uint16, in: ::Memory.VariableRAM, length: 4
+  declare :bg_scroll_y, as: :uint16, in: ::Memory.VariableRAM, length: 4
+  declare :add_bg_scroll_x, as: :uint16, in: ::Memory.VariableRAM, length: 4
+  declare :add_bg_scroll_y, as: :uint16, in: ::Memory.VariableRAM, length: 4
+
+
+  ;; General tileset configuration
+  declare :vram_bg1_tileset, as: :uint8, in: ::Memory.FixedRAM
+
+  ;; General tileset configuration
+  declare :vram_bg2_tileset, as: :uint8, in: ::Memory.FixedRAM
+
+  ;; General tileset configuration
+  declare :vram_bg3_tileset, as: :uint8, in: ::Memory.FixedRAM
+
+  ;; General tilemap configuration
+  declare :vram_bg1_tilemap, as: :uint8, in: ::Memory.FixedRAM
+
+  ;; General tilemap configuration
+  declare :vram_bg2_tilemap, as: :uint8, in: ::Memory.FixedRAM
+
+  ;; General tilemap configuration
+  declare :vram_bg3_tilemap, as: :uint8, in: ::Memory.FixedRAM
+
+  ;; General sprite configuration
+  declare :vram_sprite, as: :uint8, in: ::Memory.FixedRAM
+
+  
+  ;; The composer function called during VBLANK
+  ;declare :composer_vblank_callback, as: :uint16, in: StaticRAM
+
+  ;; The composer function called after VBLANK
+  declare :composer_irq_callback, as: :uint16, in: StaticRAM
+
+  ;; The thread ID
+  declare :thread_id, as: :uint8, in: ::Memory::VariableRAM
+
+  ;; Jump assembler code to the current HDMA frame update
+  declare :jump_to_hdma_vblank_update, in: StaticRAM, as: :uint8, length: 4
+  
+  ;; RAM for 0x00FF 
+  declare :x00FF, as: :uint16, in: RAM
+
+  ;; RAM for calculation 
+  declare :_calc0, as: :uint16, in: RAM
+
+  Aoba::Event.on :system_initialize_A8_VARRAM do
+    STZ   thread_id
+  end
+
+  ;; Invokes the initializer
+  Aoba::Event.on :system_initialize_A8_FIXEDRAM do
+    LDA   #$6B ;RTL
+    STA   jump_to_hdma_vblank_update
+  end
+
+  ;; Invokes the initializer
+  Aoba::Event.on :system_initialize_A16_FIXEDRAM do
+    ;LDA   #irq._after_composer_vblank_callback - 1
+    ;STA   composer_vblank_callback
+    LDA   #irq._after_composer_irq_callback - 1
+    STA   composer_irq_callback
+  end
+
+  Aoba::Event.on :system_initialize_A16_VARRAM do
+    STZ   add_bg_scroll_x[0]
+    STZ   add_bg_scroll_x[1]
+    STZ   add_bg_scroll_x[2]
+    STZ   add_bg_scroll_x[3]
+    STZ   add_bg_scroll_y[0]
+    STZ   add_bg_scroll_y[1]
+    STZ   add_bg_scroll_y[2]
+    STZ   add_bg_scroll_y[3]
+  end
+
+  ;; Initializes the RAM
+  ;; @ignore-thread-safety
+  def initialize_ram
+    LDA   #$FF
+    STA   dp(x00FF)
+
+    Aoba::Event.invoke :composer_initialize_ram_16
+    CPU.set A: 8
+    Aoba::Event.invoke :composer_initialize_ram_8
+    CPU.set A: 16
+  end
+
+end

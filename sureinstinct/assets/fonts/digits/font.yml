@@ -1,0 +1,7 @@
+name: Digits
+type: variable
+hires: false
+bpp: 2
+baseline: 8
+letters: "0123456789:."
+fallbackLetter: '.'

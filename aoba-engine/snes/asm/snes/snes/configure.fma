@@ -1,0 +1,51 @@
+module SNES
+  macro configure(mode=nil)
+    case mode
+    when :exhirom
+      configure_exhirom
+    when :sa1
+      configure_sa1
+    when nil
+    else
+      raise "Unsupported SNES configuration mode: #{mode}"
+    end
+
+    yield with_context Header
+    Header.create
+
+    SNES::Arch.configure_for Header.architecture
+  end
+
+  macro configure_exhirom
+    Header.map_mode $31
+    
+    Header.memory_map do
+      header_location $C0, $FFB0
+
+      ROM.banks $C0..$FF, address: $0000..$FFFF, located_at: $0
+      ROM.banks $00..$07, address: $8000..$FFFF, shadows_banks_from: $C0, shadows_addresses_from: $8000
+
+      RAM.banks $7E..$7F, address: $0000..$FFFF
+      RAM.banks $00, address: $0000..$1FFF, shadows_banks_from: $7E
+    end
+  end
+
+  macro configure_sa1
+    Header.map_mode $23
+
+    Header.memory_map do
+      header_location $C0, $7FB0
+
+      ROM.banks $C0..$FF, address: $0000..$FFFF, located_at: $0
+      ROM.banks $00..$07, address: $8000..$FFFF, shadows_banks_from: $C0, shadows_addresses_from: $0
+
+      RAM.banks $7E..$7F, address: $0000..$FFFF
+      RAM.banks $00, address: $0000..$1FFF, shadows_banks_from: $7E
+
+      RAM.banks $40..$41, address: $0000..$FFFF
+      RAM.banks $00..$3F, address: $6000..$7FFF, shadows_banks_from: $40, shadows_addresses_from: $0
+      RAM.banks $42, address: $0000..$FFFF, shadows_banks_from: $40
+      RAM.banks $43, address: $0000..$FFFF, shadows_banks_from: $41
+    end
+  end
+end

@@ -1,0 +1,120 @@
+module Aoba::Thread::Event
+
+  ;; Waits for an event
+  ;;
+  ;; @param bitmask
+  Aoba::Script.callback "Thread_CreateTimer", bank: SYSTEM_ROM_BANK do
+    ;; Allocates the timer
+    LDA   Memory.active_thread_id
+    Timer.allocate_icb
+    X.is_a! Timer.TimerInstance
+
+    CPU.set A: 8
+    ;; Copies the flags to the register
+    LDA   dp(Aoba::Script.register_x)
+    AND   #$B0
+    STA   X[:flags]
+
+    ;; Tests whether we have an undefined slot
+    LDA   dp(Aoba::Script.register_x)
+    ASL   A
+    CPU.set A: 16
+    BMI   _find_free_slot
+
+    ;; Uses the slot in A
+  _use_configures_slot:
+    AND   #Aoba::Script.MAX_CUSTOM_TIMERS.bitmask << 1
+    CLC
+    ADC   dp(Aoba::Script.script_data)
+    TAY
+    Y.is_a! Aoba::Script::ScriptData
+    LDA   Y[:custom_timer]
+    BZE   _no_old_timer
+
+  _free_old_timer:
+    PHY
+    STX   dp(Aoba::Script.calc0)
+    TAX
+    Timer.free_icb
+    X.is_a! Timer.TimerInstance
+    LDX   dp(Aoba::Script.calc0)
+    PLY
+
+  _no_old_timer:
+    TXA
+    STA   Y[:custom_timer]
+    BRA   _rts
+
+  _find_free_slot:
+    fatal_error "toto create_timer findfreeslot"
+  
+  _rts:
+  end
+
+  ;; Waits for an event
+  ;;
+  ;; @param bitmask
+  Aoba::Script.callback "Thread_TriggerTimer", bank: SYSTEM_ROM_BANK do
+    LDA   dp(Aoba::Script.register_x)
+    ASL   A
+    AND   #Aoba::Script.MAX_CUSTOM_TIMERS.bitmask << 1
+    CLC
+    ADC   dp(Aoba::Script.script_data)
+    TAY
+    Y.is_a! Aoba::Script::ScriptData
+    LDX   Y[:custom_timer]
+    BZE   _skip
+
+    X.is_a! Aoba::Thread::Timer::TimerInstance
+    LDA   X[:flags]
+    BIT   #Thread::Timer::Flag::QUEUED
+    BZE   _resume_without_unqueue
+
+  _unqueue_timer_before_queue:
+    STX   dp(Aoba::Script.calc0)
+    Timer.unqueue_icb
+    LDX   dp(Aoba::Script.calc0)
+    X.is_a! Aoba::Thread::Timer::TimerInstance
+    LDA   X[:flags]
+
+  _resume_without_unqueue:
+    LDY   dp(Aoba::Script.register_a)
+    Timer.queue_icb
+
+  _skip:
+  end
+
+  ;; Waits for an event
+  ;;
+  ;; @param bitmask
+  Aoba::Script.callback "Thread_StopTimer", bank: SYSTEM_ROM_BANK do
+    LDA   dp(Aoba::Script.register_x)
+    ASL   A
+    AND   #Aoba::Script.MAX_CUSTOM_TIMERS.bitmask << 1
+    CLC
+    ADC   dp(Aoba::Script.script_data)
+    TAY
+    Y.is_a! Aoba::Script::ScriptData
+    LDX   Y[:custom_timer]
+    BZE   _skip
+
+    X.is_a! Aoba::Thread::Timer::TimerInstance
+    STX   dp(Aoba::Script.calc0)
+    Timer.unqueue_icb
+    LDX   dp(Aoba::Script.calc0)
+    Timer.remove_remaining_timer_events_icb
+
+  _skip:
+  end
+
+  ;; Waits for an event
+  ;;
+  ;; @param bitmask
+  Aoba::Script.callback "Thread_DestroyTimer", bank: SYSTEM_ROM_BANK do
+    Debug.BRK
+    NOP
+    NOP
+    NOP
+  end
+
+end

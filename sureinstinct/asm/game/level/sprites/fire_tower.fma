@@ -1,0 +1,259 @@
+module Game::Level::Sprite::FireTower
+  locate_at bank: Aoba::SPRITE_ROM_BANK
+
+  BULLET_LIFESPAN = 200
+  UPDATE_INTERVAL = 4 ;lower bit 0!!
+  FIRE_INTERVAL = 22 ;lower bit 0!! ;times UPDATE_INTERVAL
+
+  _axis_x = Aoba::Sprite._calc0
+  _angle = Aoba::Sprite._calc0 + 2
+  _bullet = Aoba::Sprite._calc1
+
+  def move_bullet
+    LDA   global_ingame_flags
+    AND   #GlobalIngameFlag.CONTROLS_DISABLED | GlobalIngameFlag.GAME_PAUSED | GlobalIngameFlag.TIME_PAUSED
+    BNZ   _rts
+
+    ;; Moves the bullet
+    X.is_a! Aoba::Sprite::Instance
+
+    DEC   X[:object_userdata1]
+    BZE   _kill
+    BMI   _rts
+
+    LDA   X[:speed_x_decimal]
+    CLC
+    ADC   X[:x_decimal]
+    STA   X[:x_decimal]
+    LDA   X[:x]
+    ADC   X[:speed_x]
+    STA   X[:x]
+
+    LDA   X[:speed_y_decimal]
+    CLC
+    ADC   X[:y_decimal]
+    STA   X[:y_decimal]
+    LDA   X[:y]
+    ADC   X[:speed_y]
+    STA   X[:y]
+
+    Aoba::Sprite::Action::ManageSprite.recalculate_after_set_position
+
+    LDY   Game::Ball::Movement.player
+    BNZ   _hit
+  _rts:
+    RTS
+    
+    ;; ---
+
+  _kill:
+    SEI
+    JSR   Aoba::Sprite.map_sprite_list.remove
+    CLI
+    LDA   X[:id]
+    JMP   Aoba::Sprite.Api.destroy_sprite_async_icb
+
+    ;; ---
+
+  _hit:
+    Y.is_a! Aoba::Sprite::Instance
+    LDA   X[:x]
+    SEC
+    SBC   Y[:x]
+    BPL   _x_is_positive
+    EOR   #$FFFF
+    INC   A
+  _x_is_positive:
+    STA   dp(_axis_x)
+    LDA   X[:y]
+    SEC
+    SBC   Y[:y]
+    BPL   _y_is_positive
+    EOR   #$FFFF
+    INC   A
+  _y_is_positive:
+    CLC
+    ADC   dp(_axis_x)
+    CMP   #9
+    BGE   _rts
+
+    LDA   Y[:speed_x_decimal]
+    CLC
+    ADC   X[:speed_x_decimal]
+    STA   Y[:speed_x_decimal]
+    LDA   Y[:speed_x]
+    ADC   X[:speed_x]
+    STA   Y[:speed_x]
+    LDA   Y[:speed_y_decimal]
+    CLC
+    ADC   X[:speed_y_decimal]
+    STA   Y[:speed_y_decimal]
+    LDA   Y[:speed_y]
+    ADC   X[:speed_y]
+    STA   Y[:speed_y]
+
+    LDA   #BULLET_DAMAGE
+    Game::Ball._modify_hp
+    LDX   dp(Aoba::Sprite.current_sprite)
+    BRA   _kill
+  end
+
+  def move
+    Y.is_a! Aoba::Sprite::Instance
+    X.is_a! Aoba::Sprite::Instance
+
+    LDY   Game::Ball::Movement.player
+    BNZ   _resume
+  _rts:
+    RTS
+
+  _resume:
+    LDA   AssetConfig::Ingame.tilemap_storage.tiles[:current].long
+    CMP   X[:sprite_layer]
+    BNE   _rts
+    
+    LDA   X[:renderable_configuration_flags]
+    BIT   #Aoba::Sprite::RenderableConfigurationFlag.IS_VISIBLE_ON_SCREEN
+    BZE   _rts
+
+    DEC   X[:object_userdata1]
+    BNZ   _rts
+    LDA   #UPDATE_INTERVAL
+    STA   X[:object_userdata1]
+
+    LDA   Y[:x]
+    SEC
+    SBC   X[:x]
+    STA   dp(_axis_x)
+    CMP   #-FIRE_TOWER_MIN_DISTANCE
+    BMI   _rts
+    CMP   #FIRE_TOWER_MIN_DISTANCE
+    BPL   _rts
+
+    LDA   Y[:y]
+    SEC
+    SBC   X[:y]
+    CMP   #-FIRE_TOWER_MIN_DISTANCE
+    BMI   _rts
+    CMP   #FIRE_TOWER_MIN_DISTANCE
+    BPL   _rts
+
+    TAY
+    LDX   dp(_axis_x)
+    JSL   Aoba::Math.xy_to_direction_long
+    STA   dp(_angle)
+
+    LDX   dp(Aoba::Sprite.current_sprite)
+    CLC
+    ADC   #$C0 + 4
+    LSR   A
+    LSR   A
+    LSR   A
+    AND   #$1F
+    TAY
+    LDA   #0 ;TODO: use global ID
+    Aoba::Sprite::Action::ManageSprite.assign_direct_frame
+
+    LDA   global_ingame_flags
+    AND   #GlobalIngameFlag.CONTROLS_DISABLED | GlobalIngameFlag.GAME_PAUSED | GlobalIngameFlag.TIME_PAUSED
+    ORA   dead_wait_time
+    BNZ   _rts
+
+    DEC   X[:object_userdata2]
+    BNZ   _rts
+    LDA   #FIRE_INTERVAL
+    STA   X[:object_userdata2]
+
+
+    ;; Spawns a new sprite
+    Aoba::Sprite::Action::ManageSprite.allocate
+    STX   dp(_bullet)
+    LDY   dp(Aoba::Sprite.current_sprite)
+    Y.is_a! Aoba::Sprite::Instance
+    LDA   Y[:x]
+    STA   X[:x]
+    LDA   Y[:y]
+    STA   X[:y]
+    LDA   Y[:sprite_layer]
+    STA   X[:sprite_layer]
+    STZ   X[:speed_x]
+    STZ   X[:speed_y]
+    LDA   X[:renderable_flags]
+    AND   #$CFCF
+    ;ORA   #$3030
+    STA   X[:renderable_flags]
+    LDA   #Animation::Direction.down | Animation::Direction.down << 8
+    STA   X[:direction]
+    LDA   #Animation::Animation.stand
+    Aoba::Sprite::Action::ManageSprite.assign_animation_id
+    LDA   #Assets::Sprite::Bullet::PaletteID
+    STA   X[:palette_group_id]
+    LDA   #move_bullet.to_sym + 1
+    STA   X[:custom_move_routine]
+    LDA   #BULLET_LIFESPAN
+    STA   X[:object_userdata1]
+
+    TXY
+    LDA   dp(_angle)
+    AND   #$FF
+    ASL   A
+    TAX
+    LDA   Aoba::Math.cos_table.long, X
+    ASL   A
+    STA   Y[:speed_x_decimal] + 1
+    BPL   _speed_x_is_positive
+    CPU.set A: 8
+    LDA   #$FF
+    STA   Y[:speed_x] + 1
+    CPU.set A: 16
+  _speed_x_is_positive:
+    LDA   Aoba::Math.sin_table.long, X
+    ASL   A
+    EOR   #$FFFF
+    INC   A
+    STA   Y[:speed_y_decimal] + 1
+    BPL   _speed_y_is_positive
+    CPU.set A: 8
+    LDA   #$FF
+    STA   Y[:speed_y] + 1
+    CPU.set A: 16
+  _speed_y_is_positive:
+    TYX
+
+    LDA   #Assets::Sprite::Bullet::ID
+    Aoba::Sprite::Action::ManageSprite.assign_sprite_id
+    Aoba::Sprite::Action::ManageSprite.recalculate_after_set_position
+    SEI
+    JSR   Aoba::Sprite.map_sprite_list.add
+    CLI
+    JMP   Aoba::Sprite::Action::ManageSprite.queue
+  end
+end
+
+
+module Game::Level::SpriteGenerator
+  def generate_fire_tower
+
+    LDX   #Assets::Sprite::FireTower::ID
+    LDY   #Assets::Sprite::FireTower::PaletteID
+    generate_map_sprite
+    X.is_a! Aoba::Sprite::Instance
+
+    LDA   #Game::Level::Sprite::FireTower.UPDATE_INTERVAL
+    STA   X[:object_userdata1]
+
+    LDA   X[:x]
+    CLC
+    ADC   X[:y]
+    16.divided_register_A
+    AND   #$1F
+    STA   X[:object_userdata2]
+    CPU.set A: 8
+    LDA   #PRIORITY_BALL_FRONT
+    STA   X[:render_priority]
+    CPU.set A: 16
+    LDA   #Game::Level::Sprite::FireTower.move.to_sym + 1
+    STA   X[:custom_move_routine]
+    JSL   Aoba::Sprite::Api.queue_sprite_icb_long
+  end
+end

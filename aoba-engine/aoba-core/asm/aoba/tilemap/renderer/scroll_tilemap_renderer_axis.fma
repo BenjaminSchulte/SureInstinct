@@ -1,0 +1,269 @@
+module Aoba::Tilemap::Renderer
+  class ScrollTilemapRendererAxis < StaticRoutineClass
+    register A: 16, XY: 16
+
+    macro initialize(parent)
+      @parent = parent
+      
+      @__static_locate_at_args = @parent.class.__static_locate_at_args || @parent.__static_locate_at_args || []
+      @__static_locate_at_kwargs = @parent.class.__static_locate_at_kwargs || @parent.__static_locate_at_kwargs || {}
+
+      @update_width = 1
+      @update_height = 1
+      @axis_buffer_size = nil
+      @scroll_buffer_size = nil
+
+      @layer_scroll_routine = {}
+
+      _self = self
+      args = @@__static_locate_at_args || @__static_locate_at_args || []
+      kwargs = @@__static_locate_at_kwargs || @__static_locate_at_kwargs || {}
+      parent.layers.each do |layer|
+        func = Function.new "ScrollTilemapRendererAxis_layer#{layer}" do
+          A.pretend_size 16
+          X.pretend_size 16
+          _scroll_layer layer
+          RTS
+        end
+        func.override_located_at *args, **kwargs
+        _self.layer_scroll_routine[layer] = func
+      end
+
+      setup_static_routines
+    end
+
+    macro single_bg_scroll_buffer_size
+      return @scroll_buffer_size / @parent.renderer.num_bgs
+    end
+
+    ;; Builds the cache if necessary
+    ;;
+    ;; @param Y the target row
+    macro _test_cache_rebuild_is_necessary(layer)
+
+      ;; Test if cache is up to date
+      ;;Debug.todo "TODO: Check different bgtile->tile format"
+      AND   #2 ;2 because 2 bgtiles per tile
+      TAX
+      TYA
+      EOR   @_position_y[layer], X
+      AND   #$FFFE
+      BNE   _require_rebuild
+      LDA   dp(@parent.renderer._left_tile)
+      EOR   @_position_x[layer], X
+      AND   #$FFFE
+      BEQ   _skip_rebuild
+
+      ;; Cache needs to be recreated
+    _require_rebuild:
+      LDA   dp(@parent.renderer._left_tile)
+      STA   @_position_x[layer], X
+      LDA   dp(@parent.renderer._top_tile)
+      STA   @_position_y[layer], X
+
+      yield
+
+    _skip_rebuild:
+    end
+
+    ;; Calculates the tilemap offset
+    macro __calculate_in_tilemap_offset
+      _left_tile = dp(@parent.renderer._left_tile)
+      _top_tile = dp(@parent.renderer._top_tile)
+      @parent.storage.bgtile_data_read_offset _left_tile, _top_tile, @update_width, @update_height
+      STA   dp(@parent.renderer._tilemap_read_offset)
+    end
+
+    ;; Calculate write offset
+    macro __calculate_write_offset
+      LDA   dp(@_generated_axis_tile)
+      AND   #@axis_buffer_size.bitmask & $FFFE
+      ASL   A
+      STA   dp(@parent.renderer._tilemap_write_offset)
+
+      LDA   dp(@_scroll_axis_tile)
+      AND   #$2
+      (@scroll_buffer_size / 2).multiplicated_register_A
+      CLC
+      ADC   #@scroll_buffer
+      STA   dp(@parent.renderer._write_target)
+    end
+
+    ;; Builds the layer
+    macro _configure_layer_for_build(layer)
+      LDA   @parent.storage.layer_address(layer)
+      STA   dp(@parent.renderer._origin_map)
+      unless @parent.tileset_storage.nil?
+        LDA   #@parent.tileset_storage.reference_index_for(@parent.tilemap_layer(layer).layer.layer_id)
+        STA   dp(@parent.renderer._origin_tileset)
+      end
+    end
+
+    ;; Iterates though all layers
+    macro for_each_layer
+      _parent = @parent
+      _is_first_layer = true
+      @parent.layers.each do |layer|
+        unless _is_first_layer
+          LDA   dp(_parent.renderer._write_target)
+          CLC
+          ADC   #single_bg_scroll_buffer_size
+          STA   dp(_parent.renderer._write_target)
+        end
+        _is_first_layer = false
+        
+        _configure_layer_for_build layer
+        yield
+      end
+    end
+
+    ;; Calculates the tilemap offset
+    macro __prepare_build_layer
+      __calculate_in_tilemap_offset
+      __calculate_write_offset
+      RTS
+    end
+
+    ;; Increments the write address in A
+    macro _increment_write_address_from_stack
+      PLA
+      (@_num_bgtiles_other * 2).add_to_A
+      AND   #$FFFF ^ (single_bg_scroll_buffer_size >> 1)
+      TAX
+    end
+
+    ;; Increments the read address in A
+    macro _increment_read_address_from_stack
+      raise "_increment_read_address_from_stack not implemented"
+    end
+
+    ;; Plots the tile to the ram
+    macro _plot_tile_to_ram(x, y, bg)
+      raise "_plot_tile_to_ram has not been implemented"
+    end
+
+    ;; Plots a tile flipped
+    macro _plot_tile_flipped(x, y, mask)
+      if @parent.tileset_storage.nil?
+        raise "Todo: _plot_tile_flipped w/o tileset_storage"
+      end
+
+      @parent.tileset_storage.generate_load_flipped_tile_code x, y, mask do |x, y, bg|
+        _plot_tile_to_ram x, y, bg
+      end
+    end
+
+    ;; Plots the tile
+    macro __plot_tile
+      @parent.storage.generate_load_tile_code @parent.tileset_storage, dp(@parent.renderer._calc32a), dp(@parent.renderer._origin_tileset) do |x, y, mask|
+        _plot_tile_flipped x, y, mask
+      end
+      RTS
+    end
+
+    ;; Builds the cache for this layer
+    macro __build_layer_cache
+      LDY   #@_num_tiles_to_generate
+      STY   dp(@parent.renderer._current_row)
+      LDA   dp(@parent.renderer._tilemap_read_offset)
+      CLC
+      ADC   dp(@parent.renderer._origin_map)
+      TAY
+      LDA   dp(@parent.renderer._tilemap_write_offset)
+      CLC
+      ADC   dp(@parent.renderer._write_target)
+      TAX
+
+    _loop:
+      PHY
+      PHX
+      Debug.allow_invalid_ram_access 2
+      LDA   0, Y
+      _plot_tile
+
+      DEC   dp(parent.renderer._current_row)
+      BZE   _end_of_loop
+
+      _increment_write_address_from_stack
+      _increment_read_address_from_stack
+      BRA   _loop
+
+    _end_of_loop:
+      PLA
+      PLA
+      RTS
+    end
+
+    ;; Builds the cache
+    macro _build_cache
+      _prepare_build_layer
+
+      for_each_layer do
+        _build_layer_cache
+      end
+    end
+
+    ;; Preconfigures the queue copy
+    macro _preconfigure_queue_copy(layer)
+      raise "_preconfigure_queue_copy missing"
+    end
+    
+    macro __tmp_queue_copy(layer)
+      raise "__tmp_queue_copy missing"
+    end
+
+    ;; Queues the copy
+    macro _queue_copy(layer=nil)
+      CPU.with_bank VARIABLE_RAM_BANK, from_bank: FIXED_RAM_BANK do
+        _preconfigure_queue_copy layer
+
+        __tmp_queue_copy layer
+      end
+    end
+
+    ;; Builds the default scroll routine
+    macro __build_default_fast_scroll
+      _test_cache_rebuild_is_necessary @parent.layers.first do
+        _build_cache
+      end
+
+      _queue_copy
+    end
+
+    ;; Internal scroll routine
+    macro _scroll_layer(layer)
+      _parent = @parent
+
+      initialize_variables_for_scroll layer
+
+      _test_cache_rebuild_is_necessary layer do
+        _prepare_build_layer
+
+        _layer_index = _parent.index_of_layer(layer)
+        if _layer_index > 0
+          LDA   dp(_parent.renderer._write_target)
+          CLC
+          ADC   #single_bg_scroll_buffer_size * _layer_index
+          STA   dp(_parent.renderer._write_target)
+        end
+
+        _configure_layer_for_build layer
+        _build_layer_cache
+      end
+
+      _queue_copy layer
+
+    end
+
+    ;; Scrolls a specific layer only
+    macro scroll_layer(layer)
+      JSR   @layer_scroll_routine[layer]
+    end
+
+    macro __scroll
+      initialize_variables_for_scroll @parent.layers.first
+      __build_default_fast_scroll
+      RTS
+    end
+  end
+end

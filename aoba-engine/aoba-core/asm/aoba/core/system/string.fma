@@ -1,0 +1,26 @@
+class String
+
+  macro size_in_bytes
+    case self
+    when :uint8
+      1
+    when :uint16
+      2
+    when :uint24
+      3
+    when :uint32
+      4
+    when :int8
+      1
+    when :int16
+      2
+    when :int24
+      3
+    when :int32
+      4
+    else
+      raise "Unknown size_in_bytes"
+    end
+  end
+
+end

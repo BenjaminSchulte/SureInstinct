@@ -1,0 +1,16 @@
+locate_at address: $0200..$FFC0
+
+require "configuration"
+require "audio/engine"
+require "audio/memory"
+require "audio/channel"
+require "audio/script"
+require "audio/main"
+require "audio/ipc"
+require "audio/sample"
+require "audio/sfx"
+require "audio/song"
+require "audio/command"
+require "audio/stream"
+require "audio/init"
+require "init"

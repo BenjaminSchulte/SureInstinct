@@ -1,0 +1,296 @@
+module Aoba::Tileset::Action::Animation
+
+  ;; Temporary RAM
+  scope :TempRAM, in: ActionRAM
+
+  ;; Counter
+  declare :counter, as: :uint16, in: TempRAM
+
+  ;; Current animation index pointer
+  declare :animation_index, as: :uint16, in: TempRAM
+
+  ;; Current animation
+  declare :current_animation, as: :uint16, in: TempRAM
+
+  ;; Current animation
+  declare :vram_address, as: :uint16, in: TempRAM
+
+  ;; Current animation
+  declare :current_script, as: :uint16, in: TempRAM
+
+  ;; Needs to be zero in order to update vram
+  declare :allow_update_vram, as: :uint16, in: TempRAM
+
+  ;; A timer has been triggered
+  ;; @param X TimerInstance
+  def on_timer_triggered
+    X.is_a! Thread::Timer::TimerInstance
+
+    LDA   X[:userdata]
+    TAY
+    Y.is_a! TileAnimation
+
+    LDA   global_flags
+    BIT   #GlobalFlag::ANIMATION_PAUSED
+    BZE   _not_paused
+    CPU.set A: 8
+    LDA   #1
+    STA   Y[:duration_left]
+    CPU.set A: 16
+    RTS
+
+  _not_paused:
+    TXA
+    CMP   Y[:timer]
+    BNE   _rts
+
+  _is_valid:
+    ;; Allocates a VBLANK task
+    STY   dp(current_animation)
+    STZ   dp(allow_update_vram)
+    LDA   Y[:script]
+    TAX
+    
+  initial_load:
+    CPU.set A: 8
+
+  _loop_script:
+    STX   dp(current_script)
+  _loop_script_no_store:
+    INC   dp(current_script)
+    LDA   ANIMATION_ROM_BANK.as_bank.long, X
+    BPL   _is_low_command
+
+    ;; $80..$FF
+  _is_high_command:
+    CMP   #$C0
+    BLT   _is_custom_command
+
+    ;; Loads a new frame into the VRAM
+  _is_frame:
+    STA   dp(_calc0)
+
+    LDA   dp(allow_update_vram)
+    BNZ   _skip_is_frame
+
+    CPU.set A: 16
+    Aoba::VBlank::Job.allocate_job_icb_long :vram
+
+    ;; Copy data size and target to job
+    LDY   dp(current_animation)
+    Y.is_a! TileAnimation
+    LDA   Y[:data_size]
+    STA   X[:data_size]
+    LDA   Y[:vram_offset]
+    STA   X[:target_address]
+
+    ;; Loads data from script
+    TXY
+    LDX   dp(current_script)
+    LDA   ANIMATION_ROM_BANK.as_bank.long, X
+    STA   Y[:source_address]
+    CPU.set A: 8
+    LDA   dp(_calc0)
+    STA   Y[:source_address] + 2
+    TYX
+
+    ;; Queues the vblank copy
+    JSL   Aoba::VBlank::Job.try_queue_icb_long
+
+  _skip_is_frame:
+    LDX   dp(current_script)
+    INX
+    INX
+    BRA   _loop_script
+
+    ;; --
+    A.pretend_size 8
+
+    ;; $00..$7F - Delay
+  _is_low_command:
+    CPU.set A: 16
+    AND   dp(x00FF)
+    TAY
+
+    ;; Triggers the timer
+    LDX   dp(current_animation)
+    LDA   dp(current_script)
+    X.is_a! TileAnimation
+    STA   X[:script]
+
+  _trigger_delay:
+    LDA   X[:timer]
+    TAX
+    LDA   #0
+
+    JSL   Thread::Timer.queue_long
+  _rts:
+    RTS
+    
+    ;; ---
+    A.pretend_size 8
+
+    ;; $80..$BF
+  _is_custom_command:
+    CMP   #$80
+    BEQ   _is_loop_command
+
+    CPU.set A: 16
+    AND   #$7F
+    DEC   A
+    ASL   A
+    TAX
+    if AnimationCommand._collection.index.nil?
+      fatal_error "no animation index defined"
+    else
+      JSR   AnimationCommand._collection.index.indirect, X
+    end
+    CPU.set A: 8
+    LDX   dp(current_script)
+    JMP   _loop_script
+
+  _is_loop_command:
+    CPU.set A: 16
+    LDA   ANIMATION_ROM_BANK.as_bank.long + 1, X
+    TAX
+    CPU.set A: 8
+    JMP   _loop_script
+  end
+
+  ;; Finds a free slot
+  ;; @return X free slot address
+  ;; @return C is set if no slot found
+  ;; @ignore-thread-safety
+  def _find_free_slot_icb
+    LDX   #tile_animation_index
+    LDY   #MAX_TILE_ANIMATIONS
+
+  _loop:
+    LDA   0, X
+    BZE   _found_slot
+
+    TXA
+    CLC
+    ADC   #TileAnimation.size
+    TAX
+    DEY
+    BNZ   _loop
+    SEC
+    RTS
+
+  _found_slot:
+    CLC
+  end
+
+  ;; Loads an animation
+  ;; @param dp(counter) count
+  ;; @param X index
+  def load_animation_list
+    Thread.assert_thread thread_id
+
+    STZ   dp(allow_update_vram)
+    DEC   dp(allow_update_vram)
+    STX   dp(animation_index)
+  
+    ;; Creates an animation
+  _loop:
+    _find_free_slot_icb
+    BCS   _failed
+
+    ;; We found a slot
+  _found_slot:
+    STX   dp(current_animation)
+
+    ;; Allocates a timer
+    LDA   thread_id
+    JSL   Thread::Timer.allocate_icb_long
+    X.is_a! Thread::Timer::TimerInstance
+    LDA   dp(current_animation)
+    STA   X[:userdata]
+    TAY
+
+    ;; Configures the tile animation
+    Y.is_a! TileAnimation
+    TXA
+    STA   Y[:timer]
+    
+    LDX   dp(animation_index)
+    LDA   ANIMATION_ROM_BANK.as_bank.long, X
+    CLC
+    ADC   dp(vram_address)
+    STA   Y[:vram_offset]
+    LDA   ANIMATION_ROM_BANK.as_bank.long + 2, X
+    STA   Y[:data_size]
+    LDA   ANIMATION_ROM_BANK.as_bank.long + 4, X
+    STA   Y[:script]
+
+    ;; Reads the first delay to trigger the timer
+    TAX
+    JSR   on_timer_triggered.initial_load
+
+    ;; Increases the current animation pointer
+    LDA   dp(animation_index)
+    CLC
+    ADC   #6
+    STA   dp(animation_index)
+
+    ;; Resumes with the next animation
+    DEC   dp(counter)
+    BNZ   _loop
+
+  _failed:
+  end
+
+  ;; Unloads all tileset animations
+  def unload_tileset_animation_list
+    LDX   #tile_animation_index
+    LDY   #MAX_TILE_ANIMATIONS
+
+  _loop:
+    LDA   0, X
+    BZE   _skip_empty_slot
+
+  _unload_record:
+    X.is_a! TileAnimation
+    PHX
+    PHY
+    STZ   0, X
+    TAX
+    JSL   Thread::Timer.free_icb_long
+    PLY
+    PLX
+
+  _skip_empty_slot:
+    TXA
+    CLC
+    ADC   #TileAnimation.size
+    TAX
+    DEY
+    BNZ   _loop
+  end
+
+  ;; Loads all tileset animations
+  ;; @param X tileset
+  ;; @param Y vram address
+  def load_tileset_animation_list
+    Thread.assert_thread thread_id
+
+    STY   dp(vram_address)
+
+    ;; Loads the amount of animations
+    LDA   HEADER_ROM_BANK.as_bank(RomHeader.offset_of(:num_animations)).long, X
+    AND   dp(x00FF)
+    BZE   _skip_load_tileset_animations
+
+    STA   dp(counter)
+    LDA   HEADER_ROM_BANK.as_bank(RomHeader.offset_of(:animation_index)).long, X
+    TAX
+
+    JMP   load_animation_list
+
+  _skip_load_tileset_animations:
+    RTS
+  end
+
+end
+

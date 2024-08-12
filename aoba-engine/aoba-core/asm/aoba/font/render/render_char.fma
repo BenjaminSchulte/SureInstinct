@@ -1,0 +1,395 @@
+module Aoba::Font::Render::Stage::RenderChar
+
+  ;; RAM
+  scope :TempRAM, in: StageRAM
+
+  ;; The number of tiles used for the current character
+  declare :num_tiles_x, as: :uint16, in: TempRAM
+
+  ;; The current color
+  declare :current_color, as: :uint16, in: TempRAM
+
+  ;; The character height
+  declare :character_height, as: :uint16, in: TempRAM
+
+  ;; The offset from the top
+  offset_top = character_height + 1
+
+  ;; The offset to the left
+  declare :offset_left, as: :uint16, in: TempRAM
+
+  ;; How many pixel to advance
+  advance = offset_left + 1
+
+  ;; How many pixel do we need to shift the character?
+  declare :shift_pixels, as: :uint16, in: TempRAM
+
+  ;; The current characters offset
+  declare :current_character_offset, as: :uint16, in: TempRAM
+
+  ;; The current offset within the buffer
+  declare :buffer_offset, as: :uint16, in: TempRAM
+
+  ;; The remaining character height
+  declare :character_height_remaining, as: :uint16, in: TempRAM
+
+  ;; The next character data
+  declare :next_character_data, as: :uint16, in: TempRAM
+
+  ;; The next character data
+  declare :empty_next_character_data, as: :uint16, in: TempRAM
+
+  ;; Initializes the RAM
+  macro _initialize_ram
+    STZ   dp(empty_next_character_data)
+    LDA   X[:color_and_flags]
+    AND   #$7
+    ASL   A
+    STA   dp(current_color)
+    AND   #Flag::COLOR_MASK << 1
+    CMP   #3 << 1
+    BNE   _no_2bpp
+    DEC   dp(empty_next_character_data)
+  _no_2bpp:
+  end
+
+  ;; Calculates the buffer offset
+  macro _calculate_buffer_offset
+    LDA   dp(current_color)
+    AND   #Flag::SINGLE_ROW << 1
+    BZE   _two_rows
+
+    LDA   X[:current_x_position]
+    ASL   A
+    AND   #$FFF0
+    BRA   _resume
+
+  _two_rows:
+    LDA   X[:current_x_position]
+    ASL   A
+    ASL   A
+    AND   #$FFE0
+  
+  _resume:
+    STA   dp(buffer_offset)
+    LDA   dp(offset_top)
+    AND   dp(x00FF)
+    ASL   A
+    CLC
+    ADC   dp(buffer_offset)
+    ADC   X[:target_buffer]
+    STA   dp(buffer_offset)
+  end
+
+  ;; Calculates the height remaining
+  macro _calculate_height
+    LDA   dp(character_height)
+    AND   dp(x00FF)
+    STA   dp(character_height_remaining)
+  end
+
+  ;; Stores the result
+  macro _store_result_character
+    LDX   dp(current_color)
+    STA   dp(calc0)
+    CPU.set A: 8
+    JSR   write_color_bit.indirect, X
+    CPU.set A: 16
+  end
+
+  ;; Points to the related shift routine
+  datablock shift_pixel_pointers
+    dw   execute._store_pixel_result
+    dw   execute._shift_1
+    dw   execute._shift_2
+    dw   execute._shift_3
+    dw   execute._shift_4
+    dw   execute._shift_5
+    dw   execute._shift_6
+    dw   execute._shift_7
+  end
+
+  ;; Calculates the line length of this row
+  def execute
+    Thread.assert_thread thread_id
+
+    LDX   dp(state)
+    X.is_a! State
+
+    _initialize_ram
+
+    LDY   dp(current_character_offset)
+  
+    ;; Loops through each X tile
+  _loop_character:
+    _calculate_buffer_offset
+    _calculate_height
+    BZE   _finished_character
+
+    ;; Copies pixels for every row
+  _loop_y:
+    LDA   dp(empty_next_character_data)
+    STA   dp(next_character_data)
+    LDA   font_address.indirect.long, Y
+    INY
+    INY
+    LDX   dp(shift_pixels)
+    JMP   shift_pixel_pointers.indirect, X
+
+    ;; Shift amount depends on current offset
+  _shift_7:
+    LSR   A
+    ROR   dp(next_character_data)
+  _shift_6:
+    LSR   A
+    ROR   dp(next_character_data)
+  _shift_5:
+    LSR   A
+    ROR   dp(next_character_data)
+  _shift_4:
+    LSR   A
+    ROR   dp(next_character_data)
+  _shift_3:
+    LSR   A
+    ROR   dp(next_character_data)
+  _shift_2:
+    LSR   A
+    ROR   dp(next_character_data)
+  _shift_1:
+    LSR   A
+    ROR   dp(next_character_data)
+
+    ;; Stores the result
+  _store_pixel_result:
+    _store_result_character
+
+    ;; Resumes with the next row
+    INC   dp(buffer_offset)
+    INC   dp(buffer_offset)
+    DEC   dp(character_height_remaining)
+    BNZ   _loop_y
+
+    ;; Resumes with the next X tiles
+  _end_of_loop_y:
+    LDX   dp(state)
+    X.is_a! State
+
+    DEC   dp(num_tiles_x)
+    BZE   _finished_character
+
+    ;; Resumes with the next X tile
+    LDA   X[:current_x_position]
+    CLC
+    ADC   #16
+    STA   X[:current_x_position]
+    BRA   _loop_character
+
+    ;; The character has been copied successfully
+  _finished_character:
+    LDA   dp(advance)
+    AND   dp(x00FF)
+    CLC
+    ADC   X[:current_x_position]
+    STA   X[:current_x_position]
+  end
+
+  ;; ---------------------------------------------------------------------------
+  ;;  Pixel plotting
+  ;; ---------------------------------------------------------------------------
+  datablock read_additional_data_shift_pointers
+    dw   read_additional_data._rts
+    dw   read_additional_data._shift_1
+    dw   read_additional_data._shift_2
+    dw   read_additional_data._shift_3
+    dw   read_additional_data._shift_4
+    dw   read_additional_data._shift_5
+    dw   read_additional_data._shift_6
+    dw   read_additional_data._shift_7
+  end
+
+  def read_additional_data
+    CPU.set A: 16
+    STZ   dp(next_character_data)
+    LDA   font_address.indirect.long, Y
+    INY
+    INY
+    LDX   dp(shift_pixels)
+    JMP   read_additional_data_shift_pointers.indirect, X
+
+    ;; Shift amount depends on current offset
+  _shift_7:
+    LSR   A
+    ROR   dp(next_character_data)
+  _shift_6:
+    LSR   A
+    ROR   dp(next_character_data)
+  _shift_5:
+    LSR   A
+    ROR   dp(next_character_data)
+  _shift_4:
+    LSR   A
+    ROR   dp(next_character_data)
+  _shift_3:
+    LSR   A
+    ROR   dp(next_character_data)
+  _shift_2:
+    LSR   A
+    ROR   dp(next_character_data)
+  _shift_1:
+    LSR   A
+    ROR   dp(next_character_data)
+  _rts:
+    STA   dp(calc0)
+    CPU.set A: 8
+    RTS
+  end
+
+  macro __write_single_color(next_tile, offset)
+    ORA   next_tile + offset, X
+    STA   next_tile + offset, X
+
+    XBA
+    ORA   offset, X
+    STA   offset, X
+
+    LDA   dp(next_character_data + 1)
+    ORA   next_tile * 2 + offset, X
+    STA   next_tile * 2 + offset, X
+  end
+
+  macro __write_two_colors(next_tile)
+    ORA   next_tile, X
+    STA   next_tile, X
+
+    LDA   dp(calc0)
+    ORA   next_tile + 1, X
+    STA   next_tile + 1, X
+
+    XBA
+    ORA   0, X
+    STA   0, X
+
+    LDA   dp(calc0 + 1)
+    ORA   1, X
+    STA   1, X
+
+    LDA   dp(next_character_data + 1)
+    ORA   next_tile * 2, X
+    STA   next_tile * 2, X
+
+    LDA   dp(next_character_data + 1)
+    ORA   next_tile * 2 + 1, X
+    STA   next_tile * 2 + 1, X
+  end
+
+  datablock mask_shift_bitmask
+    dw   $0000
+    dw   $8080
+    dw   $C0C0
+    dw   $E0E0
+    dw   $F0F0
+    dw   $F8F8
+    dw   $FCFC
+    dw   $FEFE
+    dw   $FFFF
+  end
+
+  macro __mask_color(next_tile)
+    LDX   dp(buffer_offset)
+    AND   next_tile, X
+    STA   next_tile, X
+
+    LDA   dp(calc0)
+    AND   next_tile + 1, X
+    STA   next_tile + 1, X
+
+    XBA
+    LDX   dp(shift_pixels)
+    ORA   mask_shift_bitmask.long, X
+    LDX   dp(buffer_offset)
+    AND   0, X
+    STA   0, X
+
+    LDA   dp(calc0 + 1)
+    LDX   dp(shift_pixels)
+    ORA   mask_shift_bitmask.long, X
+    LDX   dp(buffer_offset)
+    AND   1, X
+    STA   1, X
+
+    LDA   dp(next_character_data + 1)
+    AND   next_tile * 2, X
+    STA   next_tile * 2, X
+
+    LDA   dp(next_character_data + 1)
+    AND   next_tile * 2 + 1, X
+    STA   next_tile * 2 + 1, X
+  end
+
+  ;; Writes the color 0 (bitmap 11)
+  def _write_color_0_2row
+    LDX   dp(buffer_offset)
+    __write_two_colors RENDER_BUFFER_NEXT_TILE_X_2ROWS
+  end
+
+  ;; Writes the color 1
+  def _write_color_1_2row
+    LDX   dp(buffer_offset)
+    __write_single_color RENDER_BUFFER_NEXT_TILE_X_2ROWS, 1
+  end
+
+  ;; Writes the color 2
+  def _write_color_2_2row
+    LDX   dp(buffer_offset)
+    __write_single_color RENDER_BUFFER_NEXT_TILE_X_2ROWS, 0
+  end
+
+  ;; Writes a 2bpp color
+  def _write_color_2bpp_2row
+    __mask_color RENDER_BUFFER_NEXT_TILE_X_2ROWS
+    read_additional_data
+    _write_color_1_2row
+    read_additional_data
+    JMP   _write_color_2_2row
+  end
+
+  ;; Writes the color 0 (bitmap 11)
+  def _write_color_0_1row
+    LDX   dp(buffer_offset)
+    __write_two_colors RENDER_BUFFER_NEXT_TILE_X_1ROW
+  end
+
+  ;; Writes the color 1
+  def _write_color_1_1row
+    LDX   dp(buffer_offset)
+    __write_single_color RENDER_BUFFER_NEXT_TILE_X_1ROW, 1
+  end
+
+  ;; Writes the color 2
+  def _write_color_2_1row
+    LDX   dp(buffer_offset)
+    __write_single_color RENDER_BUFFER_NEXT_TILE_X_1ROW, 0
+  end
+
+  ;; Writes a 2bpp color
+  def _write_color_2bpp_1row
+    __mask_color RENDER_BUFFER_NEXT_TILE_X_1ROW
+    read_additional_data
+    _write_color_2_1row
+    read_additional_data
+    JMP   _write_color_1_1row
+  end
+
+  ;; Points to the write color routines
+  datablock write_color_bit
+    dw   _write_color_0_2row
+    dw   _write_color_1_2row
+    dw   _write_color_2_2row
+    dw   _write_color_2bpp_2row
+    dw   _write_color_0_1row
+    dw   _write_color_1_1row
+    dw   _write_color_2_1row
+    dw   _write_color_2bpp_1row
+  end
+
+end

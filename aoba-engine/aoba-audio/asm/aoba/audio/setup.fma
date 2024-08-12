@@ -1,0 +1,12 @@
+Aoba::Event.on :initialize_aoba_modules do
+  Aoba::AudioThread.allocate_and_queue
+end
+
+Aoba::Event.on :irq_audio_update do
+  if Aoba::ENABLE_SA1
+    ;;;Debug.todo "SA1 Audio vblank_update"
+  else
+
+    Aoba::Audio::Action::PlayStream.vblank_update
+  end
+end

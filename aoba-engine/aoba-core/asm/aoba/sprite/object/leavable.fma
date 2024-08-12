@@ -1,0 +1,18 @@
+module Aoba::Sprite
+
+  class Leavable
+    ;; Movable flags
+    declare :last_tile_data, as: :uint16
+    declare :last_tile_index, as: :uint16
+
+    ;; Configures the class when being included
+    macro self.configure(Instance)
+      Instance.event.on :reset16 do
+        STZ   X[:last_tile_data]
+        LDA   #$FFFF
+        STA   X[:last_tile_index]
+      end
+    end
+  end
+
+end

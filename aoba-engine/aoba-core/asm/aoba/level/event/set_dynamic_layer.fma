@@ -1,0 +1,49 @@
+module Aoba::Level::Event::SetDynamicLayer
+
+  ;; The event
+  class Event < Base
+    declare :config_address, as: :uint16
+  end
+
+  class EventConfig
+    ;; Address of the dynamic layer pointer
+    declare :dynamic_layer_pointer, as: :uint16
+
+    ;; Address of the new layer data
+    declare :layer, as: :uint16
+
+    ;; Camera X
+    declare :camera_x, as: :uint16
+
+    ;; Camera X
+    declare :camera_y, as: :uint16
+  end
+
+  ;; Temporary RAM
+  scope :TempRAM, in: ActionRAM
+
+  macro create_for(tilemap_renderer)
+    List.create "SetDynamicLayer" do |id|
+      Y.is_a! Event
+      LDX   Y[:config_address]
+      TXY
+      Y.is_a! EventConfig
+
+      LDX   Y[:dynamic_layer_pointer]
+      LDA   Y[:layer]
+      STA   FIXED_RAM_BANK.as_bank.long, X
+      LDA   Y[:camera_x]
+      STA   tilemap_renderer.camera.x.long
+      LDA   Y[:camera_y]
+      STA   tilemap_renderer.camera.y.long
+      TYX
+      SEI
+      JSL   Aoba::Memory.free_miniblock_long
+      CLI
+
+      tilemap_renderer.invoke_icb
+      tilemap_renderer.camera.update_composer_scrolling
+    end
+  end
+
+end

@@ -1,0 +1,638 @@
+module Game::Ball::Movement
+
+  class BallAxisState
+    ;; Last mouse speed
+    declare :last_mouse_speed, as: :uint16
+
+    ;; Rotation value
+    declare :rotation, as: :uint16
+  end
+
+  ;; RAM allocation: TODO: Scene RAM
+  scope :RAM, in: ::Memory::VariableRAM
+
+  ;; The player sprite
+  declare :player, as: :uint16, in: RAM
+
+  ;; The last mouse speed
+  declare :axis_state_x, as: BallAxisState, in: RAM
+
+  ;; The last mouse speed
+  declare :axis_state_y, as: BallAxisState, in: RAM
+
+  ;; Current base frame counter for ball animation
+  declare :ball_rotation_base_frame, as: :uint16, in: RAM
+
+  ;; The rotation axis
+  declare :ball_rotation_axis_max, as: :uint16, in: RAM
+
+  ;; The parachute sprite
+  declare :parachute_sprite, as: :uint16, in: RAM
+
+  ;; Abyss: Respawn position
+  declare :abyss_respawn_x, as: :uint16, in: RAM
+
+  ;; Abyss: Respawn position
+  declare :abyss_respawn_y, as: :uint16, in: RAM
+
+  ;; Counter while we allow the bomb ball speed
+  declare :bomb_ball_speed_counter, as: :uint16, in: RAM
+
+
+  ;; RAM allocation
+  scope :TempRAM, in: Aoba::Sprite::ActionRAM
+
+  ;; The mouse speed
+  declare :speed, as: :uint32, in: TempRAM
+
+  ;; Temporary RAM
+  declare :update_speed, as: :uint16, in: TempRAM
+
+  ;; Temporary RAM
+  declare :calc0, as: :uint16, in: TempRAM
+
+  ;; The flags
+  declare :ball_flags, as: :uint16, in: TempRAM
+
+  ;; The slow speed
+  declare :slow_speed, as: :uint16, in: TempRAM
+
+  ;; The fast speed
+  declare :fast_speed, as: :uint16, in: TempRAM
+
+  ;; Calculates the speed
+  ;; @param X aligned gamepad
+  @locate_at bank: Aoba::SPRITE_ROM_BANK
+  def calculate_mouse_axis_speed
+    X.is_a! Aoba::Control::GamepadPlayer
+    Y.is_a! BallAxisState
+    
+    SEI
+    LDA   X[:mouse_x]
+    STZ   X[:mouse_x]
+    CLI
+    BNZ   _has_mouse_speed
+    
+    LDA   Y[:last_mouse_speed]
+    BZE   _no_mouse_movement
+    STA   dp(calc0)
+    LDA   #0
+    Debug.allow_invalid_ram_access 2
+    STA   Y[:last_mouse_speed]
+    LDA   dp(calc0)
+    BPL   _positive_slow
+    BRA   _negative_slow
+
+  _has_mouse_speed:
+    STA   Y[:last_mouse_speed]
+    BPL   _positive_speed
+
+  _negative_speed:
+    CMP   #-BALL_FAST_MOVEMENT_BORDER
+    BGE   _negative_slow
+
+  _negative_fast:
+    LDA   #-BALL_ICE_SLIPPAGE_SPEED
+    STA   dp(calc0)
+    LDA   dp(fast_speed)
+    EOR   #$FFFF
+    BRA   _update_speed
+
+  _negative_slow:
+    LDA   dp(slow_speed)
+    EOR   #$FFFF
+    STA   dp(calc0)
+    BRA   _update_speed
+
+    ;; --
+
+  _positive_speed:
+    CMP   #BALL_FAST_MOVEMENT_BORDER + 1
+    BLT   _positive_slow
+
+  _positive_fast:
+    LDA   #BALL_ICE_SLIPPAGE_SPEED
+    STA   dp(calc0)
+    LDA   dp(fast_speed)
+    BRA   _update_speed
+
+  _positive_slow:
+    LDA   dp(slow_speed)
+    STA   dp(calc0)
+
+  _update_speed:
+    CLC
+    ADC   dp(speed) + 1
+    BPL   _is_positive_speed
+
+  _is_negative_speed:
+    CMP   Level.negative_max_ball_speed
+    BGE   _keep_negative_speed
+    LDA   Level.negative_max_ball_speed
+  _keep_negative_speed:
+    STZ   dp(speed) + 2
+    DEC   dp(speed) + 2
+    STA   dp(speed) + 1
+    BRA   _update_rotation_from_speed
+
+
+    ; ---
+  _no_mouse_movement:
+    LDA   #0
+    Debug.allow_invalid_ram_access 2
+    STA   Y[:last_mouse_speed]
+    LDA   dp(ball_flags)
+    BMI   _no_speed_change
+    LDA   bomb_ball_speed_counter
+    BNZ   _update_rotation_from_speed
+    LDA   dp(speed + 1)
+    STA   dp(calc0)
+    BZE   _stop
+    BPL   _slow_down_positive_speed
+
+  _slow_down_negative_speed:
+    CLC
+    ADC   #BALL_SLOW_DOWN
+    BZE   _stop
+    BPL   _stop
+    STA   dp(speed + 1)
+    BRA   _update_rotation_from_speed
+
+  _slow_down_positive_speed:
+    SEC
+    SBC   #BALL_SLOW_DOWN
+    BMI   _stop
+    STA   dp(speed + 1)
+    BRA   _update_rotation_from_speed
+
+  _stop:
+    STZ   dp(speed)
+    STZ   dp(speed + 2)
+
+  _no_speed_change:
+    RTS
+    ;; ---
+
+  _is_positive_speed:
+    CMP   Level.max_ball_speed
+    BLT   _positive_set_rts
+    LDA   Level.max_ball_speed
+  _positive_set_rts:
+    STZ   dp(speed) + 2
+    STA   dp(speed) + 1
+    
+  _update_rotation_from_speed:
+    LDA   Level.dead_wait_time
+    BZE   _no_adjust_dead_wait_time
+    CMP   #DEAD_WAIT_TIME
+    BNE   _no_adjust_dead_wait_time
+    DEC   Level.dead_wait_time
+  _no_adjust_dead_wait_time:
+
+    LDA   dp(ball_flags)
+    BMI   _update_speed_from_max
+    LDA   dp(speed) + 1
+    BRA   _do_update_speed
+
+  _update_speed_from_max:
+    LDA   dp(calc0)
+  _do_update_speed:
+    CLC
+    ADC   Y[:rotation]
+    STA   Y[:rotation]
+    RTS
+  end
+
+  ;; Updates the axis speed
+  macro _update_axis_speed
+    LDA   Y[:speed_x_decimal]
+    STA   dp(speed)
+    LDA   Y[:speed_x]
+    STA   dp(speed + 2)
+    LDY   #axis_state_x
+    calculate_mouse_axis_speed
+    LDY   player
+    LDA   dp(speed)
+    STA   Y[:speed_x_decimal]
+    LDA   dp(speed + 2)
+    STA   Y[:speed_x]
+    INX
+    INX
+
+    LDA   Y[:speed_y_decimal]
+    STA   dp(speed)
+    LDA   Y[:speed_y]
+    STA   dp(speed + 2)
+    LDY   #axis_state_y
+    calculate_mouse_axis_speed
+    LDY   player
+    LDA   dp(speed)
+    STA   Y[:speed_y_decimal]
+    LDA   dp(speed + 2)
+    STA   Y[:speed_y]
+  end
+
+  datablock times7
+    BALL_AXIS_ROTATION_SPRITES.times do |i|
+      db i * BALL_AXIS_ROTATION_SPRITES
+    end
+  end
+
+  macro _fix_rotation(axis)
+    LDA   axis.rotation + 1
+    BPL   _is_positive
+    CLC
+  _loop_negative:
+    ADC   ball_rotation_axis_max
+    BMI   _loop_negative
+  _is_positive:
+    SEC
+  _loop:
+    CMP   ball_rotation_axis_max
+    BLT   _is_ok
+    SBC   ball_rotation_axis_max
+    BRA   _loop
+  _is_ok:
+    STA   axis.rotation + 1
+  end
+
+  ;; Updates the rotation
+  macro _update_rotation
+    LDA   Level.global_ingame_flags
+    BIT   #Level::GlobalIngameFlag::CUSTOM_BALL_ANIMATION
+    BNZ   _skip_update_rotation
+
+    CPU.set A: 8
+    TDC ; AH = 0
+    XBA
+
+    _fix_rotation axis_state_x
+    STA   dp(calc0)
+    _fix_rotation axis_state_y
+    TAX
+    LDA   times7.long, X
+    CLC
+    ADC   dp(calc0)
+    CPU.set A: 16
+    ADC   ball_rotation_base_frame
+
+    TYX
+    TAY
+    LDA   #0 ;TODO: use global ID
+    Aoba::Sprite::Action::ManageSprite.assign_direct_frame
+
+  _skip_update_rotation:
+  end
+
+  @locate_at bank: Aoba::SPRITE_ROM_BANK
+  def _restore_ball_to_normal
+    LDX   player
+    X.is_a! Aoba::Sprite::Instance
+    CPU.set A: 8
+    LDA   X[:ball_flags]
+    AND   #$FF ^ BallFlag.BALL_ACTIVE_MASK
+    STA   X[:ball_flags]
+    LDA   #Assets::Sprite::Ball::MainPaletteID + 1
+    STA   X[:new_palette_index]
+    CPU.set A: 16
+    STZ   ball_rotation_base_frame
+    LDA   #BALL_AXIS_ROTATION_SPRITES
+    STA   ball_rotation_axis_max
+  end
+
+  macro _update_ball_power
+    LDA   Game::Level.global_ingame_flags
+    BIT   #Game::Level::GlobalIngameFlag.GAME_PAUSED | Game::Level::GlobalIngameFlag.TIME_PAUSED
+    BNZ   _skip_ball_power_and_other
+
+    LDA   Level.ball_power
+    BZE   _skip_ball_power
+
+    SEC
+    SBC   #BALL_POWER_DECREMENT_SPEED
+    STA   dp(Aoba::Sprite._calc0)
+    BNZ   _time_left
+
+    _restore_ball_to_normal
+    STZ   Level.ball_power
+    BRA   _update_ball_power_time
+
+  _time_left:
+    EOR   Level.ball_power
+    AND   #$FF00
+    BZE   _no_update_ui
+    LDA   dp(Aoba::Sprite._calc0)
+    STA   Level.ball_power
+  _update_ball_power_time:
+    __update_modified_attributes Game::Level::ModifiedAttribute::ITEM_TIME
+    BRA   _skip_ball_power
+
+  _no_update_ui:
+    LDA   dp(Aoba::Sprite._calc0)
+    STA   Level.ball_power
+  _skip_ball_power:
+
+    LDA   Level.dead_wait_time
+    BZE   _skip_ball_power_and_other
+    CMP   #DEAD_WAIT_TIME
+    BEQ   _skip_ball_power_and_other
+    DEC   Level.dead_wait_time
+  _skip_ball_power_and_other:
+  end
+
+  macro _calculate_speed_from_friction
+    Debug.allow_invalid_ram_access 1
+    LDA   Y[:ball_flags] - 1
+    BIT   #BallFlag.ICEBALL_ACTIVE << 8
+    BZE   _no_iceball
+    AND   #$FFFF ^ (BallFlag.IS_ON_ICE << 8)
+  _no_iceball:
+    STA   dp(ball_flags)
+    BPL   _default_speed
+
+  _ice_speed:
+    LDA   #BALL_ICE_SPEED
+    STA   dp(slow_speed)
+    BRA   _after_set_speed
+
+  _metal_ball:
+    LDA   #BALL_SLOW_SPEED
+    STA   dp(slow_speed)
+    LDA   #BALL_METAL_SPEED
+    BRA   _after_set_speed
+
+  _default_speed:
+    BIT   #BallFlag.METALBALL_ACTIVE << 8
+    BNZ   _metal_ball
+
+    LDA   #BALL_SLOW_SPEED
+    STA   dp(slow_speed)
+    LDA   #BALL_FAST_SPEED
+
+  _after_set_speed:
+    STA   dp(fast_speed)
+
+    LDA   bomb_ball_speed_counter
+    BZE   _no_bomb_ball
+    STZ   dp(slow_speed)
+    STZ   dp(fast_speed)
+  _no_bomb_ball:
+  end
+
+  ;; Updates gamepad keys to the mouse
+  macro _apply_gamepad_movement
+    LDA   Game::Level.global_ingame_flags
+    BIT   #Game::Level::GlobalIngameFlag.CONTROLS_DISABLED
+    BNZ   _skip_apply_movement
+
+    LDA   X[:keys]
+    AND   #Aoba::Control::Key.KEY_DIRECTION
+    BZE   _no_direction
+
+    STZ   X[:mouse_x]
+    STZ   X[:mouse_y]
+
+    LSR   A
+    LSR   A
+    LSR   A
+    LSR   A
+    LSR   A
+    STA   dp(calc0)
+    BCC   _no_right
+
+  _right:
+    LDA   #128
+    LSR   dp(calc0)
+    BRA   _store_x_and_resume
+
+  _no_right:
+    LSR   dp(calc0)
+    BCC   _test_y_axis
+
+  _left:
+    LDA   #-128
+  _store_x_and_resume:
+    STA   X[:mouse_x]
+
+  _test_y_axis:
+    LSR   dp(calc0)
+    BCC   _no_down
+
+  _down:
+    LDA   #128
+    BRA   _store_y_and_resume
+
+  _no_down:
+    LSR   dp(calc0)
+    BCC   _no_direction
+  
+  _up:
+    LDA   #-128
+  _store_y_and_resume:
+    STA   X[:mouse_y]
+    BRA   _no_direction
+
+  _skip_apply_movement:
+    STZ   X[:mouse_x]
+    STZ   X[:mouse_y]
+
+  _no_direction:
+  end
+
+  ;; Updates the rotation from the current speed
+  macro _rotate_with_last_speed
+    X.is_a! Aoba::Control::GamepadPlayer
+    SEI
+    STZ   X[:mouse_x]
+    STZ   X[:mouse_y]
+    CLI
+    Y.is_a! Aoba::Sprite::Instance
+    LDA   Y[:speed_x] - 1
+    BZE   _skip_x
+    BPL   _add_x
+    LDA   #-$60 - 1
+    BRA   _do_x
+  _add_x:
+    LDA   #$60
+  _do_x:
+    CLC
+    ADC   axis_state_x.rotation
+    STA   axis_state_x.rotation
+  _skip_x:
+    LDA   Y[:speed_y] - 1
+    BZE   _skip_y
+    BPL   _add_y
+    LDA   #-$60 - 1
+    BRA   _do_y
+  _add_y:
+    LDA   #$60
+  _do_y:
+    CLC
+    ADC   axis_state_y.rotation
+    STA   axis_state_y.rotation
+  _skip_y:
+  end
+
+  macro _on_move_events
+    LDA   Level.ball_speedup_timer[0]
+    BZE   _no_speedup
+
+    DEC   Level.ball_speedup_timer[0]
+    BNZ   _no_speedup
+
+    (MAX_SPEEDUP_ITEMS - 1).times do |i|
+      LDA   Level.ball_speedup_timer[i + 1]
+      STA   Level.ball_speedup_timer[i]
+    end
+    STZ   Level.ball_speedup_timer[MAX_SPEEDUP_ITEMS - 1]
+    LDA   Level.negative_max_ball_speed
+    CLC
+    ADC   #BALL_SPEEDUP
+    STA   Level.negative_max_ball_speed
+    LDA   Level.max_ball_speed
+    SEC
+    SBC   #BALL_SPEEDUP
+    STA   Level.max_ball_speed
+
+  _no_speedup:
+
+    LDA   bomb_ball_speed_counter
+    BZE   _no_bombball_speed
+    DEC   bomb_ball_speed_counter
+  _no_bombball_speed:
+
+  end
+
+  ;; Updates the player contol
+  ;; @param X player instance
+  ;; @param Y gamepad instance
+  @locate_at bank: Aoba::SPRITE_ROM_BANK
+  def update_player_control
+    LDA   Game.global_game_flags
+    BPL   _rts
+
+    Game::Level.update_sfx_wait_time
+
+    LDA   Aoba::MouseThread.thread_id
+    AND   #$FF
+    BNZ   _rts
+
+    LDX   gamepad
+    BNZ   _has_gamepad
+
+  _rts:
+    RTS
+
+    ;; ---
+
+  _reset_controls_rts:
+    X.is_a! Aoba::Control::GamepadPlayer
+    SEI
+    STZ   X[:mouse_x]
+    STZ   X[:mouse_y]
+    CLI
+    RTS
+
+    ;; ---
+
+  _pause_during_rotation:
+    _rotate_with_last_speed
+    JMP   _resume_after_pause
+
+    ;; ---
+
+  _has_gamepad:
+    LDA   Aoba::Sprite.global_flags
+    LSR   A
+    BCS   _reset_controls_rts
+    LDY   player
+    Y.is_a! Aoba::Sprite::Instance
+    BZE   _reset_controls_rts
+
+    LDA   AssetConfig::Ingame.ingame_hdma_config.flags
+    BIT   #Game::Hdma::Ingame::Flag.CHANGE_PERSPECTIVE
+    BNZ   _pause_during_rotation
+    _on_move_events
+    _apply_gamepad_movement
+    _calculate_speed_from_friction
+    _update_axis_speed
+    _update_ball_power
+  _resume_after_pause:
+    _update_rotation
+  end
+
+  @locate_at bank: Aoba::SPRITE_ROM_BANK
+  def unload_long
+    SEI
+    LDA   Game.global_game_flags
+    AND   #$FFFF ^ Game::GlobalGameFlag.IS_INGAME
+    STA   Game.global_game_flags
+    CLI
+
+    LDA   #Aoba::Thread::Event::USEREVENT_ID
+    JSL   Aoba::Thread::Event.allocate_icb_long
+    LDA   #Game::Level::Controls::DestroyEventID
+    STA   Aoba::Thread::Event::Base.size, X
+    LDA   Game::Level::Controls::Thread.thread_id
+    JSL   Aoba::Thread.send_event_icb_long
+
+    LDY   player
+    STZ   player
+    Y.is_a! Aoba::Sprite::Instance
+    LDA   Y[:id]
+    Aoba::Sprite::Api.destroy_sprite_icb
+    RTL
+  end
+
+
+  ;; Updates the player movement
+  Aoba::Sprite::Instance.event.on :update_after_transaction do
+    update_player_control
+  end
+
+  ;; Initializes the RAM
+  Aoba::Event.on :initialize_aoba_modules do
+    STZ   player
+    STZ   gamepad
+  end
+
+  ;; Sets up the controls
+  Aoba::Script.callback "GameControls_Setup", bank: Aoba::SYSTEM_ROM_BANK do
+    Debug.enter_threadsafe_ram_access
+
+    ;; Prepares the RAM
+    STZ   axis_state_x.last_mouse_speed
+    STZ   axis_state_y.last_mouse_speed
+    STZ   axis_state_x.rotation
+    STZ   axis_state_y.rotation
+
+    LDA   #$FFFF
+    STA   Level.abyss_last_x
+    STA   Level.abyss_last_y
+    STZ   Level.dead_wait_time
+
+    STZ   ball_rotation_base_frame
+    LDA   #BALL_AXIS_ROTATION_SPRITES
+    STA   ball_rotation_axis_max
+    STZ   bomb_ball_speed_counter
+    STZ   parachute_sprite
+
+    SEI
+    Debug.allow_invalid_ram_access 2
+    LDA   Game::Level.global_ingame_flags
+    AND   #$FF00
+    ORA   #Game::Level::GlobalIngameFlag.TIME_PAUSED | Game::Level::GlobalIngameFlag.GAME_PAUSED | Game::Level::GlobalIngameFlag.CONTROLS_DISABLED
+    Debug.access_8bit_through_16bit
+    STA   Game::Level.global_ingame_flags
+    CLI
+
+    Debug.leave_threadsafe_ram_access
+
+    ;; Starts the controls thread
+    Game::Level::Controls::Thread.allocate_and_queue
+    Aoba::Thread.wait_for_thread Game::Level::Controls::Thread.thread_id
+
+    RTL
+  end
+
+end

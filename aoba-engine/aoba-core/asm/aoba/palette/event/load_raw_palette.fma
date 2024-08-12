@@ -1,0 +1,33 @@
+module Aoba::Palette::Event::LoadRawPalette
+
+  ;; The event
+  class Event < Base
+    ;; The palette to load
+    declare :palette_address, as: :uint16
+
+    ;; The size of the palette
+    declare :num_colors, as: :uint8
+    
+    ;; The target color address
+    declare :target, as: :uint8
+  end
+
+  ;; Loads the palette
+  ;; @ignore-thread-safety
+  ID = List.create "LoadRawPalette" do
+    Y.is_a! Event
+
+    Debug.BRK
+    LDA   Y[:palette_address]
+    TAX
+    LDA   Y[:num_colors]
+    AND   dp(x00FF)
+    PHA
+    LDA   Y[:target]
+    AND   dp(x00FF)
+    PLY
+    Action::LoadPalette.load_custom_palette_to_cgram
+
+  end
+
+end

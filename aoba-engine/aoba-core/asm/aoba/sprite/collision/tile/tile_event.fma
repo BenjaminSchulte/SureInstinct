@@ -1,0 +1,208 @@
+module Aoba::Sprite::Collision::Tile
+
+  class CollisionTileEvent < StaticRoutineClass
+    locate_at bank: SPRITE_ROM_BANK
+    register A: 8, XY: 16
+
+    macro initialize(parent)
+      @parent = parent
+      setup_static_routines
+    end
+
+    ;; No change on_move_event
+    routine :_no_special_on_move_event do
+      RTS
+    end
+
+    ;; This tile event can be flipped on the X axis
+    routine :_flipable_move_event_X do
+      LDA   dp(@parent.collision_tile + 1)
+      BMI   _is_flip_x
+      ASL   A
+      BMI   _is_flip
+      RTS
+
+    _is_flip_x:
+      ASL   A
+      BPL   _is_flip
+      RTS
+
+    _is_flip:
+      LDX   dp(current_sprite)
+      X.is_a! Instance
+      LDA   X[:on_move_event]
+      EOR   #2
+      STA   X[:on_move_event]
+      RTS
+    end
+
+    ;; Setter for on_move_events
+    data :on_move_event_setter do
+      dw   _no_special_on_move_event    ; 0
+      dw   _no_special_on_move_event
+      dw   _no_special_on_move_event
+      dw   _no_special_on_move_event
+      dw   _flipable_move_event_X       ; 4
+      dw   _flipable_move_event_X   
+      dw   _no_special_on_move_event
+      dw   _no_special_on_move_event
+      dw   _no_special_on_move_event    ; 8
+      dw   _no_special_on_move_event
+      dw   _no_special_on_move_event
+      dw   _no_special_on_move_event
+      dw   _no_special_on_move_event    ; C
+      dw   _no_special_on_move_event
+      dw   _no_special_on_move_event
+      dw   _no_special_on_move_event
+    end
+
+
+    ;; Invokes enter events
+    macro _call_enter_event
+      LDX   dp(current_sprite)
+      X.is_a! Instance
+
+      AND   #Flag::FLAG_ENTER_EVENT
+      BZE   _no_enter_event
+
+      LSR   A
+      LSR   A
+      XBA
+      TAX
+      JSR   EnterEvents.indirect, X
+      
+    _no_enter_event:
+    end
+
+    ;; Updates the current layer
+    macro _update_current_collision_layer
+      X.is_a! Instance
+
+      LDA   dp(@parent.collision_tile_data)
+      AND   #Flag::LAYER_MASK
+      STA   X[:current_layer]
+    end
+
+    ;; Triggers an exit script
+    ;; 
+    ;; @param X SpriteInstance
+    macro _trigger_exit_script
+      LDA   dp(@parent.collision_tile_data)
+      BPL   _no_exit
+
+      LDX   dp(current_sprite)
+      X.is_a! Instance
+      LDA   X[:collision_flags]
+      BIT   #CollisionFlag.TRIGGER_EXIT_EVENTS
+      BZE   _no_exit
+
+    _has_exit:
+      ;; Reads the amount of items in the list
+      LDA   Level.exit_list_address.long
+      TAX
+      LDA   Level.EXIT_DATA_BANK.as_bank(0).long, X
+      AND   dp(x00FF)
+      BZE   _no_exit
+      TAY
+
+      ;; Pointer to exit script list
+      ASL   A
+      STA   dp(_calc0)
+      
+      ;; Register A = $YYXX
+      LDA   dp(@parent.collision_index)
+      
+      ;; Search for the record in the table
+    _loop:
+      CMP   Level.EXIT_DATA_BANK.as_bank(1).long, X
+      BEQ   _found_record
+      INX
+      INX
+      INC   dp(_calc0)
+      DEY
+      BNZ   _loop
+      BRA   _no_exit
+
+      ;; Found record at offset X
+    _found_record:
+      TXA
+      CLC
+      ADC   dp(_calc0)
+      TAX
+
+      ;; Prevents the current sprite from triggering exit scripts
+      LDY   dp(current_sprite)
+      Y.is_a! Instance
+      LDA   Y[:collision_flags]
+      AND   #$FFFF ^ CollisionFlag.TRIGGER_EXIT_EVENTS
+      STA   Y[:collision_flags]
+
+      ;; Loads the position
+      LDA   Level.EXIT_DATA_BANK.as_bank(1 + 2).long, X
+      TAY
+      LDA   Level.EXIT_DATA_BANK.as_bank(1).long, X
+      TAX
+      LDA   dp(current_sprite)
+
+      ;; X = pointer to script address
+      JSL   Script.execute_script_with_context_icb_long
+    _no_exit:
+    end
+
+    ;; Stores the on move event
+    macro _store_on_move_event
+      LDX   dp(current_sprite)
+      X.is_a! Instance
+      STZ   X[:on_move_event]
+
+      LDA   dp(@parent.collision_tile_data)
+      BIT   #Flag.FLAG_COLLISION
+      BNZ   _skip_set_move_event
+      
+      CPU.set A: 16
+      AND   #Flag.MOVE_EVENT_MASK
+      CPU.set A: 8
+      ASL
+      STA   X[:on_move_event]
+      TAX
+      JSR   on_move_event_setter.indirect, X
+      LDX   dp(current_sprite)
+
+    _skip_set_move_event:
+    end
+
+    ;; Tests tile events
+    routine :on_tile_changed do
+      Thread.assert_thread thread_id
+      X.is_a! Instance
+      
+      ;; Resets flags
+      CPU.set A: 8
+      STZ   X[:reflection_distance]
+
+      ;; Skips this routine if the character is flying
+      LDA   X[:movable_flags]
+      BIT   #MovableFlag::IS_FLYING
+      CPU.set A: 16
+      BZE   _resume
+      RTS
+
+      ;; ---
+
+    _resume:
+      LDA   #0
+      TAY
+      @parent._test._read_relative_tile_from_layer
+
+      ;; Invokes all events
+      _call_enter_event
+      CPU.set A: 8
+      _store_on_move_event
+      _update_current_collision_layer
+      CPU.set A: 16
+      _trigger_exit_script
+      RTS
+    end
+  end
+
+end

@@ -1,0 +1,62 @@
+;; @ignore-thread-safety
+@locate_at bank: Aoba::SYSTEM_ROM_BANK
+def sa1_main
+  CPU.set A: 8
+
+  ;; Enables IRQs
+  LDA   #$80
+  STA   SA1.CIE
+  
+  CPU.set A: 16, XY: 16
+
+  ;; Sets up the boot RAM
+  __boot_initialize_ram
+  ;; Triggers the game initializes
+  ::start
+
+  JSL   Aoba::System.copy_all_ram_routines_sa1
+
+  ;; Starts the threads
+  JMP   Aoba::Thread.start
+end
+
+;; Main loop in SNES RAM (SA1 only)
+__snes_sa1_loop_ram = nil
+if SNES::ENABLE_SA1
+
+__snes_sa1_loop_ram = Aoba.create_sa1_ram_routine Aoba::SYSTEM_ROM_BANK do
+  PEA   #Aoba::FIXED_RAM_BANK << 8
+  PLB
+  PLB
+  A.pretend_size 16
+  LDA   #$2100
+  TCD
+_loop:
+  Aoba::Audio::SA1.update_loop
+  SNES_RAM_JMP __sa1_update_hcounter, :JSR, :JSR
+  WAI
+  BRA   _loop
+end
+
+__sa1_update_hcounter = Aoba.create_sa1_ram_routine Aoba::SYSTEM_ROM_BANK do
+  ::Aoba::Event.invoke :snes_sa1_update
+  RTS
+end
+
+end
+
+;; SA1 loop
+macro __snes_sa1_loop
+  __boot_reset_timer
+
+  CPU.set A: 8
+  LDA   #0
+  STA   Memory.snes_to_sa1_irq.long
+  CPU.set A: 16
+
+  CLI
+  JSL   Aoba::System.copy_all_ram_routines_snes
+
+Debug.BRK
+  SNES_RAM_JMP __snes_sa1_loop_ram, snes: :JML, sa1: :JML
+end

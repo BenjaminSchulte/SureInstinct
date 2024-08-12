@@ -1,0 +1,36 @@
+module Aoba::Thread
+
+  ;; Status flags
+  module Status
+    ;; The thread has not been initialized, yet
+    NEW = 0
+
+    ;; The thread has been temporary suspended by NMI
+    SUSPENDED = 1
+
+    ;; The thread has been paused
+    PAUSED = 2
+
+    ;; The thread is running
+    RUNNING = 8
+
+    ;; Destroyed
+    DESTROYED = $80
+  end
+
+end
+
+require "memory"
+require "thread"
+require "fallback"
+require "allocate"
+require "debug"
+require "execute"
+require "queue"
+require "tools"
+
+require "event"
+require "timer"
+
+require "delay"
+require "common"

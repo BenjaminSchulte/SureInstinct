@@ -1,0 +1,27 @@
+module Memory
+
+  ;; Outer RAM
+  scope :__OuterRAM, in: RAM, bank: Aoba::VARIABLE_RAM_BANK, shared: true
+
+  ;; The thread RAM
+  scope :ThreadRAM, in: __OuterRAM, address: 0..$7F, shared: true
+
+  ;; Variable RAM for memory allocation
+  scope :VariableRAM, in: __OuterRAM
+
+  ;; Fixed RAM for constant RAM locations
+  scope :FixedRAM, in: RAM, bank: Aoba::FIXED_RAM_BANK
+
+  ;; Fixed RAM for constant RAM locations
+  scope :SnesFixedRAM, in: SNES::MemoryMap::RAM, bank: Aoba::SNES_FIXED_RAM_BANK
+
+  ;; The allocation data range
+  scope :AllocationRAM, in: VariableRAM, address: Aoba::FIXED_CONTENT_BLOCKS * $100, length: $10000 - Aoba::FIXED_CONTENT_BLOCKS * $100
+
+
+  if SNES::ENABLE_SA1
+    declare :snes_to_sa1_irq, as: :uint8, in: VariableRAM
+    declare :sa1_to_snes_irq, as: :uint8, in: VariableRAM
+  end
+
+end

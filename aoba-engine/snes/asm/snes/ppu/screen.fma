@@ -1,0 +1,342 @@
+module PPU
+
+  ;; Controls the general game screen
+  module Screen
+
+    ;; Disables the screen
+    ;;
+    ;; Some SNES configuration might require the screen to be turned off to work correctly.
+    macro disable
+      LDA   #$80
+      STA   PPU.INIDISP
+    end
+
+    ;; Enables the screen
+    ;;
+    ;; @param brightness=$1F number - the new brightness value (between 0 for off and $1F for on)
+    macro enable(brightness = $1F)
+      LDA   #brightness unless brightness.A?
+      STA   PPU.INIDISP
+    end
+
+    ;; Invokes a callback with the screen being disabled
+    ;;
+    ;; [source,ruby]
+    ;; PPU::Screen.disabled do
+    ;;   ...
+    ;; end
+    macro disabled
+      disable
+      yield
+      enable
+    end
+
+    ;; Configures the visibility of the main screen
+    ;;
+    ;; @param bg1=false boolean - BG1 is visible
+    ;; @param bg2=false boolean - BG2 is visible
+    ;; @param bg3=false boolean - BG3 is visible
+    ;; @param bg4=false boolean - BG4 is visible
+    ;; @param obj=false boolean - Sprites are visible
+    macro configure_main_screen(bg1=false, bg2=false, bg3=false, bg4=false, obj=false, target=:default)
+      value = 0
+      value |= $01 if bg1
+      value |= $02 if bg2
+      value |= $04 if bg3
+      value |= $08 if bg4
+      value |= $10 if obj
+      LDA   #value
+
+      if target == :dp
+        STA   dp(PPU.TM)
+      else
+        STA   PPU.TM
+      end
+    end
+
+    ;; Configures the visibility of the sub screen
+    ;;
+    ;; @param bg1=false boolean - BG1 is visible
+    ;; @param bg2=false boolean - BG2 is visible
+    ;; @param bg3=false boolean - BG3 is visible
+    ;; @param bg4=false boolean - BG4 is visible
+    ;; @param obj=false boolean - Sprites are visible
+    macro configure_sub_screen(bg1=false, bg2=false, bg3=false, bg4=false, obj=false, target=:default)
+      value = 0
+      value |= $01 if bg1
+      value |= $02 if bg2
+      value |= $04 if bg3
+      value |= $08 if bg4
+      value |= $10 if obj
+      LDA   #value
+
+      if target == :dp
+        STA   dp(PPU.TS)
+      else
+        STA   PPU.TS
+      end
+    end
+
+    ;; Configures the visibility of the main window mask
+    ;;
+    ;; @param bg1=false boolean - BG1 is visible
+    ;; @param bg2=false boolean - BG2 is visible
+    ;; @param bg3=false boolean - BG3 is visible
+    ;; @param bg4=false boolean - BG4 is visible
+    ;; @param obj=false boolean - Sprites are visible
+    macro configure_main_window(bg1=false, bg2=false, bg3=false, bg4=false, obj=false, target=:default)
+      value = 0
+      value |= $01 if bg1
+      value |= $02 if bg2
+      value |= $04 if bg3
+      value |= $08 if bg4
+      value |= $10 if obj
+      LDA   #value
+
+      if target == :dp
+        STA   dp(PPU.TMW)
+      else
+        STA   PPU.TMW
+      end
+    end
+
+    ;; Configures the visibility of the sub window mask
+    ;;
+    ;; @param bg1=false boolean - BG1 is visible
+    ;; @param bg2=false boolean - BG2 is visible
+    ;; @param bg3=false boolean - BG3 is visible
+    ;; @param bg4=false boolean - BG4 is visible
+    ;; @param obj=false boolean - Sprites are visible
+    macro configure_sub_window(bg1=false, bg2=false, bg3=false, bg4=false, obj=false, target=:default)
+      value = 0
+      value |= $01 if bg1
+      value |= $02 if bg2
+      value |= $04 if bg3
+      value |= $08 if bg4
+      value |= $10 if obj
+      LDA   #value
+
+      if target == :dp
+        STA   dp(PPU.TSW)
+      else
+        STA   PPU.TSW
+      end
+    end
+
+    ;; Configures color addition
+    ;;
+    ;; Parameters `clip` and `prevent_math` can be configured as one fo the following:
+    ;;
+    ;; |===
+    ;; | mode
+    ;;
+    ;; | `never`
+    ;; | `outside`
+    ;; | `inside`
+    ;; | `always`
+    ;; |===
+    ;;
+    ;; @param clip=:never string
+    ;; @param prevent_math=:never string
+    ;; @param use_subscreen=false boolean
+    ;; @param direct_color_mode=false boolean
+    macro configure_color_addition(clip=:never, prevent_math=:always, use_subscreen=false, direct_color_mode=false, target=:default)
+      case clip
+      when :never
+        clip_value = $0
+      when :outside
+        clip_value = $40
+      when :inside
+        clip_value = $80
+      when :always
+        clip_value = $C0
+      else
+        raise "Invalid clip value, expected :never, :inside, :outside, :always"
+      end
+
+      case prevent_math
+      when :never
+        prev_value = $0
+      when :outside
+        prev_value = $10
+      when :inside
+        prev_value = $20
+      when :always
+        prev_value = $30
+      else
+        raise "Invalid prevent_math value, expected :never, :inside, :outside, :always"
+      end
+
+      value = 0
+      value |= 2 if use_subscreen
+      value |= 1 if direct_color_mode
+
+      LDA   #clip_value | prev_value | value
+      if target == :dp
+        STA   dp(PPU.CGWSEL)
+      else
+        STA   PPU.CGWSEL
+      end
+    end
+
+    ;; Configures math designation
+    ;;
+    ;; @param mode string - either `add` or `subtract`
+    ;; @param half=false boolean - use avarage between both screens
+    ;; @param bg1=false boolean - Respect BG1
+    ;; @param bg2=false boolean - Respect BG2
+    ;; @param bg3=false boolean - Respect BG3
+    ;; @param bg4=false boolean - Respect BG4
+    ;; @param obj=false boolean - Respect sprites
+    ;; @param backdrop=false boolean - Respect backdrop
+    macro configure_color_math_designation(mode, half=false, bg1=false, bg2=false, bg3=false, bg4=false, obj=false, backdrop=false, target=:default)
+      case mode
+      when :add
+        mode_value = $0
+      when :subtract
+        mode_value = $80
+      else
+        raise "Expected mode value :add or :subtract"
+      end
+
+      value = 0
+      value |= $40 if half
+      value |= $20 if backdrop
+      value |= $10 if obj
+      value |= $8 if bg4
+      value |= $4 if bg3
+      value |= $2 if bg2
+      value |= $1 if bg1
+
+      LDA    #mode_value | value
+      if target == :dp
+        STA   dp(PPU.CGADSUB)
+      else
+        STA    PPU.CGADSUB
+      end
+    end
+
+    ;; Configures window masks for BG1 and BG2
+    ;;
+    ;; @param bg1_win1=false boolean - Enable window 1
+    ;; @param bg1_win2=false boolean - Enable window 2
+    ;; @param bg2_win1=false boolean - Enable window 1
+    ;; @param bg2_win2=false boolean - Enable window 2
+    ;; @param bg1_win1_inv=false boolean - Invert window 1
+    ;; @param bg1_win2_inv=false boolean - Invert window 2
+    ;; @param bg2_win1_inv=false boolean - Invert window 1
+    ;; @param bg2_win2_inv=false boolean - Invert window 2
+    macro configure_window_mask_bg12(bg1_win1=false, bg1_win2=false, bg2_win1=false, bg2_win2=false, bg1_win1_inv=false, bg1_win2_inv=false, bg2_win1_inv=false, bg2_win2_inv=false)
+      ;;;LDA   #0 | (bg1_win1_inv ?? $01) | (bg1_win1 ?? $02) | (bg1_win2_inv ?? $04) | (bg1_win2 ?? $08) | (bg2_win1_inv ?? $10) | (bg2_win1 ?? $20) | (bg2_win2_inv ?? $40) | (bg2_win2 ?? $80)
+      STA   PPU.W12SEL
+    end
+
+    ;; Configures window masks for BG3 and BG4
+    ;;
+    ;; @param bg3_win1=false boolean - Enable window 1
+    ;; @param bg3_win2=false boolean - Enable window 2
+    ;; @param bg4_win1=false boolean - Enable window 1
+    ;; @param bg4_win2=false boolean - Enable window 2
+    ;; @param bg3_win1_inv=false boolean - Invert window 1
+    ;; @param bg3_win2_inv=false boolean - Invert window 2
+    ;; @param bg4_win1_inv=false boolean - Invert window 1
+    ;; @param bg4_win2_inv=false boolean - Invert window 2
+    macro configure_window_mask_bg34(bg3_win1=false, bg3_win2=false, bg4_win1=false, bg4_win2=false, bg3_win1_inv=false, bg3_win2_inv=false, bg4_win1_inv=false, bg4_win2_inv=false)
+      ;;;;LDA   #0 | (bg3_win1_inv ?? $01) | (bg3_win1 ?? $02) | (bg3_win2_inv ?? $04) | (bg3_win2 ?? $08) | (bg4_win1_inv ?? $10) | (bg4_win1 ?? $20) | (bg4_win2_inv ?? $40) | (bg4_win2 ?? $80)
+      STA   PPU.W34SEL
+    end
+
+    ;; Configures window masks for sprites and backdrop color
+    ;;
+    ;; @param obj_win1=false boolean - Enable window 1
+    ;; @param obj_win2=false boolean - Enable window 2
+    ;; @param color_win1=false boolean - Enable window 1
+    ;; @param color_win2=false boolean - Enable window 2
+    ;; @param obj_win1_inv=false boolean - Invert window 1
+    ;; @param obj_win2_inv=false boolean - Invert window 2
+    ;; @param color_win1_inv=false boolean - Invert window 1
+    ;; @param color_win2_inv=false boolean - Invert window 2
+    macro configure_window_mask_obj(obj_win1=false, obj_win2=false, color_win1=false, color_win2=false, obj_win1_inv=false, obj_win2_inv=false, color_win1_inv=false, color_win2_inv=false)
+      ;;;;LDA   #0 | (obj_win1_inv ?? $01) | (obj_win1 ?? $02) | (obj_win2_inv ?? $04) | (obj_win2 ?? $08) | (color_win1_inv ?? $10) | (color_win1 ?? $20) | (color_win2_inv ?? $40) | (color_win2 ?? $80)
+      STA   PPU.WOBJSEL
+    end
+
+    ;; Configures the window positions
+    ;;
+    ;; @param win1_left=nil number - the window position
+    ;; @param win2_left=nil number - the window position
+    ;; @param win1_right=nil number - the window position
+    ;; @param win2_right=nil number - the window position
+    macro configure_window_position(win1_left=nil, win2_left=nil, win1_right=nil, win2_right=nil)
+      unless win1_left.nil?
+        LDA   #win1_left unless win1_left.A?
+        STA   PPU.WH[0]
+      end
+      unless win1_right.nil?
+        LDA   #win1_right unless win1_right.A?
+        STA   PPU.WH[1]
+      end
+      unless win2_left.nil?
+        LDA   #win2_left unless win2_left.A?
+        STA   PPU.WH[2]
+      end
+      unless win2_right.nil?
+        LDA   #win2_right unless win2_right.A?
+        STA   PPU.WH[3]
+      end
+    end
+
+    ;; Configures the window logic for backgrounds
+    ;;
+    ;; The configuration modes can be one of: `calc_or`, `calc_and`, `calc_xor` or `calc_xnor`
+    ;;
+    ;; @param bg1=:calc_or string - The configuration mode
+    ;; @param bg2=:calc_or string - The configuration mode
+    ;; @param bg3=:calc_or string - The configuration mode
+    ;; @param bg4=:calc_or string - The configuration mode
+    macro configure_window_logic_bg(bg1=:calc_or, bg2=:calc_or, bg3=:calc_or, bg4=:calc_or)
+      value = 0
+
+      value |= _logic_bits(bg1)
+      value |= _logic_bits(bg2) << 2
+      value |= _logic_bits(bg3) << 4
+      value |= _logic_bits(bg4) << 6
+
+      LDA   #value
+      STA   PPU.WBGLOG
+    end
+
+    ;; Configures the window logic for objects
+    ;;
+    ;; The configuration modes can be one of: `calc_or`, `calc_and`, `calc_xor` or `calc_xnor`
+    ;;
+    ;; @param obj=:calc_or string - The configuration mode
+    ;; @param color=:calc_or string - The configuration mode
+    macro configure_window_logic_obj(obj=:calc_or, color=:calc_or)
+      value = 0
+
+      value |= _logic_bits(obj)
+      value |= _logic_bits(color) << 2
+
+      LDA   #value
+      STA   PPU.WOBJLOG
+    end
+
+    macro _logic_bits(calc_mode)
+      case calc_mode
+      when :calc_or
+        $00
+      when :calc_and
+        $01
+      when :calc_xor
+        $02
+      when :calc_xnor
+        $03
+      else
+        raise "Invalid logic value: #{calc_mode}"
+      end
+    end
+
+
+  end
+end

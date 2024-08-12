@@ -1,0 +1,10 @@
+#!/bin/bash
+
+set -e
+
+if ! [[ -d "sureinstinct/assets" ]]; then
+  echo "Error: Script must be executed from project root."
+  exit 1
+fi
+
+AOBA_MODULE_PATH=`pwd`/aoba-engine ./aoba-build/build/src/maker/maker ./sureinstinct

@@ -1,0 +1,29 @@
+module Aoba::Audio::Event::Reset
+
+  ;; The event ID
+  ID = $06
+
+  ;; The event
+  class Event < Base
+  end
+
+  ;; Temporary RAM
+  scope :TempRAM, in: ActionRAM
+
+  ;; Invokes the reset
+  macro _reset
+    when_ready_SEI bank: VARIABLE_RAM_BANK do
+      AND   #IPC.IPC_TOGGLE_BIT
+      EOR   #IPC.IPC_TOGGLE_BIT | IPC.CMD_RESET
+      STA   CPU.APUIO0.long
+      STA   last_ipc_value
+    end
+  end
+
+  ;; Loads the tileset
+  ;; @ignore-thread-safety
+  event_handler = make_audio_event do 
+    _reset
+  end
+
+end

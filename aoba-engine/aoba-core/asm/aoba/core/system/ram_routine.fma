@@ -1,0 +1,166 @@
+module Aoba::System
+
+  __all_ram_routines_snes = []
+  __all_ram_routines_sa1 = []
+
+  if ENABLE_SA1
+    scope :RoutineRamSnes, in: ::Memory::SnesFixedRAM, address: $2000..$FFFF, size: MAX_RAM_ROUTINE_SIZE_SNES
+    scope :RoutineRamSa1, in: ::Memory::FixedRAM, size: MAX_RAM_ROUTINE_SIZE_SA1
+  end
+
+  ;; Ram routine
+  class RamRoutine
+    ;; Initialize
+    macro initialize(bank, for, &block)
+      if for == :snes
+        @index = __all_ram_routines_snes.count
+        __all_ram_routines_snes << self
+      else
+        @index = __all_ram_routines_sa1.count
+        __all_ram_routines_sa1 << self
+      end
+
+      @address = @index * 3
+
+      _self = self
+      Compiler.with_global_context nil do
+        func = Function.new "ram_routine" do
+          block.call
+          _self.end_label = create_label("ram_routine_end")
+          label _self.end_label
+        end
+        func.override_located_at bank: bank
+        _self.func = func
+      end
+    end
+  end
+
+  def copy_all_ram_routines_sa1
+    _copy_all_ram_routines :sa1
+    RTL
+  end
+
+  def copy_all_ram_routines_snes
+    _copy_all_ram_routines :snes
+    RTL
+  end
+
+  ;; Copies all RAM routines
+  macro _copy_all_ram_routines(device)
+    return unless ENABLE_SA1
+
+    _target = __all_ram_routines_snes
+    _target = __all_ram_routines_sa1 if device == :sa1
+
+    TargetRAM = RoutineRamSnes
+    TargetRAM = RoutineRamSa1 if device == :sa1
+
+    _bank = SNES_FIXED_RAM_BANK
+    _bank = FIXED_RAM_BANK if device == :sa1
+
+    _index_ram_offset = 0
+    _func_ram_offset  = _target.count * 3
+    LDA   #_target.count
+
+    CPU.set A: 8
+    LDA   #$4C ;JMP
+    _target.each do |routine|
+      STA   (TargetRAM + _index_ram_offset).long
+      _index_ram_offset += 3
+    end
+    CPU.set A: 16
+
+    _index_ram_offset = 0
+
+    _target.each do |routine|
+      _size = routine.end_label - routine.func.to_sym + 1
+      LDA   #_func_ram_offset + TargetRAM
+      STA   (TargetRAM + _index_ram_offset + 1).long
+      TAY
+      LDA   #_size
+      LDX   #routine.func
+      MVN   #routine.func.to_sym.bank, #_bank
+      _index_ram_offset += 3
+      _func_ram_offset += _size
+    end
+  end
+
+  macro sa1_jmp_by_type(routine, type)
+    case type
+      when :JML
+        JML RoutineRamSa1.to_sym.long + routine.address
+      when :JSL
+        JSL RoutineRamSa1.to_sym.long + routine.address
+      else
+        raise "Unsupported jmp_by_type #{type}"
+    end
+  end
+
+  macro snes_jmp_by_type(routine, type)
+    if ENABLE_SA1
+      case type
+        when :JMP
+          JMP RoutineRamSnes.to_sym + routine.address
+        when :JSR
+          JSR RoutineRamSnes.to_sym + routine.address
+        when :JML
+          JML RoutineRamSnes.to_sym.long + routine.address
+        when :JSL
+          JSL RoutineRamSnes.to_sym.long + routine.address
+        else
+          raise "Unsupported jmp_by_type #{type}"
+      end
+    else
+      case type
+        when :JMP
+          JMP routine.func
+        when :JSR
+          JSR routine.func
+        when :JML
+          JML routine.func
+        when :JSL
+          JSL routine.func
+        else
+          raise "Unsupported jmp_by_type #{type}"
+      end
+    end
+  end
+
+  macro rts_by_type(type)
+    case type
+      when :RTS
+        RTS
+      when :RTL
+        RTL
+      else
+        raise "Unsupported rts_by_type #{type}"
+    end
+  end
+end
+
+module Aoba
+  macro create_sa1_ram_routine(bank, for=:snes, &block)
+    return System::RamRoutine.new(bank, for, &block)
+  end
+end
+
+macro SA1_RAM_JMP(routine, sa1)
+  return unless SNES::ENABLE_SA1
+  Aoba::System.sa1_jmp_by_type routine, sa1
+end
+
+macro SNES_RAM_JMP(routine, snes, sa1)
+  if SNES::ENABLE_SA1
+    Aoba::System.snes_jmp_by_type routine, sa1
+  else
+    Aoba::System.snes_jmp_by_type routine, snes
+  end
+end
+
+macro RAM_RTS(snes, sa1)
+  if SNES::ENABLE_SA1
+    Aoba::System.rts_by_type sa1
+  else
+    Aoba::System.rts_by_type snes
+  end
+end

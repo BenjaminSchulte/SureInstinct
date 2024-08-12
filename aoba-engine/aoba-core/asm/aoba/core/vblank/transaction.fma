@@ -1,0 +1,120 @@
+module Aoba::VBlank::Transaction
+
+  ;; Invoked when the IRQ begins
+  ;;
+  ;; @ignore-thread-safety
+  def irq_begin
+    LDA   transaction_queue_offset
+    BZE   _is_empty_transaction
+    CMP   #queue
+    BEQ   _is_empty_transaction
+    CMP   queue_offset
+    BNE   _start_transaction
+
+  _is_empty_transaction:
+    STZ    transaction_queue_offset
+    STZ    transaction_usage_counter
+    RTS
+
+    ;; ---
+
+  _start_transaction:
+    Debug.warn "Preventing transaction from uploading to VRAM"
+    LDX   transaction_queue_offset
+    LDA   queue.to_sym.bank_address.long, X
+    STA   transaction_backup
+    LDA   queue.to_sym.bank_address.long + 2, X
+    STA   transaction_backup + 2
+    LDA   queue_offset
+    STA   transaction_backup + 4
+    STX   queue_offset
+  end
+
+  ;; Invoked when the IRQ ends
+  macro irq_finish
+    LDA   transaction_queue_offset
+    BZE   _no_transaction
+
+    CPU.with_bank 0, from_bank: VARIABLE_RAM_BANK do
+      PHD
+      PEA   #queue
+      PLD
+
+      ;LDX   queue_offset
+
+      LDA   transaction_backup.long + 4
+      SEC
+      SBC   queue_offset.long
+      STA   queue_offset.long
+      INC   A
+      LSR   A
+      DEC   A ; copied by transasction_backup
+      DEC   A
+      BZE   _skip_copy
+      BMI   _skip_copy
+      STA   dp(0)
+
+      LDA   transaction_queue_offset.long
+      TAX
+      INX   ; copied by transaction_backup
+      INX
+      INX
+      INX
+      LDY   #4
+    _copy_loop:
+      LDA   0, X
+      STA   0, Y
+      INX
+      INX
+      INY
+      INY
+      DEC   dp(0)
+      BNZ   _copy_loop
+
+    _skip_copy:
+      LDA   transaction_backup.long
+      STA   dp(0)
+      LDA   transaction_backup.long + 2
+      STA   dp(2)
+
+      PLD
+    end
+
+    ;LDA   #queue
+    ;STA   queue_offset
+    LDA   transaction_usage_counter
+    STA   usage_counter
+    STZ   transaction_queue_offset
+    STZ   transaction_usage_counter
+    BRA   _after_transaction
+
+  _no_transaction:
+    LDA   #queue.to_sym
+    STA   queue_offset.long
+  _after_transaction:
+  end
+
+  ;; Starts a transaction
+  def start
+    PHP
+    SEI
+    LDA   queue_offset.long
+    STA   transaction_queue_offset.long
+    LDA   usage_counter.long
+    STA   transaction_usage_counter.long
+    PLP   
+    RTL
+  end
+
+  ;; Commits the transaction
+  def commit
+    PHP
+    SEI
+    LDA   #0
+    STA   transaction_queue_offset.long
+    STA   transaction_usage_counter.long
+    PLP
+    RTL
+  end
+
+end

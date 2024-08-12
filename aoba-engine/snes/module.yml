@@ -1,0 +1,9 @@
+name: AOBA SNES library
+id: com.aobastudio.snes
+version: 1.0.0
+
+author:
+  - Benjamin Schulte
+
+includes:
+  - "snes"

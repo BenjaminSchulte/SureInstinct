@@ -1,0 +1,17 @@
+module Aoba
+
+  ;; The ROM bank
+  PALETTE_ROM_BANK ||= $C1
+
+end
+
+require "configuration"
+require "memory"
+require "cgram"
+
+require "action"
+require "event"
+require "effect"
+
+require "thread"
+require "api"

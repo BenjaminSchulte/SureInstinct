@@ -1,0 +1,121 @@
+module Aoba::Image
+
+  ;; Loads an image raw
+  ;;
+  ;; @param AL image rom bank
+  ;; @param AH num 8x8 tiles
+  ;; @param X image rom data
+  ;; @param Y vram address
+  def load_raw_bpp2_tiles_icb_long
+    PHA
+    PHX
+    PHY
+
+    Aoba::VBlank::Job.allocate_job_icb_long :vram, notify_sender: true
+    ;;;;;LDA   #Aoba::VBlank::Target::VRAM | Aoba::VBlank::Flag::NOTIFY_SENDER_THREAD
+    ;;;;;JSL   Aoba::VBlank::Job.allocate_icb_long
+
+    X.is_a! Aoba::VBlank::Job::JobInstance
+    PLA
+    STA   X[:target_address]
+    PLA
+    STA   X[:source_address]
+    PLA
+    CPU.set A: 8
+    STA   X[:source_address] + 2
+    XBA
+    CPU.set A: 16
+    AND   #$00FF
+    ASL   A
+    ASL   A
+    ASL   A
+    ASL   A
+    STA   X[:data_size]
+
+    JML   Aoba::VBlank::Job.try_queue_and_wait_icb_long
+  end
+
+  ;; Loads an image
+  ;;
+  ;; @todo this somehow duplicates tileset/event/load_tileset/_load_tileset_image
+  ;;
+  ;; @param X image rom data
+  ;; @param Y vram address
+  def load_tiles_icb_long
+    routine do
+      is_thread_safe
+
+      declare :image_header, as: :uint16
+      declare :vram_address, as: :uint16
+      declare :buffer, as: :uint16
+      declare :lzw, as: :uint8, size: Aoba::Compression::LZW::State.size
+
+      execute do |image_header, vram_address, buffer, lzw|
+        LzwState = Aoba::Compression::LZW::State
+
+        STX   dp(image_header)
+        STY   dp(vram_address)
+
+        ;; Configures the source address
+        LDA   IMAGE_HEADER_ROM_BANK.as_bank(ImageRomHeader.offset_of(:tileset)).long, X
+        TAX
+        LDA   TILESET_IMAGE_HEADER_ROM_BANK.as_bank(ImageTilesetRomHeader.offset_of(:image_data)).long, X
+        STA   dp(lzw + LzwState.offset_of(:source_address))
+        CPU.set A: 8
+        LDA   TILESET_IMAGE_HEADER_ROM_BANK.as_bank(ImageTilesetRomHeader.offset_of(:image_data) + 2).long, X
+        STA   dp(lzw + LzwState.offset_of(:source_address) + 2)
+        LDA   #VARIABLE_RAM_BANK
+        STA   dp(lzw + LzwState.offset_of(:target_address) + 2)
+        CPU.set A: 16
+
+        ;; Allocates the decompression RAM
+        LDX   #Aoba::Tileset::COMPRESSION_CHUNK_SIZE
+        JSL   Memory.waitfor_allocate_from_behind_long
+        STX   dp(buffer)
+        STX   dp(lzw + LzwState.offset_of(:target_address))
+
+        ;; Decompression loop
+      _loop_decompress:
+        TDC
+        CLC
+        ADC   #lzw
+        JSL   Aoba::Compression::LZW.decompress_long
+        PHX
+
+        ;; We decompressed a chunk. Let's try to upload it next VBLANK
+        Aoba::VBlank::Job.allocate_job_icb_long :vram, notify_sender: true
+        ;;;;;LDA   #Aoba::VBlank::Target::VRAM | Aoba::VBlank::Flag::NOTIFY_SENDER_THREAD
+        ;;;;;JSL   Aoba::VBlank::Job.allocate_icb_long
+
+        X.is_a! Aoba::VBlank::Job::JobInstance
+        LDA   dp(lzw + LzwState.offset_of(:target_address))
+        STA   X[:source_address]
+        CPU.set A: 8
+        LDA   #VARIABLE_RAM_BANK
+        STA   X[:source_address] + 2
+        CPU.set A: 16
+        LDA   dp(vram_address)
+        STA   X[:target_address]
+        PLA
+        STA   X[:data_size]
+        LSR   A
+        CLC
+        ADC   dp(vram_address)
+        STA   dp(vram_address)
+
+        ;; Upload data and wait for it
+        JSL   Aoba::VBlank::Job.try_queue_and_wait_icb_long
+        ;; Test whether there is more data to copy
+        LDA   dp(lzw + LzwState.offset_of(:has_more))
+        BNZ   _loop_decompress
+
+      _finish:
+        LDX   dp(buffer)
+        LDY   #Aoba::Tileset::COMPRESSION_CHUNK_SIZE
+        JSL   Memory.free_long
+      end
+    end
+    RTL
+  end
+
+end

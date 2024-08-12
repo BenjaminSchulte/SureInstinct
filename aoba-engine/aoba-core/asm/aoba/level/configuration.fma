@@ -1,0 +1,128 @@
+module Aoba::Level
+
+  ;; Global flags
+  module GlobalFlag
+    LEVEL_IS_READY = $80
+  end
+
+  ;; Flags from NPC rom
+  module NpcRomFlag
+    ;; Amount
+    AMOUNT_BITMAP = $07
+
+    ;; Crowd
+    IS_CROWD = $10
+
+    ;; Has movement script
+    HAS_MOVEMENT = $20
+
+    ;; Has initialize script
+    HAS_INITIALIZE = $40
+
+    ;; Has action script
+    HAS_ACTION = $80
+  end
+
+  ;; The level data bank
+  LEVEL_DATA_BANK = $C4
+
+  ;; The exit data bank
+  EXIT_DATA_BANK = $C4
+
+  ;; Number of layers
+  NUM_LAYERS = 2
+
+  ;; Number of renderable background
+  NUM_RENDERABLE_BGS = 2
+
+  ;; Rendering screen width
+  RENDER_TARGET_WIDTH = 17
+
+  ;; Rendering screen width
+  TARGET_WIDTH = 32
+  
+  ;; Rendering screen height
+  TARGET_HEIGHT = 16
+
+  ;; The maximum width of a map
+  MAX_WIDTH = 64
+
+  ;; The maximum height of a map
+  MAX_HEIGHT = 64
+
+  ;; BG tiles per tile
+  BGTILES_PER_TILE_X = 2
+
+  ;; BG tiles per tile
+  BGTILES_PER_TILE_Y = 2
+
+  ;; Maximum bgtiles to scroll at once (per axis)
+  MAX_SCROLL_AXIS = 2
+
+  ;; Rendering screen width
+  SCREEN_WIDTH = TARGET_WIDTH * BGTILES_PER_TILE_X
+
+  ;; Rendering screen width
+  SCREEN_HEIGHT = TARGET_HEIGHT * BGTILES_PER_TILE_Y
+
+  ;; 1 decompressed row = 32 tiles a 2*2 bgtiles a 2 layers a 2 bytes
+  SCROLL_BUFFER_SIZE_Y = 32 * 2 * 2 * 2 * 2
+
+  ;; 1 decompressed row = 16 tiles a 2*2 bgtiles a 2 layers a 2 bytes
+  SCROLL_BUFFER_SIZE_X = 16 * 2 * 2 * 2 * 2
+
+  ;; Maximum number of NPC instances
+  MAX_NUM_NPC_INSTANCES = 8
+
+  ;; Maximum number of level NPCs
+  MAX_NUM_LEVEL_NPC = 16
+
+  ;; The level configuration
+  class RomHeader
+    ;; The tilemap pointer
+    declare :tilemap_pointer, as: :uint24
+
+    ;; The palette ID
+    declare :palette_id, as: :uint16
+
+    ;; Pointer to the exit list
+    declare :exit_list_address, as: :uint16
+
+    ;; Pointer to the on_load script
+    declare :onload_script_address, as: :uint24
+
+    ;; Bank for switch data
+    declare :switch_data_bank, as: :uint8
+
+    ;; Record containing the screen mode/flags
+    declare :global_flags, as: :uint8
+
+    ;; Record containing the screen mode/flags
+    declare :camera_flags, as: :uint8
+
+    ;; NPC data
+    declare :num_npcs, as: :uint8
+
+    ;; NPC character address
+    declare :npc_character_address, as: :uint16
+
+    ;; NPC flags
+    declare :npc_flags, as: :uint8
+
+    ;; -- Script addresses might be here --
+
+    ;; NPC instance flags
+    declare :npc_instance_flags, as: :uint8
+
+    ;; NPC instance X
+    declare :npc_instance_x, as: :uint8
+
+    ;; NPC instance Y
+    declare :npc_instance_y, as: :uint8
+
+    ;; === NPC data loops from here ===
+  end
+
+  NPC_DATA_OFFSET = RomHeader.size
+
+end

@@ -1,0 +1,17 @@
+module Aoba::Thread
+
+  ;; Waits for an event
+  ;;
+  ;; @param bitmask
+  Aoba::Script.callback "Thread_GetCurrentThreadId", bank: SYSTEM_ROM_BANK do
+    get_current_thread_pointer_X
+    X.is_a! Instance
+    CPU.set A: 8
+    LDA   X[:id]
+    STA   dp(Aoba::Script.register_a)
+    STZ   dp(Aoba::Script.register_a + 1)
+    CPU.set A: 16
+    STZ   dp(Aoba::Script.register_a + 2)
+  end
+
+end

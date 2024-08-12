@@ -1,0 +1,66 @@
+module Aoba::Tileset
+
+  class TileReferenceStorageBuilder
+    macro initialize(storage)
+      @storage = storage
+    end
+
+    macro num_bgs(num)
+      @storage.num_bgs = num
+    end
+
+    macro use(other)
+      other.include_to_tileset_storage @storage
+    end
+  end
+
+  class TileReferenceStorage < Aoba::EngineObject
+    ;; Initialize
+    macro initialize
+      super
+
+      @RAM = MemoryScope.new("__tile_reference_storage", in: nil, for: ::SNES::MemoryMap::RAM)
+      @tileset = nil
+      @tile_format = nil
+      @num_bgs = 1
+    end
+
+    macro include_as_scene_object(scene, **kwargs)
+      SceneObject.new(self).include_to_scene_mode scene, **kwargs
+    end
+
+    macro configure_for_scene(scene)
+      scene.FixedRAM.include @RAM
+    end
+
+    ;; Parent objects
+    macro parent_objects
+      return [self.tileset, self.tile_format]
+    end
+
+    ;; Loads a tile from a reference
+    macro load_tile_from_reference(origin)
+      raise "Not implemented: load_tile_from_reference"
+    end
+    
+    ;; Iterates a tile from the reference
+    macro generate_load_flipped_tile_code(xaxis, yaxis, mask, reg=:X)
+      raise "Missing generate_load_flipped_tile_code"
+    end
+
+    ;; Sets this as a storage
+    macro include_to_tilemap_renderer(renderer)
+      renderer.tileset_storage = self
+    end
+
+    ;; Returns the reference for a specific layer
+    macro reference_index_for(layer)
+      raise "No reference index for #{layer} found"
+    end
+
+    ;; Initialize
+    macro finalize
+    end
+  end
+
+end

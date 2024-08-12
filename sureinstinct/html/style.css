@@ -1,0 +1,178 @@
+@keyframes background {
+  0% {
+    background-position: 0px 0px;
+  }
+  100% {
+    background-position: -512px -512px;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html, body {
+  margin: 0;
+  padding: 0;
+  font-family: sans-serif;
+}
+
+body {
+  background-color: #383838;
+  color: #FF5246;
+}
+
+body.animated {
+  animation: background 5s linear infinite;
+  background-image: url(./background.png);
+  background-repeat: repeat;
+}
+
+canvas.emscripten {
+  display: none;
+  background: black;
+  border: 0px none;
+}
+
+#body {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 512px;
+  height: 448px;
+}
+
+#loading {
+  display: none;
+  position: absolute;
+  left: 40px;
+  right: 40px;
+  top: 200px;
+  text-align: center;
+}
+
+#footnote {
+  display: none;
+  position: absolute;
+  left: 0;
+  width: 512px;
+  top: 448px;
+  height: 32px;
+  background: black;
+  text-align: right;
+  padding: 2px;
+}
+
+#footnote small {
+  color: #888;
+}
+
+.content-box {
+  display: block;
+  margin: 0 20px;
+}
+
+hr {
+  border: 0;
+  margin: 30px;
+}
+
+.button-box {
+  display: block;
+  margin-top: 2px;
+  margin-bottom: 2px;
+}
+
+.button-box-btn {
+  display: inline-block;
+  background-color: #ddd;
+  border: 0;
+  border-top: 2px solid #ddd;
+  border-bottom: 2px solid #888;
+  border-radius: 5px;
+  margin: 5px;
+  padding: 3px 10px 5px 10px;
+  text-decoration: none;
+  color: black;
+  font-size: 12px;
+  cursor: pointer;
+  box-shadow: 0 4px 0 rgba(0,0,0,0.5);
+}
+
+.button-box-btn:hover,
+.button-box-btn:focus {
+  background-color: #eee;
+}
+.button-box-btn:active {
+  background-color: #FF5246;
+  color: white;
+}
+
+.content-box h3 {
+  margin-bottom: 0;
+  font-size: 18px;
+}
+
+.content-box small {
+  font-size: 12px;
+}
+
+.keyboardonly {
+  display: none;
+}
+
+.keyboard .keyboardonly {
+  display: inline;
+}
+
+.btn {
+  cursor: pointer;
+  background-color: #31979f;
+  border: 0;
+  border-bottom: 2px solid #5dbfa9;
+  color: white;
+  padding: 5px 10px;
+}
+
+.btn-dark {
+  background-color: #383838;
+  border-color: #1f1f1f;
+}
+
+.btn-sm {
+  font-size: 80%;
+}
+
+#loaded {
+  text-align: center;
+}
+
+#loadingbar {
+  position: relative;
+  border: 2px solid #FF5246;
+  width: 100%;
+  height: 20px;
+  margin-bottom: 10px;
+}
+
+#loadinginner {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  background-color: #FF5246;
+}
+
+#error {
+  display: none;
+  position: absolute;
+  background: #FF5246;
+  color: white;
+  font-weight: bold;
+  text-align: center;
+  padding: 10px;
+  top: 100px;
+  left: 0;
+  right: 0;
+  z-index: 100;
+}

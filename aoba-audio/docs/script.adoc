@@ -1,0 +1,118 @@
+= Aoba audio engine
+
+This documentation explains how song scripts are built.
+
+== Executing commands
+
+To execute a command, just start with the command ID. If parameters are required
+by the command, those follow directly after the command ID.
+
+== Playing notes and delays
+
+All commands below the value `$C4` are interpreted as notes.
+
+The value is calculated by this formular: `byte = note + delay * $0E`.
+
+Note values represent the notes:
+
+|===
+| 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | A | B | C | D
+
+| C | C+ | D | D+ | E | F | F+ | G | G+ | A | A+ | B 2+| see below
+|===
+
+
+The delay value is used to indicate how long to wait until the next command is
+executed.
+
+*Special case:* If the delay value is `$D`, the actual delay value is stored
+in a separate byte after the note.
+
+
+== Commands
+
+=== C4: Set sample
+
+`$C4 ss` - Set sample to sample ID *ss*.
+
+=== C5: Set song speed
+
+`$C5 ss` - Set song speed to *ss*. (defaults to `$60`)
+
+The actual delay between notes in milliseconds can be calculated using `*ss* / 8`, so
+a value of `$60` would be a speed of 120ms.
+
+=== C6: Set channel volume
+
+`$C6 vv` - Set channel volume to *vv*.
+
+The maximum volume value is `$7F`.
+
+=== C7: Decrement octave
+
+Decrements the channels octave by one.
+
+=== C8: Increment octave
+
+Increments the channels octave by one.
+
+=== C9: Set octave
+
+`$C9 oo` - Sets the channels octave for note playback channel to *oo*. (defaults to `$06`)
+
+=== CA: Stop or loop
+
+Stops the current channels playback. If a loop position has been defined earlier,
+the channel is looped instead.
+
+=== CB: Shift pitch
+
+`$CB np` - Shifts the channels pitch modification value by *0n:p0*. *n* is a signed value
+
+=== CC: Set ADSR.SR
+
+`$CC ss` - Sets the channels ADSR.SR value to *ss*.
+
+=== CD: Set track loop position
+
+Marks the current script position as loop position for the `$CA` command.
+
+=== CE: Set panning
+
+`$CE pp` - Sets the panning for the channel to *pp*, where `$80` is center.
+
+=== CF: Begin repeat block
+
+`$CF tt` - Starts a loop block which is played *tt* times.
+
+=== D0: End repeat block
+
+End of `$CF` command.
+
+=== D1: Set ADSR.AR
+
+`$D1 ss` - Sets the channels ADSR.AR value to *ss*.
+
+=== D2: Enable echo
+
+Enables echo for the current channel
+
+== D3: EASE_PITCH
+
+`$D3 tt oo` - Eases the pitch for *tt* ticks by *oo* notes.
+
+== D4: VIBRATO
+
+`$D4 tt pp` - Enables vibrato using *tt* with a power of *pp* (signed).
+
+== D5: SET_PITCH
+
+`$D5 np` - Sets the channels pitch modification value to *0n:p0*. *n* is a signed value
+
+=== D6: Set ADSR.DR
+
+`$D6 ss` - Sets the channels ADSR.DR value to *ss* (ss must be << 4).
+
+=== D7: Set ADSR.SL
+
+`$D7 ss` - Sets the channels ADSR.SL value to *ss* (ss must be << 5)

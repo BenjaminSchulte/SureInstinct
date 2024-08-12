@@ -1,0 +1,13 @@
+name: "Stage 2: Bombing Mission"
+scripts:
+  []
+tilemap: stage2
+palette: wood/main
+top_palette: wood/main
+bottom_palette: wood/dark
+pause_palette: wood/pause
+custom_properties:
+  name: Bombing Mission
+  stage: Stage 2
+  stage_index: 2
+  start_position: {x: 22, y: 13.5}

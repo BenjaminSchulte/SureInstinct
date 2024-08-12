@@ -1,0 +1,11 @@
+module Command::SetEchoVolume
+
+  ;; Sets the echo volume
+  def process
+    MOV   A, dp(SPC.PORT1)
+    MOV   dp(SPC.PORT0), dp(IPC.last_ipc_value)
+    MOV   dp(DSP.echo_configured_volume), A
+    JMP   Command::SetupEcho.setup_echo
+  end
+
+end

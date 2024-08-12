@@ -1,0 +1,13 @@
+<RCC>
+    <qresource prefix="/">
+        <file>images/16x16/add.png</file>
+        <file>images/16x16/speaker.png</file>
+        <file>images/24x24/song-save.png</file>
+        <file>images/24x24/song-new.png</file>
+        <file>images/24x24/song-load.png</file>
+        <file>images/24x24/song-export.png</file>
+        <file>images/24x24/song-play.png</file>
+        <file>images/24x24/song-rewind.png</file>
+        <file>images/24x24/song-loop.png</file>
+    </qresource>
+</RCC>

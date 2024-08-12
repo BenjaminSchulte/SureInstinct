@@ -1,0 +1,72 @@
+module Script
+
+  ;; Executes a script command
+  def _execute_script_command
+    SETC
+    SBC   A, #$C4
+    ASL   A
+    MOV   X, A
+    MOV   A, #0
+    JMP   addr(Action.action_table, X)
+  end
+
+  ;; Executes all script commands
+  macro _execute_script_commands
+  _loop:
+    MOV   Y, dp(Channel.pointer)
+    MOV   X, #0
+    MOV   A, indirect(address, X)
+    INCW  dp(address)
+
+    CMP   A, #$C4
+    BGE   _is_script_command
+    JMP   Script::Play.play_note
+
+  _is_script_command:
+    _execute_script_command
+
+    MOV   A, dp(Channel.processed_channels)
+    AND   A, dp(Channel.voice_bit_pointer)
+    BNZ   _loop
+  end
+
+  ;; Processes the script
+  def process
+    ; Revert the KOFF channels
+    MOV   dp(SPC.DSP_ADDR), #DSP.KOFF
+    MOV   dp(SPC.DSP_DATA), #0
+    MOV   dp(start_channels), #0
+
+  _loop:
+    Stream.update
+
+    MOV   A, dp(Channel.processed_channels)
+    AND   A, dp(Channel.voice_bit_pointer)
+    BZE   _skip_channel
+
+    ; Process the channel
+    _store_channel_to_local_ram
+    BBS1  dp(ch_control_flags), update_tick
+
+    _store_script_address_to_local_ram
+    _execute_script_commands
+
+  _after_script_loop:
+    _restore_script_address_from_local_ram
+  _after_update_tick:
+    _restore_channel_from_local_ram
+
+  _skip_channel:
+    Channel.advance_pointers voice_base_pointer: true, pointer_4x: true
+    DBNZ  dp(Channel.num_channels), _loop
+
+    ; Start channels
+    MOV   dp(SPC.DSP_ADDR), #DSP.KON
+    MOV   dp(SPC.DSP_DATA), dp(start_channels)
+    RET
+
+  update_tick:
+    Tick.process_tick _after_update_tick
+  end
+
+end

@@ -1,0 +1,297 @@
+module Aoba::Compression::TilemapTiles
+
+  ;; Reads one byte from the source address
+  macro _read_from_source_address_Y
+    LDA   State.offset_of(:source_address).indirect.long, Y
+  end
+
+  class Generator < StaticRoutineClass
+    locate_at bank: SYSTEM_ROM_BANK
+    register A: 16, XY: 16
+
+    macro initialize(target_size)
+      @target_size = target_size
+
+      setup_static_routines
+    end
+
+    ;; Execute decompression
+    routine :execute_long do
+      PHD
+      TCD
+      CPU.set A: 8
+      PHB
+      LDA   dp(State.offset_of(:target_address)) + 2
+      PHA
+      PLB
+
+      LDX   dp(State.offset_of(:target_address))
+      STX   dp(State.offset_of(:current_row_index))
+      LDY   #0
+    
+    _read_next_row:
+    _read_next_data:
+      _read_from_source_address_Y
+      CMP   #$F8
+      BGE   _execute_command
+
+      STA   0, X
+      STZ   1, X if @target_size > 1
+
+    _advance_tile:
+      INY
+      INX
+      INX   if @target_size > 1
+      DEC   dp(State.offset_of(:num_cols))
+      BNZ   _read_next_data
+      DEC   dp(State.offset_of(:num_rows))
+      BZE   _end_of_decompress
+
+    _advance_row:
+      CPU.set A: 16
+      _advance_row_index
+      CPU.set A: 8
+      BRA   _read_next_row
+
+    _test_end_of_data:
+      LDA   dp(State.offset_of(:num_rows))
+      BNZ   _read_next_data
+
+    _end_of_decompress:
+      PLB
+      CPU.set A: 16
+      PLD
+      RTL
+
+      A.pretend_size 8
+
+    _execute_command:
+      BNE   _check_command_F9
+
+      ; Command F8: flag $40
+    _execute_command_FB:
+      INY
+      _read_from_source_address_Y
+      STA   0, X
+      if @target_size > 1
+        LDA   #$40
+        STA   1, X
+      end
+      BRA   _advance_tile
+
+    _check_command_F9:
+      CMP   #$F9
+      BNE   _check_command_FA
+
+      ; Command F9: flag $80
+    _execute_command_F9:
+      INY
+      _read_from_source_address_Y
+      STA   0, X
+      if @target_size > 1
+        LDA   #$80
+        STA   1, X
+      end
+      BRA   _advance_tile
+
+    _check_command_FA:
+      CMP   #$FA
+      BNE   _check_command_FB
+
+      ; Command FA: flag $C0
+    _execute_command_FA:
+      INY
+      _read_from_source_address_Y
+      STA   0, X
+      if @target_size > 1
+        LDA   #$C0
+        STA   1, X
+      end
+      BRA   _advance_tile
+
+    _check_command_FB:
+      CMP   #$FB
+      BNE   _check_command_FC
+
+      ; Command FB: copy from column
+    _execute_command_FB:
+      _copy_from_column
+      BRA   _test_end_of_data
+
+    _check_command_FC:
+      CMP   #$FC
+      BNE   _check_command_FD
+
+      ; Command FC: copy from row
+    _execute_command_FC:
+      _copy_from_row
+      BRA   _test_end_of_data
+
+    _check_command_FD:
+      ; Command FD: tile larger than F8
+    _execute_command_FD:
+      INY
+      _read_from_source_address_Y
+      STA   0, X
+      Debug.BRK
+      if @target_size > 1
+        STZ   1, X
+      end
+      JMP   _advance_tile
+    end
+
+    ;; @ignore-thread-safety
+    routine :_prepare_copy do
+      A.pretend_size 8
+      INY
+      _read_from_source_address_Y
+      STA   dp(State.offset_of(:copy_offset))
+      AND   #$F
+      INC   A
+      INC   A
+      STA   dp(State.offset_of(:copy_count))
+      STZ   dp(State.offset_of(:copy_count)) + 1
+
+      LDA   dp(State.offset_of(:copy_offset))
+      LSR
+      LSR
+      LSR
+      LSR
+      INC   A
+      RTS
+    end
+
+    macro _copy_from_column
+      _prepare_copy
+      ASL   if @target_size > 1
+      STA   dp(State.offset_of(:copy_offset))
+      STZ   dp(State.offset_of(:copy_offset)) + 1
+
+      PHY
+      CPU.set A: 16
+      TXA
+      SEC
+      SBC   dp(State.offset_of(:copy_offset))
+      TAY
+      CPU.set A: 8 if @target_size == 1
+      _copy_data
+      CPU.set A: 8 if @target_size > 1
+      PLY
+      INY
+    end
+
+    macro _copy_from_row
+      _prepare_copy
+
+      CPU.set A: 16
+      AND   #$FF
+      PHY
+      TAY
+      TXA
+
+    _loop:
+      SEC
+      SBC   dp(State.offset_of(:max_map_width_2x))
+      DEY
+      BNZ   _loop
+
+      TAY
+
+      CPU.set A: 8 if @target_size == 1
+      _copy_data
+      CPU.set A: 8 if @target_size > 1
+      PLY
+      INY
+    end
+
+    ;; @ignore-thread-safety
+    routine :_copy_data do
+      if @target_size ==1
+        _copy_data8
+      else
+        _copy_data16
+      end
+      RTS
+    end
+
+    macro _copy_data8
+    _loop:
+      LDA   0, Y
+      STA   0, X
+
+      ; Advance X
+      DEC   dp(State.offset_of(:num_cols))
+      BNZ   _advance_col
+    _advance_row:
+      DEC   dp(State.offset_of(:num_rows))
+      CPU.set A: 16
+      _advance_row_index
+      CPU.set A: 8
+      BRA   _after_modify_x
+    _advance_col:
+      INX
+    _after_modify_x:
+
+      ; Finish copy?
+      DEC   dp(State.offset_of(:copy_count))
+      BZE   _finish
+
+      ; Advance Y
+      INY
+      BRA   _loop
+
+    _finish:
+    end
+
+    macro _copy_data16
+    _loop:
+      LDA   0, Y
+      STA   0, X
+
+      ; Advance X
+      DEC   dp(State.offset_of(:num_cols))
+      BNZ   _advance_col
+    _advance_row:
+      DEC   dp(State.offset_of(:num_rows))
+      _advance_row_index
+      BRA   _after_modify_x
+    _advance_col:
+      INX
+      INX
+    _after_modify_x:
+
+      ; Finish copy?
+      DEC   dp(State.offset_of(:copy_count))
+      BZE   _finish
+
+      ; Advance Y
+      INY
+      INY
+      BRA   _loop
+
+    _finish:
+    end
+    
+    ;; @ignore-thread-safety
+    routine :_advance_row_index do
+      LDA   dp(State.offset_of(:current_row_index))
+      CLC
+      ADC   dp(State.offset_of(:max_map_width_2x))
+      TAX
+      STX   dp(State.offset_of(:current_row_index))
+      LDA   dp(State.offset_of(:map_width))
+      STA   dp(State.offset_of(:num_cols))
+      RTS
+    end
+  end
+
+  __target_size = [0, nil, nil]
+
+  macro execute_long(target_size)
+    Compiler.with_global_context nil do
+      __target_size[target_size] = Generator.new(target_size) if __target_size[target_size].nil?
+    end
+    JSL __target_size[target_size].execute_long
+  end
+
+end

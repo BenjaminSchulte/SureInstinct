@@ -1,0 +1,12 @@
+module Aoba::Audio
+
+  ;; Plays a stream
+  ;;
+  ;; @param REGA address
+  Aoba::Script.callback "Audio_PlayStream", bank: AUDIO_ROM_BANK do
+    LDX   dp(Aoba::Script.register_a)    
+    LDA   #$7f80
+    JMP   Api.play_stream_icb_long
+  end
+
+end

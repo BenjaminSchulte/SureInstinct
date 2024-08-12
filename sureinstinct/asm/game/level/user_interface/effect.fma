@@ -1,0 +1,34 @@
+module Game::Level::UserInterface
+
+  ;; The actual effect
+  thread = Aoba::Effect.create "UserInterface" do
+    start do
+      STZ   menu_state
+
+      Attributes.allocate_attribute_memory
+      setup_vram
+      setup_sprites
+
+      queue_update 1
+    end
+
+    update do
+      LDA   menu_state - 1
+      BPL   _resume
+      trigger_finish
+      RTS
+
+    _resume:
+      Attributes.update_attribute_on_change
+      queue_update 1
+    end
+
+    finish do
+Debug.fatal "Finish UserInterface"
+
+      release_sprites
+      Attributes.free_attribute_memory
+    end
+  end
+
+end

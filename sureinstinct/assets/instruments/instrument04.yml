@@ -1,0 +1,11 @@
+name: Instrument 04
+sample: sample04
+volume: 127
+loop: 1.5
+pitch: -586
+adsr:
+  enabled: true
+  ar: 14
+  dr: 7
+  sr: 0
+  sl: 7

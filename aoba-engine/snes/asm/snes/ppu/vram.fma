@@ -1,0 +1,86 @@
+module PPU::VRAM
+  ;; Configures the access port for reading/writing
+  ;;
+  ;; @param access_mode=:uint8 string - can be either `:uint8` or `:uint16`
+  ;; @param map_mode=:none string
+  ;; @param increment_size=1 number - can be either `1`, `32` or `128`
+  macro configure_value(access_mode=:uint8, map_mode=:none, increment_size=1)
+    _value = 0
+    case access_mode
+    when :uint8
+      _value = _value | $00
+    when :uint16
+      _value = _value | $80
+    else
+      raise "Unknown access_mode: #{access_mode}"
+    end
+
+    case map_mode
+    when :none
+      _value = _value | $00
+    else
+      raise "Unknown map mode: #{map_mode}"
+    end
+
+    case increment_size
+    when 1
+      _value = _value | $00
+    when 32
+      _value = _value | $01
+    when 128
+      _value = _value | $10
+    else
+      raise "Unsupported increment_size: #{increment_size}"
+    end
+
+    _value
+  end
+
+  macro configure(*args, **kwargs)
+    LDA   #configure_value(*args, **kwargs)
+    STA   PPU.VMAIN
+  end
+
+  macro configure_long(*args, **kwargs)
+    LDA   #configure_value(*args, **kwargs)
+    STA   PPU.VMAIN.long
+  end
+
+  ;; Sets the target address of the read/write port
+  ;;
+  ;; @param address address - the target address
+  macro set_address(address)
+    raise "Register X must be size of 16" unless X.size_16?
+
+    LDX   #(address & $FFFF) >> 1
+    STX   PPU.VMADD
+  end
+
+  ;; Sets the target address of the read/write port
+  ;;
+  ;; @param address address - the target address
+  macro set_address_long(address)
+    raise "Register X must be size of 16" unless X.size_16?
+
+    LDX   #(address & $FFFF) >> 1
+    STX   PPU.VMADD.long
+  end
+
+  ;; Copies data directly into the VRAM
+  ;;
+  ;; @param origin address - the address to copy from
+  ;; @param size number - the size of bytes to copy
+  ;; @param destination address - the address to copy data to
+  ;; @param index=0 number - the DMA channel to use
+  macro copy_16(origin, size, destination, index=0)
+    DMA[index].configure       :transfer_2_once
+    DMA[index].set_origin      origin
+    DMA[index].set_destination PPU.VMDATA
+    DMA[index].set_size        size
+
+    PPU::VRAM.configure   access_mode: :uint16
+    PPU::VRAM.set_address destination
+
+    DMA[index].trigger
+  end
+end

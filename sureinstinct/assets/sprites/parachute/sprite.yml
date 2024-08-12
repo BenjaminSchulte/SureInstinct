@@ -1,0 +1,55 @@
+type: BallSprite
+frames:
+  open_down_0:
+    images: [{image: 0}]
+  open_down_1:
+    images: [{image: 1}]
+  open_down_2:
+    images: [{image: 2}]
+  open_down_3:
+    images: [{image: 3, x: 1}]
+  open_down_4:
+    images: [{image: 4}]
+  open_down_5:
+    images: [{image: 5}]
+animations:
+  open_down:
+    - frame: open_down_0
+      delay: 3
+    - frame: open_down_1
+      delay: 3
+    - frame: open_down_2
+      delay: 3
+    - frame: open_down_3
+      delay: 5
+    - frame: open_down_4
+      delay: 3
+    - action: begin_loop
+    - {frame: open_down_5, delay: 3}
+    - {action: user_command, command: 0x91}
+    - {frame: open_down_5, delay: 3}
+    - {action: user_command, command: 0x91}
+    - {frame: open_down_5, delay: 3}
+    - {action: user_command, command: 0x91}
+    - {frame: open_down_5, delay: 3}
+    - {action: user_command, command: 0x91}
+    - {frame: open_down_5, delay: 3}
+    - {action: user_command, command: 0x91}
+    - {frame: open_down_5, delay: 3}
+    - {action: user_command, command: 0x91}
+    - {frame: open_down_5, delay: 3, x: 1}
+    - {action: user_command, command: 0x91}
+    - {frame: open_down_5, delay: 3, x: 1}
+    - {action: user_command, command: 0x91}
+    - {frame: open_down_5, delay: 3, x: 1}
+    - {action: user_command, command: 0x91}
+    - {frame: open_down_5, delay: 3, x: 1}
+    - {action: user_command, command: 0x91}
+    - {frame: open_down_5, delay: 3, x: 1}
+    - {action: user_command, command: 0x91}
+    - {frame: open_down_5, delay: 3, x: 1}
+    - {action: user_command, command: 0x91}
+    - action: loop
+  stand_down:
+    - frame: open_down_0
+      delay: 15

@@ -1,0 +1,112 @@
+module Aoba
+
+  module _SystemDebug
+    def __count
+      X.is_a! Thread::Instance
+      BZE   _skip_count
+    _loop:
+      INC   A
+      CMP   #$0800
+      BEQ   _failed
+      LDY   X[:next_thread]
+      TYX
+      BNZ   _loop
+    _skip_count:
+      RTL
+
+    _failed:
+      Debug.BRK
+      RTL
+    end
+
+    macro _count(threads)
+      LDA   #0
+      LDX   threads
+      JSL   __count
+    end
+
+    def _list_thread_events
+      X.is_a! Thread::Instance
+      BZE   _skip_count
+
+    _loop:
+      LDA   #0
+      LDY   X[:first_event]
+      BZE   _no_event
+
+      PHX
+      TYX
+      X.is_a! Thread::Event::Base
+      
+    _loop_event:
+      INC   A
+      LDY   X[:next_event]
+      TYX
+      BNZ   _loop_event
+
+      PLX
+      TAY
+      X.is_a! Thread::Instance
+      LDA   X[:id]
+      AND   #$FF
+      Debug.log "  Thread {A}: ${Y} events"
+      NOP
+
+    _no_event:
+      LDY   X[:next_thread]
+      TYX
+      BNZ   _loop
+
+    _skip_count:
+      RTL
+    end
+
+    def _count_free_ram
+      CPU.set A: 8
+      LDX   #255
+      LDY   #0
+    _loop:
+      LDA   Aoba::Memory.block_usage_table.long, X
+      BZE   _next
+      INY
+    _next:
+      DEX
+      BPL   _loop
+      CPU.set A: 16
+      Debug.log "  Blocked RAM: ${Y}00 bytes"
+      RTL
+    end
+  end
+
+  Event.on :do_full_dump_variable do
+    Debug.log "== THREAD SUMMARY =="
+    LDA #NUM_THREADS
+    Debug.log "  Maximum Available Threads: ${A}"
+    _SystemDebug._count Thread.free_threads
+    Debug.log "  Free Threads: ${A}"
+    _SystemDebug._count Thread.queued_threads
+    Debug.log "  Queued Threads: ${A}"
+    _SystemDebug._count Thread.paused_threads
+    Debug.log "  Paused Threads: ${A}"
+
+    Debug.log "== EVENT SUMMARY =="
+    _SystemDebug._count Thread::Event.free_events
+    Debug.log "  Free Events: ${A}"
+
+    LDX   Thread.queued_threads
+    JSL   _SystemDebug._list_thread_events
+    LDX   Thread.paused_threads
+    JSL   _SystemDebug._list_thread_events
+    LDX   Thread.current_thread
+    JSL   _SystemDebug._list_thread_events
+
+    Debug.log "== TIMER SUMMARY =="
+    _SystemDebug._count Thread::Timer.free_timers
+    Debug.log "  Free Timers: ${A}" 
+    _SystemDebug._count Thread::Timer.active_timers
+    Debug.log "  Active Timers: ${A}" 
+
+    Debug.log "== MEMORY SUMMARY =="
+    JSL   _SystemDebug._count_free_ram
+  end
+end

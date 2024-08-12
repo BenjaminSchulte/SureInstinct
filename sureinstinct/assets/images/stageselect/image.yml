@@ -1,0 +1,51 @@
+name: Stage Select
+
+color_depth: 16
+tile_size: {width: 8, height: 8}
+
+custom_variants:
+  - bg2
+  - ranks
+  - map_unknown
+  - name_tutorial
+  - name_tutorial_selected
+  - name_stage1
+  - name_stage1_selected
+  - name_stage2
+  - name_stage2_selected
+  - name_stage3
+  - name_stage3_selected
+  - name_challenge
+  - name_challenge_selected
+  - name_feedback
+  - name_feedback_selected
+
+variants:
+  default:
+    image: bg1.png
+    priority: bg1-priority.png
+    palette: bg1-palette.png
+  bg2:
+    image: bg2.png
+    priority: priority0.png
+    palette: bg1-palette.png
+  map_unknown:
+    image: map_unknown.png
+    priority: priority0.png
+    palette: bg1-palette.png
+  ranks:
+    image: ranks.png
+    priority: priority0.png
+    palette: bg1-palette.png
+  name_tutorial: {image: name_tutorial.png, priority: priority0.png, palette: bg1-palette.png}
+  name_tutorial_selected: {image: name_tutorial_selected.png, priority: priority0.png, palette: bg1-palette.png}
+  name_stage1: {image: name_stage1.png, priority: priority0.png, palette: bg1-palette.png}
+  name_stage1_selected: {image: name_stage1_selected.png, priority: priority0.png, palette: bg1-palette.png}
+  name_stage2: {image: name_stage2.png, priority: priority0.png, palette: bg1-palette.png}
+  name_stage2_selected: {image: name_stage2_selected.png, priority: priority0.png, palette: bg1-palette.png}
+  name_stage3: {image: name_stage3.png, priority: priority0.png, palette: bg1-palette.png}
+  name_stage3_selected: {image: name_stage3_selected.png, priority: priority0.png, palette: bg1-palette.png}
+  name_challenge: {image: name_challenge.png, priority: priority0.png, palette: bg1-palette.png}
+  name_challenge_selected: {image: name_challenge_selected.png, priority: priority0.png, palette: bg1-palette.png}
+  name_feedback: {image: name_feedback.png, priority: priority0.png, palette: bg1-palette.png}
+  name_feedback_selected: {image: name_feedback_selected.png, priority: priority0.png, palette: bg1-palette.png}

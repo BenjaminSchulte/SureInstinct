@@ -1,0 +1,13 @@
+module Aoba
+
+  ;; The mouse bank
+  MOUSE_ROM_BANK ||= SYSTEM_ROM_BANK
+
+end
+
+require "configuration"
+require "memory"
+require "thread"
+require "region"
+require "event"
+require "api"

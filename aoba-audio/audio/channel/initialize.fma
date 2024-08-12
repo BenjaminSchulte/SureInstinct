@@ -1,0 +1,56 @@
+module Channel
+
+  ;; RAM used for STOP channel
+  scope :InitializeChannelControl, in: nil, for: Memory::SPCRAM
+
+  InitializeChannelControl.include IterationControl
+
+  declare :default_panning, as: :uint8, in: InitializeChannelControl
+  declare :default_control_flags, as: :uint8, in: InitializeChannelControl
+
+  ;; Stops the current channel
+  macro _initialize_channel
+    MOV   Y, dp(pointer)
+
+    MOV   A, #$FF
+    MOV   addr(last_absolute_notes, Y), A
+    MOV   addr(repeat_block_depth, Y), A
+
+    MOV   A, #0
+    MOV   addr(script_loop_targets+1, X), A
+    MOV   addr(modify_pitch_low_bytes, Y), A
+    MOV   addr(modify_pitch_high_bytes, Y), A
+    MOV   addr(effect_flags, Y), A
+
+    MOV   A, #DEFAULT_VOLUME
+    MOV   addr(volumes, Y), A
+
+    MOV   A, dp(default_panning)
+    MOV   addr(pannings, Y), A
+
+    MOV   A, dp(default_control_flags)
+    MOV   addr(control_flags, Y), A
+
+    MOV   A, #DEFAULT_OCTAVE
+    MOV   addr(octaves, Y), A
+  end
+
+  ;; Stops `num_channels` channels starting from `pointer`
+  def initialize_channels
+    MOV   dp(processed_channels), #0
+  _loop:
+    ; Check whether the channel is active or not
+    MOV   X, dp(pointer_2x)
+    MOV   A, addr(script_offsets+1, X)
+    BZE   _channel_is_inactive
+
+    _initialize_channel
+
+    OR   dp(processed_channels), dp(voice_bit_pointer)
+
+  _channel_is_inactive:
+    advance_pointers
+    DBNZ  dp(num_channels), _loop
+  end
+
+end

@@ -1,0 +1,178 @@
+module Aoba::Sprite::Event::TriggerScript
+
+  ;; The event
+  class Event < Base 
+    ;; The own sprite ID
+    declare :sprite_id, as: :uint8
+
+    ;; The own sprite ID
+    declare :sender_sprite_id, as: :uint8
+  end
+
+  ;;! Temporary RAM
+  scope :TempRAM, in: ActionRAM
+
+  ;;! Target sprite
+  declare :target_sprite_id, in: TempRAM, as: :uint16
+
+  ;;! Target sprite
+  declare :target_sprite, in: TempRAM, as: :uint16
+
+  ;;! Target sprite
+  declare :origin_sprite_id, in: TempRAM, as: :uint16
+
+  ;;! Target sprite
+  declare :origin_sprite, in: TempRAM, as: :uint16
+
+  ;;! Thread ID
+  declare :thread_id, in: TempRAM, as: :uint8
+
+  ;;! The event to send
+  declare :event_id, in: TempRAM, as: :uint8
+
+
+  ;; @param A event ID
+  ;; @param X triggered sprite
+  ;; @ignore-thread-safety
+  def _notify_sprite_thread
+    X.is_a! Instance
+
+    LDA   X[:automation_script_id]
+    BZE   _skip_notify
+
+    STA   dp(_calc0 + 1)
+    LDA   X[:id]
+    PHA
+
+    LDA   #Aoba::Thread::Event.USEREVENT_ID
+    JSL   Aoba::Thread::Event.allocate_icb_long
+    X.is_a! Aoba::Thread::Event::ReadyEvent
+    LDA   dp(event_id)
+    STA   X[:event_id]
+    PLA
+    STA   X[:event_id] + 1
+    LDA   dp(_calc0 + 1)
+    JSL   Aoba::Thread.send_event_icb_long
+    
+  _skip_notify:
+  end
+
+  ;; We received a ready event
+  def on_readyevent
+    A.pretend_size 8
+    X.is_a! Base
+    LDA   X[:sender_thread_id]
+
+    ;; Find all sprites having this sender thread ID
+    LDX   first_sprite
+    X.is_a! Instance
+    BZE   _end_of_loop
+
+  _loop:
+    CMP   X[:trigger_script_thread_id]
+    BNE   _skip_record
+
+    PHA
+    PHX
+
+    LDA   #Aoba::Script::EventId::SPRITE_TRIGGER_END
+    STA   dp(event_id)
+    _notify_sprite_thread
+
+    PLX
+    PLA
+
+  _skip_record:
+    LDY   X[:next_sprite]
+    TYX
+    BNZ   _loop
+
+  _end_of_loop:
+  end
+
+  ;; Creates the sprite
+  ;; @ignore-thread-safety
+  ID = List.create "TriggerScript" do
+    Y.is_a! Event
+
+    ;; Find both sprites
+    LDA   Y[:sender_sprite_id]
+    STA   dp(origin_sprite_id)
+    Action::ManageSprite.find_sprite_by_sprite_id
+    STX   dp(origin_sprite)
+
+    LDA   Y[:sprite_id]
+    STX   dp(target_sprite_id)
+    Action::ManageSprite.find_sprite_by_sprite_id
+    STX   dp(target_sprite)
+    
+    ;; Stores the trigger sprite ID
+    X.is_a! Instance
+    CPU.set A: 8
+    LDA   dp(origin_sprite_id)
+    STA   X[:trigger_sprite_id]
+    LDA   X[:trigger_action_script] + 2
+    BZE   _has_no_script
+
+  _has_script:
+    ;; Notifies both sprites about the start
+    LDA   #Aoba::Script::EventId::SPRITE_TRIGGER_START
+    STA   dp(event_id)
+    _notify_sprite_thread
+    LDX   dp(origin_sprite)
+    _notify_sprite_thread
+
+    ;; Starts the actual script
+    Aoba::ScriptThread.allocate_and_queue
+    X.is_a! Aoba::Thread::Instance
+    LDA   X[:id]
+    STA   dp(thread_id)
+
+    ;; Sends the script address event
+    LDA   #Aoba::Thread::Event::USEREVENT_ID
+    JSL   Aoba::Thread::Event.allocate_icb_long
+    X.is_a! Aoba::Script::EventConfig
+    LDY   dp(target_sprite)
+    Y.is_a! Instance
+    LDA   Y[:trigger_action_script] + 2
+    STA   X[:script_address] + 2
+    LDA   #Script::CreateFlag.NOTIFY_FINISH | Script::CreateFlag.RECEIVE_CONTEXT
+    STA   X[:script_create_flags]
+
+    CPU.set A: 16
+    LDA   Y[:trigger_action_script]
+    STA   X[:script_address]
+    LDA   dp(thread_id)
+    JSL   Aoba::Thread.send_event_icb_long
+
+    ;; Sends the context
+    LDA   #Aoba::Thread::Event::USEREVENT_ID
+    JSL   Aoba::Thread::Event.allocate_icb_long
+    X.is_a! Aoba::Script::ContextConfig
+    LDA   dp(origin_sprite)
+    STA   X[:context]
+
+    CPU.set A: 8
+    LDA   dp(thread_id)
+    JSL   Aoba::Thread.send_event_icb_long
+
+    LDA   dp(thread_id)
+    LDX   dp(origin_sprite)
+    LDY   dp(target_sprite)
+    X.is_a! Instance
+    Y.is_a! Instance
+    STA   X[:trigger_script_thread_id]
+    STA   Y[:trigger_script_thread_id]
+    
+    CPU.set A: 16
+    RTS
+
+    ;; --
+
+    ;; Has no script. Send finish directly?
+  _has_no_script:
+    Debug.BRK
+    RTS
+  end
+
+end

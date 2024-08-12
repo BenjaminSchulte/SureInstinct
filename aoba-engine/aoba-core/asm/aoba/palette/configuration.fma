@@ -1,0 +1,11 @@
+module Aoba::Palette
+
+  ;; First tilemap palette offset
+  TILEMAP_PALETTE_OFFSET = 2
+
+  ;; Palette data ROM bank
+  DATA_ROM_BANK = $C4
+
+  ;; Number of tilemap palette effect slots
+  NUM_TILEMAP_PALETTE_EFFECTS = 4
+end

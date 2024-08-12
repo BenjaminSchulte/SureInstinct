@@ -1,0 +1,101 @@
+module Game::Level::Controls
+
+  locate_at bank: CUSTOM_ROM_BANK
+
+  ;; The thread RAM
+  scope :RAM, in: ::Memory::ThreadRAM
+
+  ;; The event RAM
+  scope :ActionRAM, in: RAM, shared: true
+
+  ;; Temporary variable
+  declare :_calc0, as: :uint32, in: RAM
+  
+  ;; Event listener
+  declare :gamepad_listener, as: :uint16, in: RAM
+
+
+  ;; Updates the selected item
+  macro _update_selected_item(_rts)
+    BIT   #Aoba::Control::Key.bitmap(:y, :r, :rmb)
+    BZE   _no_increment_item
+
+  _increment_item:
+    LDA   selected_item
+    INC   A
+    CMP   #Item::NUM_ITEMS
+    BNE   _update_item
+    LDA   #0
+    BRA   _update_item
+
+  _no_increment_item:
+    BIT   #Aoba::Control::Key.bitmap(:l, :x)
+    BZE   _no_decrement_item
+
+    LDA   selected_item
+    DEC   A
+    BPL   _update_item
+    LDA   #Item::NUM_ITEMS - 1
+
+  _update_item:
+    STA   selected_item
+    Ball.__update_modified_attributes ModifiedAttribute.CURRENT_ITEM
+    BRA   _rts
+
+  _no_decrement_item:
+    BIT   #Aoba::Control::Key.bitmap(:start)
+    BZE   _no_pause
+
+  _pause:
+    JSL   UserInterface::Death.trigger_pause_long
+    BRA   _rts
+
+  _no_pause:
+    BIT   #Aoba::Control::Key.bitmap(:lmb, :a, :b)
+    BZE   _no_select_item
+    LDA   selected_item
+    CMP   #Item::PAUSE
+    BEQ   _pause
+  _no_select_item:
+  end
+
+  ;; Controls thread
+  Thread = Aoba::Thread::Builder.create "LevelControls" do
+    locate_at bank: CUSTOM_ROM_BANK
+    priority LEVEL_CONTROL_PRIORITY
+
+    use_temporary _calc0
+    use_dp_ram RAM
+
+    load do
+      Debug.access_8bit_through_16bit
+      LDA   Thread.thread_id
+      LDX   gamepad
+      LDY   #Aoba::Control::Key.bitmap(:y, :x, :a, :b, :l, :r, :lmb, :rmb, :start)
+      JSL   Aoba::Control.attach_new_listener_icb_long
+      STY   dp(gamepad_listener)
+    end
+
+    unload do
+      LDX   gamepad
+      LDY   dp(gamepad_listener)
+      JSL   Aoba::Control.detach_and_free_listener_icb_long
+    end
+
+    on :keydown do
+      LDA   global_ingame_flags
+      BIT   #GlobalIngameFlag.CONTROLS_DISABLED
+      BNZ   _rts
+
+      LDA   Y[:keys]
+      _update_selected_item _rts
+
+    _rts:
+    end
+  end
+
+  DestroyEventID = Thread.event_list.create "Destroy" do
+    Thread.kill_from_self
+  end
+
+end

@@ -1,0 +1,7 @@
+require "base"
+require "partial_tilemap_renderer"
+require "single_tilemap_tile_renderer"
+require "scroll_tilemap_renderer_axis"
+require "scroll_tilemap_renderer_axis_x"
+require "scroll_tilemap_renderer_axis_y"
+require "scroll_tilemap_renderer"

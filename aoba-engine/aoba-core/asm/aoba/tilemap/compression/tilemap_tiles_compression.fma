@@ -1,0 +1,75 @@
+module Aoba::Tilemap::Compression
+
+  class TilemapTilesCompressionBuilder < BaseBuilder
+    macro max_width(max_width)
+      @compressor.max_width = max_width
+    end
+
+    macro storage_byte_size(size)
+      @compressor.target_size = size
+    end
+  end
+
+  class TilemapTilesCompression < Base
+    macro initialize
+      super
+
+      @max_width = nil
+      @target_size = nil
+      @decompress_state = MemoryVariable.new("decompress_state", as: Aoba::Compression::TilemapTiles::State, in: @TempRAM)
+    end
+
+    ;; Creates the storage
+    macro self.create(&block)
+      storage = TilemapTilesCompression.new
+      builder = TilemapTilesCompressionBuilder.new(storage)
+      block.call with_context builder
+      storage.finalize
+      return storage
+    end
+
+    ;; Whether the map size needs to be configures
+    macro requires_map_size?
+      return true
+    end
+
+    ;; Configures the decompress
+    routine :_configure_decompress do
+      STX   dp(@decompress_state.num_cols)
+      STX   dp(@decompress_state.map_width)
+      STY   dp(@decompress_state.num_rows)
+      LDX   #@max_width * @target_size
+      STX   dp(@decompress_state.max_map_width_2x)
+      LDX   #FIXED_RAM_BANK << 8
+      STX   dp(@decompress_state.target_address) + 1
+      STA   dp(@decompress_state.target_address)
+      RTS
+    end
+
+    ;; Configures the decompress
+    ;; @param X map width
+    ;; @param Y map height
+    ;; @param A target address
+    macro configure_decompress
+      _configure_decompress
+    end
+  
+    ;; Configures the source address
+    ;; @param XH bank
+    ;; @param A address
+    macro configure_source_address
+      STX   dp(@decompress_state.source_address) + 1
+      STA   dp(@decompress_state.source_address)
+    end
+
+    ;; Decompressed
+    macro decompress
+      raise "Missing storage_byte_size for decompressor" if @target_size.nil?
+
+      TDC
+      ORA   #@decompress_state & $FF
+      Aoba::Compression::TilemapTiles.execute_long @target_size
+    end
+  end
+
+end

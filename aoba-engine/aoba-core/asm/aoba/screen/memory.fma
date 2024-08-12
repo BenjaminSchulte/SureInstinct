@@ -1,0 +1,65 @@
+module Aoba::Screen
+
+  locate_at bank: SCREEN_ROM_BANK
+
+  scope :RAM, in: ::Memory::VariableRAM
+
+  class ScreenRegisters
+    ; single registers
+    declare :BGMODE, as: :uint8
+    declare :MOSAIC, as: :uint8
+    declare :BG1SC, as: :uint8
+    declare :BG2SC, as: :uint8
+    declare :BG3SC, as: :uint8
+    declare :BG4SC, as: :uint8
+    declare :BG12NBA, as: :uint8
+    declare :BG34NBA, as: :uint8
+
+    ; -- space --
+    declare :W12SEL, as: :uint8
+    declare :W34SEL, as: :uint8
+    declare :WOBJSEL, as: :uint8
+    declare :WH0, as: :uint8
+    declare :WH1, as: :uint8
+    declare :WH2, as: :uint8
+    declare :WH3, as: :uint8
+    declare :WBGLOG, as: :uint8
+    declare :WOBJLOG, as: :uint8
+    declare :TM, as: :uint8
+    declare :TS, as: :uint8
+    declare :TMW, as: :uint8
+    declare :TSW, as: :uint8
+
+    declare :CGWSEL, as: :uint8
+    declare :CGADSUB, as: :uint8
+    declare :COLDATA, as: :uint8
+    declare :OBSEL, as: :uint8
+
+    ; dual registers
+    declare :BG1HOFS, as: :uint16
+    declare :BG1VOFS, as: :uint16
+    declare :BG2HOFS, as: :uint16
+    declare :BG2VOFS, as: :uint16
+    declare :BG3HOFS, as: :uint16
+    declare :BG3VOFS, as: :uint16
+    declare :BG4HOFS, as: :uint16
+    declare :BG4VOFS, as: :uint16
+
+    ; special registers
+    declare :INIDISP, as: :uint8
+    declare :HDMAEN, as: :uint8
+  end
+
+  ;; The requested register
+  declare :register, in: RAM, as: ScreenRegisters
+
+  ;; The current status of the register
+  declare :ppu_register, in: RAM, as: ScreenRegisters
+
+  ;; Bit map of registers to update (8 bit)
+  declare :update_registers_8, in: RAM, as: :uint16
+
+  ;; Bit map of registers to update (16 bit)
+  declare :update_registers_16, in: RAM, as: :uint16
+
+end

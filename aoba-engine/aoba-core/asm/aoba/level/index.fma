@@ -1,0 +1,17 @@
+module Aoba
+
+  ;; The ROM bank
+  LEVEL_ROM_BANK ||= $C1
+
+end
+
+require "configuration"
+require "memory"
+require "asset"
+
+require "format"
+require "loader"
+
+require "thread"
+require "action"
+require "event"

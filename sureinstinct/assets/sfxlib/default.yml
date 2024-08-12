@@ -1,0 +1,12 @@
+name: Default SFX library
+sfx:
+  - explosion
+  - menu_select
+  - menu_confirm
+  - ball_hitwall
+  - ball_explode
+  - item_collect
+  - break_floor
+  - break_wall
+  - door_open
+  - item_buy

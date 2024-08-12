@@ -1,0 +1,47 @@
+module Aoba::Composer::Event::LoadImageTilesEx
+
+  ;; The event
+  class Event < Base
+    declare :config_address, as: :uint16
+  end
+
+  class Configuration
+    ;; The image address
+    declare :image_address, as: :uint16
+
+    ;; The variant index
+    declare :variant_index, as: :uint16
+
+    ;; The target address
+    declare :vram_address, as: :uint16
+  end
+
+  ;; The RAM for scrolling configuration
+  scope :TempRAM, in: ActionRAM
+
+  TilesLoader = Aoba::Image::TilesLoader.create TempRAM
+
+  ;; Sets the screen mode
+  ;; @ignore-thread-safety
+  ID = List.create "LoadImageTilesEx" do
+    Y.is_a! Event
+    LDX   Y[:config_address]
+    TXY
+    Y.is_a! Configuration
+    PHY
+
+    LDA   Y[:variant_index]
+    STA   dp(_calc0)
+    LDA   Y[:vram_address]
+    LDX   Y[:image_address]
+    TAY
+    LDA   dp(_calc0)
+    TilesLoader.load
+
+    SEI
+    PLX
+    JSL   Aoba::Memory.free_miniblock_long
+    CLI
+  end
+
+end

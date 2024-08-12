@@ -1,0 +1,146 @@
+module Aoba::Control::ScriptUtils
+  ;; Drops all keyboard events for the current thread
+  def drop_gamepad_events_icb
+    routine do
+      make_thread_safe
+
+      execute do
+      _loop:
+        JSL   Aoba::Thread.get_current_thread_pointer_X_long
+        LDA   #CONTROL_THREAD_ID
+        JSL   Aoba::Thread::Event.pop_thread_event_in_thread_icb_long
+        CPY   #0
+        BNZ   _loop
+      end
+    end
+  end
+  
+  ;; Adds the listener
+  ;;
+  ;; @param Y listener
+  def add_listener_to_sender_sprite_icb_long
+    LDX   dp(Aoba::Script.script_data)
+    X.is_a! Aoba::Script::ScriptData
+    LDA   X[:sender_sprite]
+    BZE   _register_global
+
+  _register_local:
+    Debug.BRK
+    NOP
+    NOP
+    NOP
+    RTL
+
+  _register_global:
+    JML   attach_global_listener_icb_long
+  end
+  
+  ;; Removes the listener
+  ;;
+  ;; @param Y listener
+  def remove_listener_from_sender_sprite_icb_long
+    LDX   dp(Aoba::Script.script_data)
+    X.is_a! Aoba::Script::ScriptData
+    LDA   X[:sender_sprite]
+    BZE   _register_global
+
+  _register_local:
+    Debug.BRK
+    NOP
+    NOP
+    NOP
+    RTL
+
+  _register_global:
+    JML   remove_global_listener_icb_long
+  end
+
+  ;; Waits for an event
+  ;;
+  ;; @param X keys
+  ;; @param Y gamepad_id
+  def wait_for_event_icb
+    routine do
+      is_thread_safe
+
+      declare :gamepad_id, as: :uint16
+      declare :keys, as: :uint16
+
+      execute do |gamepad_id, keys|
+        CPU.set A: 8
+      _loop:
+        LDA   #$FE
+        JSL   Aoba::Thread.wait_for_event_icb_long
+        X.is_a! Thread::Event::Base
+        LDA   X[:sender_thread_id]
+        CMP   #CONTROL_THREAD_ID
+        BEQ   _is_keyboard_event
+
+      _drop_event:
+        JSL   Aoba::Thread::Event.free_icb_long
+        BRA   _loop
+
+      _is_keyboard_event:
+        CPU.set A: 16
+        X.is_a! Control::ControlEvent
+        LDA   X[:keys]
+        STA   dp(keys)
+        LDA   X[:gamepad_id]
+        STA   dp(gamepad_id)
+        JSL   Aoba::Thread::Event.free_icb_long
+
+        LDX   dp(keys)
+        LDY   dp(gamepad_id)
+      end
+    end
+  end
+
+  ;; Waits for a key
+  ;;
+  ;; @param X key bitmap
+  ;; @return X pressed key
+  def wait_for_key_icb
+    STX   dp(Aoba::Script.calc0)
+
+    ;; Configures the listener
+    JSL   allocate_listener_icb_long
+    Y.is_a! Listener
+    CPU.set A: 8
+    LDA   Aoba::Memory.active_thread_id
+    STA   Y[:thread_id]
+    CPU.set A: 16
+    LDA   dp(Aoba::Script.calc0)
+    STA   Y[:keydown_triggermask]
+    LDA   #0
+    STA   Y[:keyup_triggermask]
+    STY   dp(Aoba::Script.calc0)
+
+    ;; Registers the listener
+    JSL   add_listener_to_sender_sprite_icb_long
+
+    ;; Drops current gamepad events
+    drop_gamepad_events_icb
+
+    ;; Waits for an event
+    wait_for_event_icb
+    STX   dp(Aoba::Script.calc0 + 2)
+
+    ;; Removes the listener
+    LDY   dp(Aoba::Script.calc0)
+    JSL   remove_listener_from_sender_sprite_icb_long
+
+    LDY   dp(Aoba::Script.calc0)
+    JSL   free_listener_icb_long
+
+    ;; Drops current gamepad events
+    drop_gamepad_events_icb
+
+    LDX   dp(Aoba::Script.calc0 + 2)
+  end
+
+  def wait_for_key_icb_long
+    wait_for_key_icb
+    RTL
+  end
+
+end

@@ -1,0 +1,38 @@
+module Game
+
+  module GlobalGameFlag
+    IS_INGAME = $8000
+  end
+
+  scope :IngameSceneVariableRAM, in: nil, for: SNES::MemoryMap::RAM
+  
+  scope :IngameSceneFixedRAM, in: nil, for: SNES::MemoryMap::RAM
+
+
+  scope :GlobalRAM, in: ::Memory::VariableRAM
+
+  declare :gamepad, as: :uint16, in: GlobalRAM
+
+  declare :level_to_load_address, as: :uint16, in: GlobalRAM
+
+  declare :global_game_flags, as: :uint16, in: GlobalRAM
+
+
+  ;; Temporary RAM for calculations
+  ;scope :EffectSahredTempRAM, in: Aoba::Effect::ActionRAM
+
+  ;; Initializes the RAM
+  Aoba::Event.on :initialize_aoba_modules do
+    STZ   global_game_flags
+  end
+
+  Aoba::Script.callback "Game_Initialize", bank: CUSTOM_ROM_BANK do
+    ;; Allocates the gamepad
+    LDA   #PLAYER_GAMEPAD_SLOT
+    SEI
+    JSL   Aoba::Control.register_gamepad_icb_long
+    CLI
+    STX   gamepad
+  end
+
+end

@@ -1,0 +1,37 @@
+module Script::Action::SetEcho
+
+  def enable_echo
+    BBS0  dp(ch_control_flags), _is_sfx_channel
+    OR    dp(Song.song_enabled_echo_voices), dp(Channel.voice_bit_pointer)
+    BRA   _set_echo_on
+
+  _is_sfx_channel:
+    OR    dp(SFX.sfx_enabled_echo_voices), dp(Channel.voice_bit_pointer)
+
+  _set_echo_on:
+    MOV   dp(SPC.DSP_ADDR), #DSP.EON
+    MOV   A, dp(Song.song_enabled_echo_voices)
+    EOR   A, dp(SFX.sfx_enabled_echo_voices)
+    AND   A, dp(Channel.enabled_voices)
+    MOV   dp(SPC.DSP_DATA), A
+  end
+
+  def disable_echo
+    MOV   A, dp(Channel.voice_bit_pointer)
+    EOR   A, #$FF
+    BBS0  dp(ch_control_flags), _is_sfx_channel
+    AND   A, dp(Song.song_enabled_echo_voices)
+    MOV   dp(Song.song_enabled_echo_voices), A
+    JMP   enable_echo._set_echo_on
+
+  _is_sfx_channel:
+    AND   A, dp(SFX.sfx_enabled_echo_voices)
+    MOV   dp(SFX.sfx_enabled_echo_voices), A
+    JMP   enable_echo._set_echo_on
+  end
+
+  macro set_echo_on
+    CALL  enable_echo._set_echo_on
+  end
+
+end

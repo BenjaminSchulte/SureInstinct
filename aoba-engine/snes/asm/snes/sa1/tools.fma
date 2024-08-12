@@ -1,0 +1,14 @@
+module SA1
+
+  ;; Enables an interrupts
+  macro enable_interrupt(irq=false, timer=false, dma=false, nmi=false)
+    _value = 0
+    _value |= $80 if irq
+    _value |= $40 if timer
+    _value |= $20 if dma
+    _value |= $10 if nmi
+    LDA   #value
+    STA   CIE
+  end
+
+end

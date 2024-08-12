@@ -1,0 +1,183 @@
+module Aoba::Thread::Event
+
+  ;; @ignore-thread-safety
+  def __script_process_timer_event
+    X.is_a! Timer::TimerEvent
+    CPU.set A: 16
+    LDA   X[:userdata]
+    STA   dp(Aoba::Script.register_x)
+    LDA   X[:timer]
+    STA   dp(Aoba::Script.register_y)
+    LDX   dp(Aoba::Script.script_data)
+    X.is_a! Aoba::Script::ScriptData
+    LDY   #0
+  _loop_find_timer:
+    CMP   X[:custom_timer]
+    BEQ   _found_timer
+    INX
+    INX
+    INY
+    CPY   #Aoba::Script.MAX_CUSTOM_TIMERS
+    BNE   _loop_find_timer
+
+    ;; Unknown timer
+    CPU.set A: 8
+    LDA   dp(Aoba::Script.x00FF)
+    STA   dp(Aoba::Script.register_a)
+    RTS
+
+  _found_timer:
+    CPU.set A: 8
+    TYA
+    STA   dp(Aoba::Script.register_a)
+  end
+
+  ;; Processes a gamepad event
+  def __process_script_gamepad_event
+    STA   dp(Aoba::Script.calc0)
+    LDA   #1
+    LDY   #0
+  _loop:
+    BIT   dp(Aoba::Script.calc0)
+    BNZ   _match
+    ASL   A
+    INY
+    BRA   _loop
+
+    ;; --
+
+  _match:
+    EOR   #$FFFF
+    AND   dp(Aoba::Script.calc0)
+    STA   dp(Aoba::Script.calc0)
+
+    TYA
+    ORA   #CONTROL_THREAD_ID << 8
+    STA   dp(Aoba::Script.register_a)
+    LDA   #CONTROL_THREAD_ID
+    STA   dp(Aoba::Script.register_a) + 2
+
+    LDA   dp(Aoba::Script.calc0)
+  end
+
+  ;; Tests the gamepad event
+  macro __test_script_gamepad_event
+    LDX   dp(Aoba::Script.script_data)
+    X.is_a! Aoba::Script::ScriptData
+    LDA   X[:unprocessed_keydown_bitmask]
+    BZE   _no_previous_keydown_event
+    __process_script_gamepad_event
+    STA   X[:unprocessed_keydown_bitmask]
+    RTL
+
+  _no_previous_keydown_event:
+    LDA   X[:unprocessed_keyup_bitmask]
+    BZE   _no_previous_keyup_event
+    __process_script_gamepad_event
+    STA   X[:unprocessed_keyup_bitmask]
+    LDA   dp(Aoba::Script.register_a)
+    ORA   #$80
+    STA   dp(Aoba::Script.register_a)
+    RTL
+
+  _no_previous_keyup_event:
+  end
+
+  ;; Waits for an event
+  ;;
+  ;; @param bitmask
+  Aoba::Script.callback "Thread_WaitForEvent", bank: SYSTEM_ROM_BANK do
+
+    ;; Checks whether previous key events are still unprocessed
+  _test_key_bitmasks:
+    __test_script_gamepad_event
+
+    ;; Waits for a new event
+    LDA   dp(Aoba::Script.register_a)
+    wait_for_event_icb
+    STX   dp(Aoba::Script.calc0)
+    
+    X.is_a! Base
+    LDA   Base.size, X
+    AND   dp(Aoba::Script.x00FF)
+    STA   dp(Aoba::Script.register_a)
+
+    LDA   Base.size + 1, X
+    STA   dp(Aoba::Script.register_x)
+    LDA   Base.size + 3, X
+    STA   dp(Aoba::Script.register_y)
+
+    CPU.set A: 8
+    LDA   X[:sender_thread_id]
+    STA   dp(Aoba::Script.register_a + 2)
+    STZ   dp(Aoba::Script.register_a + 3)
+    BPL   _no_system_register
+    STA   dp(Aoba::Script.register_a + 1)
+    CMP   #CONTROL_THREAD_ID
+    BEQ   _is_control_event
+    CMP   #TIMER_THREAD_ID
+    BNE   _no_timer_event
+
+    ;; Figures out the slot being used by this timer
+  _is_timer_event:
+    __script_process_timer_event
+    BRA   _after_system_register
+
+    ;; --
+
+  _is_control_event:
+    LDX   dp(Aoba::Script.script_data)
+    LDA   dp(Aoba::Script.register_a)
+    CPU.set A: 16
+    AND   dp(Aoba::Script.x00FF)
+    TAY
+    LDA   dp(Aoba::Script.register_x) + 1
+    DEY
+    BZE   _is_control_keydown_event
+    DEY
+    BNZ   _no_system_register
+  
+  _is_control_keyup_event:
+    X.is_a! Aoba::Script::ScriptData
+    STA   X[:unprocessed_keyup_bitmask]
+    LDX   dp(Aoba::Script.calc0) 
+    free_icb
+    JMP   _test_key_bitmasks
+
+  _is_control_keydown_event:
+    X.is_a! Aoba::Script::ScriptData
+    STA   X[:unprocessed_keydown_bitmask]
+    LDX   dp(Aoba::Script.calc0) 
+    free_icb
+    JMP   _test_key_bitmasks
+    A.pretend_size 8
+
+    ;; --
+
+  _no_system_register:
+    X.is_a! Base
+    LDA   X[:event_bitmask]
+    AND   #$FC
+    STA   dp(Aoba::Script.register_a + 1)
+
+  _no_timer_event:
+    LDX   dp(Aoba::Script.register_a)
+    CPX   #$80FF ; Special event: KILL THREAD
+    BNE   _no_kill_thread
+
+    ;; A KILLEVENT has been sent, let's remember the sender
+  _kill_thread_event:
+    LDX   dp(Aoba::Script.script_data)
+    X.is_a! Aoba::Script::ScriptData
+    LDA   dp(Aoba::Script.register_x)
+    STA   X[:kill_event_sender_thread_id]
+
+  _after_system_register:
+  _no_kill_thread:
+    CPU.set A: 16
+
+    LDX   dp(Aoba::Script.calc0) 
+    free_icb
+  end
+
+end

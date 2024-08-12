@@ -1,0 +1,233 @@
+module Channel
+
+  ;; Total number of channels
+  NUM_CHANNELS = NUM_SONG_CHANNELS + NUM_SFX_CHANNELS
+
+  ;; Global RAM
+  scope :ChannelRAM, in: Memory::RAM
+
+  ;; Iteration control
+  scope :IterationControl, in: nil, for: Memory::SPCRAM
+  ;; Number of channels to iterate
+  declare :num_channels, as: :uint8, in: IterationControl
+  ;; Bits masked to process
+  declare :processed_channels, as: :uint8, in: IterationControl
+  ;; Bit mask of voices which are allowed to modify
+  declare :enabled_voices, as: :uint8, in: IterationControl
+
+  ;; This scope can be included in Temp RAM for every module which requires this
+  scope :ChannelControl, in: nil, for: Memory::SPCRAM
+  ;; The ID of the channel as BIT (0: 1, 1: 2, 2: 4, 3: 8, ...)
+  declare :voice_bit_pointer, as: :uint8, in: ChannelControl
+  ;; The base pointer for voices
+  declare :voice_base_pointer, as: :uint8, in: ChannelControl
+  ;; The ID of the channel
+  declare :pointer, as: :uint8, in: ChannelControl
+  ;; The ID of the channel * 2
+  declare :pointer_2x, as: :uint8, in: ChannelControl
+  ;; The ID of the real channel
+  declare :voice_pointer, as: :uint8, in: ChannelControl
+
+  ;; Bits are set when a sample has changed on the channel
+  declare :changed_sample_voices, as: :uint8, in: ::Memory::Page0
+
+  ;; Stores the depth of the current REPEAT block of the channel
+  declare :repeat_block_depth, as: :uint8, in: ChannelRAM, length: NUM_CHANNELS
+
+  ;; Stores the amount of times to repeat
+  declare :repeat_times, as: :uint8, in: ChannelRAM, length: NUM_CHANNELS * MAX_LOOP_DEPTH
+
+  ;; The old octaves
+  declare :repeat_old_octaves, as: :uint8, in: ChannelRAM, length: NUM_CHANNELS * MAX_LOOP_DEPTH
+
+  ;; Stores the repeat target position
+  declare :repeat_target_address_low, as: :uint8, in: ChannelRAM, length: NUM_CHANNELS * MAX_LOOP_DEPTH
+  declare :repeat_target_address_high, as: :uint8, in: ChannelRAM, length: NUM_CHANNELS * MAX_LOOP_DEPTH
+
+  ;; Volumes
+  declare :volumes, as: :uint8, in: ChannelRAM, length: NUM_CHANNELS
+
+  ;; Volumes copied from the current sample
+  declare :sample_volumes, as: :uint8, in: ChannelRAM, length: NUM_CHANNELS
+
+  ;; Pitch copied from the current sample
+  declare :sample_pitch_low_bytes, as: :uint8, in: ChannelRAM, length: NUM_CHANNELS
+
+  ;; Pitch copied from the current sample
+  declare :sample_pitch_high_bytes, as: :uint8, in: ChannelRAM, length: NUM_CHANNELS
+
+  ;; The channels calculates pitch value
+  declare :pitch_low_bytes, as: :uint8, in: ChannelRAM, length: NUM_CHANNELS
+
+  ;; The channels calculates pitch value
+  declare :pitch_high_bytes, as: :uint8, in: ChannelRAM, length: NUM_CHANNELS
+
+  ;; The channels calculates pitch value
+  declare :pitch_float_low_bytes, as: :uint8, in: ChannelRAM, length: NUM_CHANNELS
+
+  ;; The channels calculates pitch value
+  declare :pitch_float_high_bytes, as: :uint8, in: ChannelRAM, length: NUM_CHANNELS
+
+  ;; Pitch modify (used by effects)
+  declare :modify_pitch_low_bytes, as: :uint8, in: ChannelRAM, length: NUM_CHANNELS
+
+  ;; Pitch modify (used by effects)
+  declare :modify_pitch_high_bytes, as: :uint8, in: ChannelRAM, length: NUM_CHANNELS
+
+  ;; The channels low ADSR value
+  declare :sample_adsr_low_bytes, as: :uint8, in: ChannelRAM, length: NUM_CHANNELS
+
+  ;; The channels high ADSR value
+  declare :sample_adsr_high_bytes, as: :uint8, in: ChannelRAM, length: NUM_CHANNELS
+
+  ;; The current sample of this channel
+  declare :samples, as: :uint8, in: ChannelRAM, length: NUM_CHANNELS
+
+  ;; Channel pannings
+  declare :pannings, as: :uint8, in: ChannelRAM, length: NUM_CHANNELS
+
+  ;; Octaves
+  declare :octaves, as: :uint8, in: ChannelRAM, length: NUM_CHANNELS
+
+  ;; Last notes played on this channel
+  declare :last_absolute_notes, as: :uint8, in: ChannelRAM, length: NUM_CHANNELS
+
+  ;; The timer for the channel
+  declare :timers, as: :uint8, in: ::Memory::Page0, length: NUM_CHANNELS
+
+  ;; General flags
+  ;;
+  ;; ---E----
+  ;;
+  ;; 4 E: echo waits to fade out
+  declare :flags, as: :uint8, in: ::Memory::Page0, length: NUM_CHANNELS
+
+  ;; Channel control flags
+  ;;
+  ;; pedEKDPS
+  ;;
+  ;; 0 S: is SFX channel
+  ;; 1 P: is playing
+  ;; 2 D: is delay only
+  ;; 3 K: keep note playing after delay
+  ;; 4 E: -----
+  ;; 5 d: EASE_PITCH is negative?
+  ;; 6 e: EASE_PITCH effect enabled?
+  ;; 7 p: pitch needs to be recalculated
+  declare :control_flags, as: :uint8, in: ChannelRAM, length: NUM_CHANNELS
+
+  ;; Effect flags
+  ;;
+  ;; .....cvV
+  ;;
+  ;; 0 V: Vibrato enabled
+  ;; 1 v: vibrato negative (initial)
+  ;; 2 c: vibrato negative (copy)
+  declare :effect_flags, as: :uint8, in: ChannelRAM, length: NUM_CHANNELS
+
+  CTRL_IS_SFX_CHANNEL = $01
+  CTRL_IS_PLAYING = $02
+  CTRL_IS_DELAY_ONLY = $04
+
+  ;; Script offsets for channels
+  declare :script_offsets, as: :uint16, in: ChannelRAM, length: NUM_CHANNELS
+
+  ;; Loop positions if the script ends
+  declare :script_loop_targets, as: :uint16, in: ChannelRAM, length: NUM_CHANNELS
+
+  ;; Ease pitch num ticks
+  declare :ease_pitch_num_ticks, as: :uint8, in: ChannelRAM, length: NUM_CHANNELS
+
+  ;; Ease pitch: Increment 32bit
+  declare :ease_pitch_increment_word0, as: :uint16, in: ChannelRAM, length: NUM_CHANNELS
+
+  ;; Ease pitch: Increment 32bit
+  declare :ease_pitch_increment_word1, as: :uint16, in: ChannelRAM, length: NUM_CHANNELS
+
+  ;; Vibrato: Current ticks
+  declare :vibrato_current_ticks, as: :uint8, in: ChannelRAM, length: NUM_CHANNELS
+
+  ;; Vibrato: Ticks for a new node
+  declare :vibrato_ticks, as: :uint8, in: ChannelRAM, length: NUM_CHANNELS
+
+  ;; Vibrato power low byte
+  declare :vibrato_power_low, as: :uint8, in: ChannelRAM, length: NUM_CHANNELS
+
+  ;; Vibrato power high byte
+  declare :vibrato_power_high, as: :uint8, in: ChannelRAM, length: NUM_CHANNELS
+
+  ;; Vibrato current delay
+  declare :vibrato_current_delay, as: :uint8, in: ChannelRAM, length: NUM_CHANNELS
+
+  ;; Vibrato delay
+  declare :vibrato_delay, as: :uint8, in: ChannelRAM, length: NUM_CHANNELS
+
+  ;; Maps channels -> DSP channels
+  datablock dsp_voice_map
+    db   0 ; Song
+    db   1
+    db   2
+    db   3
+    db   4
+    db   5
+    db   6
+    db   7
+
+    db   7 ; Sfx
+    db   6
+  end
+
+  ;; Maps channels -> DSP channels
+  datablock dsp_voice_bit_map
+    db   1 ; Song
+    db   2
+    db   4
+    db   8
+    db   16
+    db   32
+    db   64
+    db   128
+
+    db   128 ; Sfx
+    db   64
+  end
+
+  ;; Converts channel index to channel pointers
+  def channel_index_to_channel_pointer
+    MOV   dp(pointer), A
+    ASL   A
+    MOV   dp(pointer_2x), A
+
+    MOV   X, dp(pointer)
+    MOV   A, addr(dsp_voice_map, X)
+    MOV   dp(voice_pointer), A
+
+    ;MOV   A, dp(voice_pointer)
+    XCN   A
+    MOV   dp(voice_base_pointer), A
+
+    ASL   A
+    OR    A, #2
+    MOV   addr(_set_op), A
+    MOV   dp(voice_bit_pointer), #0
+  _set_op:
+    SET0  dp(voice_bit_pointer) ;Overwritten in runtime
+  end
+
+  ;; Advance all pointers
+  macro advance_pointers(pointer=true, pointer_2x=true, pointer_4x=false, voice_base_pointer=false)
+    CLRC
+    INC   dp(Channel.pointer)                    if pointer
+    ADC   dp(Channel.pointer_2x), #2             if pointer_2x
+
+    MOV   X, dp(Channel.pointer)
+    MOV   A, addr(Channel.dsp_voice_map, X)
+    MOV   dp(Channel.voice_pointer), A
+    if voice_base_pointer
+      XCN   A
+      MOV   dp(Channel.voice_base_pointer), A
+    end
+    MOV   A, addr(Channel.dsp_voice_bit_map, X)
+    MOV   dp(Channel.voice_bit_pointer), A
+  end
+end

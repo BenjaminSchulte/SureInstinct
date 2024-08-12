@@ -1,0 +1,114 @@
+module Aoba::Thread::Event
+
+  ;; @param X Event
+  ;; @ignore-thread-safety
+  def free_icb
+    Thread.safe do
+      CPU.set A: 16, XY: 16
+      X.is_a! Base
+
+      Debug.profile_threadevent_free
+      Debug.mark_ram_X_unused Base.size + THREADEVENT_USERDATA_SIZE
+
+      LDA   free_events
+      Debug.enter_threadsafe_ram_access
+      STA   X[:next_event]
+      Debug.leave_threadsafe_ram_access
+      STX   free_events
+
+      Debug.only do
+        DEC   allocated_events_counter
+      end
+    end
+  end
+
+  def free_icb_long
+    free_icb
+    RTL
+  end
+
+  ;; Deletes all linked events starting at X
+  ;; @param X first event
+  ;; @ignore-thread-safety
+  def free_linked_list_icb
+    Thread.safe do
+      CPU.set A: 16, XY: 16
+
+      Debug.profile_threadevent_free
+
+      TXY
+    _loop:
+      X.is_a! Base
+      Debug.only do
+        DEC   allocated_events_counter
+      end
+      LDA   X[:next_event]
+      BZE   _after_loop
+      TAX
+      Debug.profile_threadevent_free
+      BRA   _loop
+
+    _after_loop:
+      X.is_a! Base
+      LDA   free_events
+      STA   X[:next_event]
+      STY   free_events
+    end
+  end
+
+  ;; @param A event bitmask
+  ;; @returns X Event::Base
+  ;; @ignore-thread-safety
+  def allocate_icb
+    Thread.safe do
+      CPU.set A: 8
+      XBA
+      LDA   Memory::active_thread_id
+      CPU.set A: 16
+
+      LDX   free_events
+      X.is_a! Base
+      STA   X[:sender_thread_id]
+      LDA   X[:next_event]
+      STA   free_events
+
+      STZ   X[:next_event]
+
+      Debug.only do
+        INC   allocated_events_counter
+        LDA   allocated_events_counter
+        CMP   max_allocated_events
+        BEQ   _skip_set_max
+        BLT   _skip_set_max
+        Debug.trace "New event maximum: {A}"
+        STA   max_allocated_events
+
+      _skip_set_max:
+        CPX   #0
+        BNZ   _ok
+        fatal_error "Event allocation failed. No free event slots left."
+      _ok:
+      end
+
+      Debug.profile_threadevent_allocate
+    end
+  end
+
+  ;; @param A event bitmask
+  ;; @returns X Event::Base
+  def allocate_icb_long
+    allocate_icb
+    RTL
+  end
+
+  ;; @param A event bitmask
+  ;; @returns X Event::Base
+  ;; @ignore-thread-safety
+  def allocate_long
+    CPU.with_bank! VARIABLE_RAM_BANK do
+      JSR   allocate_icb
+    end
+    RTL
+  end
+
+end

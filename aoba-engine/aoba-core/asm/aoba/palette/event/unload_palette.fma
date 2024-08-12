@@ -1,0 +1,52 @@
+module Aoba::Palette::Event::UnloadPalette
+
+  ;; The event
+  class Event < Base
+    ;; Bitmap of palettes the modify
+    declare :palette_mask, as: :uint16
+  end
+
+  ;; RAM for tilemap palette
+  scope :TempRAM, in: Aoba::Palette::TempRAM
+
+  ;; The current palette index
+  declare :palette_mask, as: :uint16, in: TempRAM
+
+  ;; Loads the palette
+  ;; @ignore-thread-safety
+  ID = List.create "UnloadPalette" do
+    Y.is_a! Event
+
+    LDA   Y[:palette_mask]
+Debug.fatal "UNLOAD PALETTE {A}"
+    CPU.with_bank Aoba::FIXED_RAM_BANK, from_bank: VARIABLE_RAM_BANK do
+      STA   dp(palette_mask)
+
+      LDX   #0
+
+    _loop:
+      ;; Tests if this palette is relevant
+      LSR   dp(palette_mask)
+      BCS   _process_palette
+      BNZ   _skip
+      BRA   _rts
+    
+    _process_palette:
+      ;; Resets the flags
+      LDA   palette_flags, X
+      AND   #$FF00
+      STA   palette_flags, X
+
+    _skip:
+      ;; Skips this palette
+      INX
+      BRA   _loop
+
+    _rts:
+      JSR   Action::LoadTilemapPalette._unload_palette_effects
+      STZ   tilemap_palette_address
+    end
+
+  end
+
+end

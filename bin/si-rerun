@@ -1,0 +1,7 @@
+#!/bin/bash
+
+set -e
+
+ROM=`cat ./sureinstinct/obj/lastrom.txt`
+
+bsnes --break-on-brk --show-debugger  --enable-debug-interface ./sureinstinct/dist/$ROM

@@ -1,0 +1,136 @@
+module Game::Ball::LevelSwitch
+
+  locate_at bank: Aoba::SPRITE_ROM_BANK
+
+  ;; The X position
+  tile_index = TileEvent::Change.layer
+
+  macro _add_switch(layer, x, y, text_id)
+    y = 47 - y if layer == :bottom
+    _base = AssetConfig::Ingame.tilemap_storage.tiles[layer]
+    dw _base + x + y * AssetConfig::Ingame.tilemap_format.max_width
+    db text_id
+  end
+
+  datablock switch_list
+    _add_switch :top, 3, 21, 1
+    _add_switch :top, 3, 22, 1
+    _add_switch :top, 3, 23, 1
+    _add_switch :top, 4, 21, 1
+    _add_switch :top, 4, 22, 1
+    _add_switch :top, 4, 23, 1
+    _add_switch :top, 5, 21, 1
+    _add_switch :top, 5, 22, 1
+    _add_switch :top, 5, 23, 1
+
+    _add_switch :top, 23, 31, 2
+    _add_switch :top, 23, 32, 2
+    _add_switch :top, 23, 33, 2
+
+    _add_switch :top, 49, 27, 3
+    _add_switch :top, 50, 27, 3
+    _add_switch :top, 51, 27, 3
+    _add_switch :top, 52, 27, 3
+    _add_switch :top, 52, 28, 3
+    _add_switch :top, 52, 29, 3
+    _add_switch :top, 52, 30, 3
+
+    _add_switch :bottom, 47, 32, 4
+    _add_switch :bottom, 47, 31, 4
+    _add_switch :bottom, 48, 31, 4
+    _add_switch :bottom, 49, 31, 4
+    _add_switch :bottom, 50, 31, 4
+    _add_switch :bottom, 51, 31, 4
+
+    _add_switch :top, 45, 12, 5
+    _add_switch :top, 46, 12, 5
+    _add_switch :top, 47, 12, 5
+    _add_switch :top, 47, 11, 5
+    _add_switch :top, 48, 11, 5
+    _add_switch :top, 49, 11, 5
+    _add_switch :top, 49, 10, 5
+    _add_switch :top, 50, 10, 5
+
+    _add_switch :top, 15, 3, 6
+    _add_switch :top, 15, 4, 6
+    _add_switch :top, 15, 5, 6
+    _add_switch :top, 15, 6, 6
+    _add_switch :top, 15, 7, 6
+    _add_switch :top, 15, 8, 6
+    _add_switch :top, 15, 9, 6
+
+    _add_switch :top, 42, 14, 7
+    _add_switch :top, 42, 16, 7
+    _add_switch :top, 41, 15, 7
+    _add_switch :top, 43, 15, 7
+
+    _add_switch :bottom, 46, 10, 8
+    _add_switch :bottom, 47, 9, 8
+    _add_switch :bottom, 48, 8, 8
+    _add_switch :bottom, 49, 7, 8
+
+    _add_switch :bottom, 29, 10, 9
+    _add_switch :bottom, 29, 11, 9
+    _add_switch :bottom, 29, 12, 9
+    _add_switch :bottom, 29, 13, 9
+    _add_switch :bottom, 29, 14, 9
+
+    _add_switch :bottom, 35, 31, 10
+    _add_switch :bottom, 36, 31, 10
+    _add_switch :bottom, 37, 31, 10
+    _add_switch :bottom, 38, 31, 10
+    _add_switch :bottom, 39, 31, 10
+    _add_switch :bottom, 40, 31, 10
+
+    _add_switch :top, 34, 36, 11
+    _add_switch :top, 35, 37, 11
+
+    dw   0
+  end
+
+  ;; Finished falling down
+  def invoke
+    LDA   dp(Aoba::Sprite::Action::Move.pos_x)
+    16.divided_register_A
+    STA   dp(tile_index)
+    LDA   dp(Aoba::Sprite::Action::Move.pos_y)
+    AND   #$FFF0
+    (AssetConfig::Ingame.tilemap_format.max_width / 16).multiplicated_register_A
+    ORA   dp(tile_index)
+    CLC
+    ADC   AssetConfig::Ingame.tilemap_storage.tiles[:current].long
+    STA   dp(tile_index)
+
+    LDX   #0
+  _loop:
+    LDA   switch_list.long, X
+    BZE   _end_of_list
+    CMP   dp(tile_index)
+    BEQ   _ok
+    INX
+    INX
+    INX
+    BRA   _loop
+
+  _end_of_list:
+Debug.fatal "Switch not found"
+NOP
+  _rts:
+    RTS
+
+  _ok:
+    LDA   (switch_list.to_sym + 2).long, X
+    AND   #$FF
+    STA   Game::Level.current_level_switch
+    ASL   A
+    TAX
+    LDA   Aoba::PowerOfTwo16.long, X
+    BIT   Game::Level.level_switch_mask
+    BNZ   _rts
+    ORA   Game::Level.level_switch_mask
+    STA   Game::Level.level_switch_mask
+
+    JSL   Game::Level::UserInterface::TutorialText.trigger_long
+  end
+
+end

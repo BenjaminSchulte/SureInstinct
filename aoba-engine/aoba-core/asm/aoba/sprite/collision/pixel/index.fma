@@ -1,0 +1,4 @@
+require "flags"
+require "test_row"
+require "test"
+require "collision"

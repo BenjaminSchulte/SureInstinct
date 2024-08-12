@@ -1,0 +1,176 @@
+module Game
+
+  ;; -----------------------------------------------------------
+  module BallFlag
+    ;; Whether the ball is on ICE
+    IS_ON_ICE = $80
+
+    ;; Has ICE ball
+    ICEBALL_ACTIVE = $40
+
+    ;; Metalball active
+    METALBALL_ACTIVE = $20
+
+    ;; Specialball mask
+    BALL_ACTIVE_MASK = $60
+  end
+
+  ;; -----------------------------------------------------------
+  ;;   Memory config
+  ;; -----------------------------------------------------------
+  REPLACEMENT_TILE_LIST_BANK = $C3
+
+  CUSTOM_ROM_BANK = $C2
+
+  ;; -----------------------------------------------------------
+  ;;   Control configuration
+  ;; -----------------------------------------------------------
+
+  ;; The speed the ball slows down
+  BALL_SLOW_DOWN = $19
+
+  ;; Mouse fast/slow area
+  BALL_FAST_MOVEMENT_BORDER = 1
+
+  ;; Slow ball movement speed
+  BALL_SLOW_SPEED = $A
+
+  ;; Fast ball movement speed
+  BALL_METAL_SPEED = $0C
+
+  ;; Fast ball movement speed
+  BALL_FAST_SPEED = $20
+
+  ;; Ice movement
+  BALL_ICE_SPEED = $3
+
+  ;; Slippage speed
+  BALL_ICE_SLIPPAGE_SPEED = $180
+
+  ;; Maximum ball speed
+  BALL_MAX_SPEED = $260
+
+  ;; Ball speed
+  BOMB_BALL_SPEED = $320
+
+  ;; Arrow speed
+  BALL_ARROW_SPEED = $48
+
+  ;; Rotation graphics per axis
+  BALL_AXIS_ROTATION_SPRITES = 7
+
+  ;; Rotation graphics per axis (ice)
+  ICE_BALL_AXIS_ROTATION_SPRITES = 6
+
+  ;; Rotation graphics per axis (metal)
+  METAL_BALL_AXIS_ROTATION_SPRITES = 4
+
+  ;; Break min power
+  BREAK_WALL_MIN_POWER = $210
+
+  ;; Maximum number of speedup balls
+  MAX_SPEEDUP_ITEMS = 3
+
+  ;; Speed up per ball
+  BALL_SPEEDUP = $40
+
+  ;; Duration for a speed up ball
+  BALL_SPEEDUP_DURATION = 60 * 50
+
+  ;; Priority
+  LEVEL_CONTROL_PRIORITY = Aoba::SPRITE_PRIORITY - 10
+
+  PLAYER_GAMEPAD_SLOT = 0
+
+  DEAD_WAIT_TIME = 15
+
+  ;; -----------------------------------------------------------
+  ;;   Item configuration
+  ;; -----------------------------------------------------------
+  module Item
+    PARACHUTE = 0
+    BRIDGE = 1
+    BOMB = 2
+    PAUSE = 3
+    NUM_ITEMS = 4
+  end
+
+
+  ;; -----------------------------------------------------------
+  ;;   Ranking configuration
+  ;; -----------------------------------------------------------
+  ; time limit until detailed score starts
+  LOW_SCORE_MINUTE_LIMIT = 10
+
+  ; until 10 minutes
+  SCORE_PER_MINUTE = 2 ;*10 (hardcoded in stageclear.fma)
+
+  ; below 10 minutes
+  SCORE_PER_SECOND = 5 ;hardcded in stageclear.fma
+
+
+  ;; -----------------------------------------------------------
+  ;;   Render priority
+  ;; -----------------------------------------------------------
+  PRIORITY_UI = 40
+
+  PRIORITY_BALL_FRONT = 20
+
+  PRIORITY_BALL = 0
+
+  PRIORITY_BALL_BACK = -20
+
+
+  ;; -----------------------------------------------------------
+  ;;   Element configuration
+  ;; -----------------------------------------------------------
+  MAX_HP = $3000
+
+  MAX_BALL_TIME = $3000
+
+  BULLET_DAMAGE = -$300
+
+  BALL_POWER_DECREMENT_SPEED = $6
+
+  ACID_HP_DAMAGE = $20
+
+  SPIKES_HP_DAMAGE = $20
+
+  LASER_HP_DAMAGE = $18
+
+  ITEM_STEAL_TIMER = 100
+
+  FIRE_TOWER_MIN_DISTANCE = $B0
+
+  FAN_MIN_DISTANCE = $55
+
+  FAN_POWER = $60
+
+  BOMB_TIMER = 130
+
+  BOMB_MAX_DISTANCE = $28
+
+  BOMB_MAX_ENERGY_LOSE_DISTANCE = $1C
+
+  BOMB_SFX_DURATION = 40
+
+  datablock bomb_lost_energy_datatable
+    db   0-$14 ; distance 0 (00)
+    db   0-$12 ; distance 1 (02)
+    db   0-$10 ; distance 2 (04)
+    db   0-$0C ; distance 3 (08)
+    db   0-$0A ; distance 4 (0A)
+    db   0-$08 ; distance 5 (0C)
+    db   0-$07 ; distance 6 (0E)
+    db   0-$06 ; distance 7 (10)
+    db   0-$05 ; distance 8 (12)
+    db   0-$05 ; distance 9 (14)
+    db   0-$05 ; distance 10 (16)
+    db   0-$04 ; distance 11 (18)
+    db   0-$04 ; distance 12 (1A)
+    db   0-$04 ; distance 13 (1B)
+  end
+
+  NUM_MISSIONS_PER_STAGE = 4
+
+end

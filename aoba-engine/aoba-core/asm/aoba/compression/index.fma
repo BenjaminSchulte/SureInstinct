@@ -1,0 +1,5 @@
+require "lzw"
+require "tilemap_tiles"
+require "tileset_index"
+require "dialog_tiles"
+require "simple_palette"

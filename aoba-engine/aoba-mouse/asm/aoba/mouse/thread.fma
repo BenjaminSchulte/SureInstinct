@@ -1,0 +1,228 @@
+module Aoba::Mouse
+  def _configure_timer
+    LDA   global_flags
+    BPL   _rts
+    LDX   mouse_gamepad
+    BZE   _rts
+
+    BIT   #GlobalFlag.TIMER_ENABLED
+    BNZ   _rts
+
+    ORA   #GlobalFlag.TIMER_ENABLED
+    STA   global_flags
+
+    LDX   mouse_timer
+    BNZ   _skip_allocate_timer
+
+    LDA   MouseThread.thread_id
+    JSL   Thread::Timer.allocate_icb_long
+    STX   mouse_timer
+
+  _skip_allocate_timer:
+    LDA   #0
+    LDY   #1
+    JSL   Thread::Timer.queue_icb_long
+  _rts:
+  end
+
+  def test_hover
+    find_region
+    CPY   #0
+    BZE   _no_hover
+    CPY   current_hover_region
+    BEQ   _rts
+
+    LDA   #RegionFlag.HOVER
+    STY   current_hover_region
+    send_region_event
+  _rts:
+    RTS
+
+    ;; --
+
+  _no_hover:
+    STZ   current_hover_region
+  end
+
+  def on_timer
+    LDA   global_flags
+    AND   #$FFFF ^ GlobalFlag.TIMER_ENABLED
+    STA   global_flags
+
+    LDX   mouse_gamepad
+    BZE   _rts
+    X.is_a! Aoba::Control::GamepadPlayer
+
+    SEI
+    LDY   X[:mouse_y]
+    LDA   X[:mouse_x]
+    STZ   X[:mouse_x]
+    STZ   X[:mouse_y]
+    CLI
+
+    LDX   mouse_sprite
+    X.is_a! Aoba::Sprite::Instance
+    BZE   _rts
+
+    STA   dp(_calc0)
+    CLC
+    ADC   X[:x]
+    ADC   dp(_calc0)
+    CMP   dp(boundary_left)
+    BMI   _set_left
+    BGE   _no_left_adjust
+  _set_left:
+    LDA   dp(boundary_left)
+  _no_left_adjust:
+    CMP   dp(boundary_right)
+    BLT   _no_right_adjust
+    LDA   dp(boundary_right)
+  _no_right_adjust:
+    STA   X[:x]
+
+    TYA
+    STA   dp(_calc0)
+    CLC
+    ADC   X[:y]
+    ADC   dp(_calc0)
+    CMP   dp(boundary_top)
+    BMI   _set_top
+    BGE   _no_top_adjust
+  _set_top:
+    LDA   dp(boundary_top)
+  _no_top_adjust:
+    CMP   dp(boundary_bottom)
+    BLT   _no_bottom_adjust
+    LDA   dp(boundary_bottom)
+  _no_bottom_adjust:
+    STA   X[:y]
+
+    test_hover
+
+  _rts:
+    JMP   _configure_timer
+  end
+
+  def on_keydown
+    LDX   mouse_sprite
+    BZE   _rts
+    find_region
+    CPY   #0
+    BZE   _rts
+    LDA   #RegionFlag.MOUSEDOWN
+    send_region_event
+  _rts:
+  end
+
+  def on_keyup
+    LDX   mouse_sprite
+    BZE   _rts
+    find_region
+    CPY   #0
+    BZE   _rts
+    LDA   #RegionFlag.MOUSEUP
+    send_region_event
+  _rts:
+  end
+
+  def update_mouse_gamepad
+    LDA   global_flags
+    BPL   _rts
+
+    JSL   Aoba::Control.find_mouse_gamepad_icb_long
+    STX   mouse_gamepad
+
+    CPX   #0
+    BNE   _show
+
+    LDX   mouse_sprite
+    X.is_a! Aoba::Sprite::Instance
+    SEI
+    LDA   X[:renderable_configuration_flags]
+    ORA   #Aoba::Sprite::RenderableConfigurationFlag.HIDDEN
+    STA   X[:renderable_configuration_flags]
+    CLI
+  _rts:
+    JMP   _configure_timer
+
+    ;; ---
+
+  _show:
+    X.is_a! Aoba::Control::GamepadPlayer
+    STZ   X[:mouse_x]
+    STZ   X[:mouse_y]
+
+    LDX   mouse_sprite
+    X.is_a! Aoba::Sprite::Instance
+    SEI
+    LDA   X[:renderable_configuration_flags]
+    AND   #$FFFF ^ Aoba::Sprite::RenderableConfigurationFlag.HIDDEN
+    STA   X[:renderable_configuration_flags]
+    CLI
+    JMP   _configure_timer
+  end
+end
+
+module Aoba
+  MouseThread = Aoba::Thread::Builder.create "Mouse" do
+    locate_at bank: MOUSE_ROM_BANK
+    priority Aoba::Mouse::MOUSE_PRIORITY
+
+    event_class Aoba::Mouse::Event::Base
+    enable_script_support "Mouse"
+
+    use_dp_ram Aoba::Mouse.RAM
+    use_temporary Aoba::Mouse._calc0
+
+    initialize_ram do
+      Mouse.initialize_ram
+    end
+
+    on :keydown do
+      Mouse.on_keydown
+    end
+
+    on :keyup do
+      Mouse.on_keyup
+    end
+
+    on :timer do
+      Mouse.on_timer
+    end
+
+    unload do
+      LDX   Aoba::Mouse.mouse_sprite
+      BZE   _no_unload_sprite
+      X.is_a! Aoba::Sprite::Instance
+      LDA   X[:id]
+      JSL   Aoba::Sprite::Api.destroy_sprite_icb_long
+    _no_unload_sprite:
+
+      LDX   Aoba::Mouse.mouse_timer
+      BZE   _no_unload_timer
+      JSL   Aoba::Thread::Timer.free_icb_long
+    _no_unload_timer:
+
+      LDX   Aoba::Mouse.regions_ram
+      BZE   _no_unload_regions
+      LDY   #Aoba::Mouse.MAX_NUM_REGIONS * Aoba::Mouse.Region.size
+      JSL   Aoba::Memory.free_long
+    _no_unload_regions:
+
+      LDY   Aoba::Mouse.mouse_listener
+      BZE   _no_unload_listener
+      JSL   Aoba::Control.remove_global_listener_icb_long
+      JSL   Aoba::Control.free_listener_icb_long
+    _no_unload_listener:
+    end
+
+    on :mouseconnected do
+      Mouse.update_mouse_gamepad
+    end
+
+    on :mousedisconnected do
+      Mouse.update_mouse_gamepad
+    end
+  end
+
+end

@@ -1,0 +1,105 @@
+module Debug
+
+  ;; Configuration wether debugging is active or not
+  ENABLED ||= false
+
+  ;; Enables colored logs
+  COLORED_LOG ||= true
+
+  ;; Enables debugging
+  macro enabled!
+    ENABLED = true
+  end
+
+  ;; Only executes the code if debugging is enabled
+  macro only
+    return unless ENABLED
+    yield
+  end
+
+  ;; Breaks
+  macro BRK
+    return unless ENABLED
+    Compiler.brk
+  end
+
+  macro trace(message)
+    log message, level: :trace
+  end
+
+  macro debug(message)
+    log message, level: :debug
+  end
+
+  macro info(message)
+    log message, level: :info
+  end
+
+  macro note(message)
+    log message, level: :note
+  end
+
+  macro warn(message)
+    log message, level: :warn
+  end
+
+  macro error(message)
+    log message, level: :error
+  end
+
+  macro fatal(message)
+    log message, level: :fatal
+  end
+
+  macro todo(message)
+    log message, level: :todo
+  end
+
+  macro log_raw(message)
+    log message, level: :raw
+  end
+
+  ;; Logs a message
+  macro log(message, level=:info)
+    return unless ENABLED
+
+    if COLORED_LOG == false || level == :raw
+      Compiler.brk notify_only: true, comment: "#{message}"
+    else
+      color = ""
+      text = ""
+      case level
+      when :todo
+        color = "34"
+        text = "TODO"
+      when :trace
+        color = "30;1"
+        text = "TRACE"
+      when :debug
+        color = "37"
+        text = "DEBUG"
+      when :info
+        color = ""
+        text = "INFO "
+      when :note
+        color = "33"
+        text = "NOTE "
+      when :warn
+        color = "33;1"
+        text = "WARN "
+      when :error
+        color = "31;1"
+        text = "ERROR"
+      when :fatal
+        color = "41;37;1"
+        text = "FATAL"
+      else
+        color = ""
+        text = "     "
+      end
+
+      Compiler.brk notify_only: true, comment: "\x1b[#{color}m[#{text}] #{message}\x1b[m"
+    end
+  end
+
+end

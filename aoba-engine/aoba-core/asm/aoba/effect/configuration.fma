@@ -1,0 +1,5 @@
+module Aoba::Effect
+
+  MAX_VBLANK_UPDATES = 16
+
+end

@@ -1,0 +1,11 @@
+name: Tutorial text 8
+
+color_depth: 4
+tile_size: {width: 8, height: 8}
+relative_tile_index: 64
+
+variants:
+  default:
+    image: image.png
+    priority: ../user_interface/priority.png
+    palette: ../user_interface/palette.png

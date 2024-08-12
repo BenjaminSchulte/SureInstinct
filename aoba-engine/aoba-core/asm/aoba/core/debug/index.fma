@@ -1,0 +1,41 @@
+require "brk"
+require "profile"
+require "assert"
+require "system"
+
+module Debug
+
+  macro test_A_less_than(value, message)
+    return unless ENABLED
+    CMP  #value
+    BLT  _ok
+    Aoba.fatal_error message
+  _ok:
+  end
+
+  def __full_dump
+    PHP
+    SEI
+    CPU.set A: 16, XY: 16
+    PHX
+    PHA
+    PHY
+    CPU.with_bank! Aoba::VARIABLE_RAM_BANK do
+      Aoba::Event.invoke :do_full_dump_variable
+    end
+    CPU.with_bank! Aoba::FIXED_RAM_BANK do
+      Aoba::Event.invoke :do_full_dump_fixed
+    end
+    PLY
+    PLA
+    PLX
+    PLP
+    RTL
+  end
+
+  macro full_dump
+    return unless ENABLED
+    JSL __full_dump
+  end
+
+end

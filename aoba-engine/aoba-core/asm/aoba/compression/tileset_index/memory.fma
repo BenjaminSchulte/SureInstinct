@@ -1,0 +1,36 @@
+module Aoba::Compression::TilesetIndex
+
+  locate_at bank: COMPRESSION_TILESETINDEX_ROM_BANK
+
+  class State
+
+    ;; The source address
+    declare :source_address, as: :uint24
+
+    ;; The target address
+    declare :target_address, as: :uint24
+
+    ;; The last HIGH byte value
+    declare :high_last_byte, as: :uint8
+
+    ;; The last LOW byte value
+    declare :low_last_byte,  as: :uint8
+
+    ;; Number of NEW bytes
+    declare :low_num_new,    as: :uint8
+
+    ;; Number of REUSED bytes
+    declare :low_num_inc,    as: :uint8
+
+    ;; Number of NEW bytes
+    declare :high_num_new,   as: :uint8
+
+    ;; Number of REUSED bytes
+    declare :high_num_copy,  as: :uint8
+
+    ;; The total size of bytes
+    declare :size,           as: :uint16
+
+  end
+
+end

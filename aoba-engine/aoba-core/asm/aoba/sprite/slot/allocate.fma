@@ -1,0 +1,343 @@
+module Aoba::Sprite::Slot
+  ;; Temporary allocation RAM
+  scope :TempAllocRAM, in: nil, for: ::SNES::MemoryMap::RAM
+
+  ;; The number of slots to be allocated
+  declare :requested_slot_count, as: :uint8, in: TempAllocRAM
+
+  ;; The current sprite
+  declare :temp, as: :uint16, in: TempAllocRAM
+
+  ;; Updates by shrinking the area
+  macro __update_shrink_allocation(_success)
+  
+    ;; Shift allocation if possible
+    LDA   X[:slot_index]
+    SEC
+    SBC   X[:free_slots_before]
+    STA   X[:slot_index]
+
+    ;; The size that is free after reallocation
+    LDA   X[:allocated_slot_size]
+    CLC
+    ADC   X[:free_slots_before]
+    SEC
+    SBC   dp(requested_slot_count)
+    PHA
+
+    ;; Updates the allocation
+    LDA   dp(requested_slot_count)
+    STA   X[:allocated_slot_size]
+    STZ   X[:used_slot_size]
+    STZ   X[:free_slots_before]
+
+  _update_next_free_slots_before:
+    LDY   X[:next_slot]
+    BZE   _update_next_free_slots_before_is_last
+
+  _update_next_free_slots_before_is_mid:
+    PLA
+    CLC
+    ADC   Y[:free_slots_before]
+    STA   Y[:free_slots_before]
+    BRA   _success
+
+  _update_next_free_slots_before_is_last:
+    PLA
+    CLC
+    ADC   free_slots_after
+    STA   free_slots_after
+  end
+
+  ;; Removes the slot in X from the queue
+  ;; @ignore-thread-safety
+  def free_icb
+    Debug.assert_register_size A: 16
+    X.is_a! SlotAllocation
+
+    LDA   X[:allocated_slot_size]
+    AND   #$FF
+    BZE   _rts
+
+    X.is_a! SlotAllocation
+    CPX   last_slot
+    BNE   _is_not_last_slot
+
+  _is_last_slot:
+    LDA   X[:previous_slot]
+    STA   last_slot
+
+  _is_not_last_slot:
+    CPX   first_slot
+    BNE   _is_not_first_slot
+
+  _is_first_slot:
+    LDA   X[:next_slot]
+    STA   first_slot
+
+  _is_not_first_slot:
+    LDY   X[:next_slot]
+    BZE   _no_next_slot
+    
+  _update_next_slot:
+    Y.is_a! SlotAllocation
+    LDA   X[:previous_slot]
+    STA   Y[:previous_slot]
+    CPU.set A: 8
+    LDA   Y[:free_slots_before]
+    CLC
+    ADC   X[:allocated_slot_size]
+    ADC   X[:free_slots_before]
+    STA   Y[:free_slots_before]
+    BRA   _after_next_slot
+
+  _no_next_slot:
+    CPU.set A: 8
+    LDA   free_slots_after
+    CLC
+    ADC   X[:allocated_slot_size]
+    ADC   X[:free_slots_before]
+    STA   free_slots_after
+
+  _after_next_slot:
+    CPU.set A: 16
+    LDY   X[:previous_slot]
+    BZE   _no_previous_slot
+
+  _update_previous_slot:
+    Y.is_a! SlotAllocation
+    LDA   X[:next_slot]
+    STA   Y[:next_slot]
+    BRA   _after_previous_slot
+
+  _no_previous_slot:
+  _after_previous_slot:
+    CPU.set A: 8
+    STZ   X[:allocated_slot_size]
+    CPU.set A: 16
+
+  _rts:
+  end
+
+  ;; Extends the allocation
+  macro __update_extend_allocation
+    ;; Removes this slot from the slot index
+    CPU.set A: 16
+    free_icb
+    CPU.set A: 8
+  end
+
+  ;; Calculates the free slot size
+  macro __calculate_free_slot_size
+    LDY   X[:next_slot]
+    CLC
+    BZE   _calculate_is_last
+  _calculate_is_mid:
+    Y.is_a! SlotAllocation
+    ADC   Y[:free_slots_before]
+    BRA   _calculate_resume
+  _calculate_is_last:
+    ADC   free_slots_after
+  _calculate_resume:
+    ADC   X[:free_slots_before]
+  end
+
+  ;; @param Y sprite after
+  ;; @param X previous or null
+  def __insert_slot_before_other
+    Y.is_a! SlotAllocation
+    X.is_a! SlotAllocation
+
+    ;; Updates the free slots in the "next" sprite
+    SEC
+    SBC   dp(requested_slot_count)
+    STA   Y[:free_slots_before]
+
+    CPU.set A: 16
+
+    ;; Injects the current slot
+    LDA   dp(temp)
+    STA   Y[:previous_slot]
+
+    ;; Adds the current slot owner to the list
+    CPX   #0
+    BEQ   _is_first_slot
+
+    ;; New slot is between two
+  _is_mid_slot:
+    STA   X[:next_slot]
+    PHX
+    TAX
+    PLA
+    X.is_a! SlotAllocation
+    STA   X[:previous_slot]
+    TYA
+    STA   X[:next_slot]
+    BRA   _after_slot_insert
+
+    ;; New slot is at the beginning
+  _is_first_slot:
+    TAX
+    STA   first_slot
+    STZ   X[:previous_slot]
+    TYA
+    STA   X[:next_slot]
+
+  _after_slot_insert:
+    CPU.set A: 8
+    ;; Adjusts the slot index
+    LDA   Y[:slot_index]
+    SEC
+    SBC   dp(requested_slot_count)
+    SBC   Y[:free_slots_before]
+    STA   X[:slot_index]
+    STZ   X[:static_image_loaded] + 2
+
+    LDA   dp(requested_slot_count)
+    STA   X[:allocated_slot_size]
+    STZ   X[:used_slot_size]
+    STZ   X[:free_slots_before]
+  end
+
+  ;; @param A number of slots
+  ;; @param X SlotAllocation
+  ;; @returns C if failed
+  def reallocate
+    Thread.assert_thread thread_id
+
+    PHP
+    X.is_a! SlotAllocation
+    CPU.set A: 8
+    STA   dp(requested_slot_count)
+    LDA   dp(requested_slot_count)
+    BNZ   _is_not_zero_allocation
+    
+    Debug.warn "{X}: REQUESTED ZERO SLOTS"
+    PLP
+    CPU.set A: 16
+    JMP   free_icb
+    A.pretend_size 8
+
+  _is_not_zero_allocation:
+    ;; Is this the first allocation
+    LDA   X[:allocated_slot_size]
+    BZE   _new_allocation
+
+  _is_reallocation:
+    ;; Tests whether the size did change
+    CMP   dp(requested_slot_count)
+    BEQ   _return_success_mid
+
+    __calculate_free_slot_size
+    CMP   dp(requested_slot_count)
+    BLT   _require_larger_space
+
+  _is_smaller_than_before:
+    __update_shrink_allocation _return_success_mid
+
+  _return_success_mid:
+    CPU.set A: 16
+    PLP
+    CLC
+    RTS ;; Earyly return
+    A.pretend_size 8
+
+  _require_larger_space:
+    __update_extend_allocation
+
+    ;; This is the first allocation
+  _new_allocation:
+    LDY   first_slot
+    BZE   _first_allocation
+    Y.is_a! SlotAllocation
+
+    ;; Find for a slot which has free slots before
+    STX   dp(temp)
+    LDX   #0
+  _loop_old_slots:
+    LDA   Y[:free_slots_before]
+    CMP   dp(requested_slot_count)
+    BGE   _found_free_slot_before
+    TYX
+    LDY   X[:next_slot]
+    BNZ   _loop_old_slots
+
+    ;; Allocates as last spot
+  _allocate_at_end:
+    ;; Tests whether there are enough free slots
+    LDA   free_slots_after
+    SEC
+    SBC   dp(requested_slot_count)
+    BPL   _allocate_as_last_record
+
+    ;; The allocation failed
+  _allocation_failed:
+    Debug.fatal "Slot allocation failed"
+    PLP
+    SEC
+    RTS
+
+  _found_free_slot_before:
+    __insert_slot_before_other
+  _return_success:
+    CPU.set A: 16
+    PLP
+    CLC
+    RTS
+
+    ;; This is the first allocation
+  _first_allocation:
+    ;; Tests whether there are enough free slots
+    LDA   free_slots_after
+    SEC
+    SBC   dp(requested_slot_count)
+    BMI   _allocation_failed
+    
+    ;; Updates the current record
+    STA   free_slots_after
+    STZ   X[:free_slots_before]
+    STZ   X[:slot_index]
+
+    LDA   dp(requested_slot_count)
+    STA   X[:allocated_slot_size]
+    STZ   X[:used_slot_size]
+    STZ   X[:static_image_loaded] + 2
+    CPU.set A: 16
+    STZ   X[:next_slot]
+    STZ   X[:previous_slot]
+    STX   first_slot
+    STX   last_slot
+    BRA   _return_success
+
+  _allocate_as_last_record:
+    ;; Updates the current record and previous record
+    LDX   dp(temp)
+
+    STA   free_slots_after
+    STZ   X[:free_slots_before]
+
+    LDA   dp(requested_slot_count)
+    STA   X[:allocated_slot_size]
+    STA   X[:used_slot_size]
+    STZ   X[:static_image_loaded] + 2
+
+    ;; Calculates the new slot index
+    LDY   last_slot
+    LDA   Y[:slot_index]
+    CLC
+    ADC   Y[:allocated_slot_size]
+    STA   X[:slot_index]
+
+    CPU.set A: 16
+    TXA
+    STA   Y[:next_slot]
+    TYA
+    STA   X[:previous_slot]
+    STZ   X[:next_slot]
+    STX   last_slot
+    PLP
+    CLC
+
+  end
+
+end

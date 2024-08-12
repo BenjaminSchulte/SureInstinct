@@ -1,0 +1,154 @@
+module Aoba::Sprite::Event::CreateSprite
+
+  ;; The flags
+  module Flag
+    ;; Visible flag
+    VISIBLE = $01
+
+    ;; Layer bitmask
+    PRIORITY_BITMASK = $30
+
+    ;; Flips the sprite in X axis
+    RENDERABLE_FLIP_X = $40
+
+    ;; Flips the sprite in Y axis
+    RENDERABLE_FLIP_Y = $80
+  end
+
+  ;; The event
+  class Event < Base 
+    ;; The config address
+    declare :config_address, as: :uint16
+  end
+
+  ;; The configuration
+  class BaseEventConfig
+    ;; The creature address
+    declare :sprite_id, as: :uint16
+
+    ;; The animation ID
+    declare :animation, as: :uint16
+
+    ;; The direction ID
+    declare :direction, as: :uint8
+
+    ;; The flags
+    declare :flags, as: :uint8
+
+    ;; The position
+    declare :x, as: :uint16
+
+    ;; The position
+    declare :y, as: :uint16
+  end
+
+  ;; The full event config
+  class EventConfig < BaseEventConfig
+    ;; The palette
+    declare :palette_group_address, as: :uint16
+  end
+
+  ;; Temporary RAM
+  scope :TempRAM, in: ActionRAM
+
+  ;; The event itself
+  declare :sender_thread_id, as: :uint8, in: TempRAM
+
+  ;; The event configuration
+  declare :config, as: :uint16, in: TempRAM
+
+  ;; The sprite itself
+  declare :sprite, as: :uint16, in: TempRAM
+
+  ;; Shared temporary RAM
+  scope :SharedTempRAM, in: TempRAM, shared: true
+
+  ;; Creates the sprite
+  ;; @returns X the sprite
+  def _create_sprite_from_config
+    Aoba::Sprite::Action::ManageSprite.allocate
+    STX   dp(sprite)
+
+    ;; Configures the sprite
+    LDY   dp(config)
+    X.is_a! Instance
+    Y.is_a! EventConfig
+    LDA   Y[:x]
+    STA   X[:x]
+    LDA   Y[:y]
+    STA   X[:y]
+
+    ;; Updates direction and animation
+    CPU.set A: 8
+    LDA   Y[:flags]
+    AND   #$F0
+    EOR   X[:renderable_flags]
+    STA   X[:renderable_flags]
+    AND   #$30
+    ORA   X[:renderable_configuration_flags]
+    STA   X[:renderable_configuration_flags]
+
+    LDA   Y[:direction]
+    STA   X[:direction]
+    STA   X[:new_direction]
+    CPU.set A: 16
+    LDA   Y[:animation]
+    Aoba::Sprite::Action::ManageSprite.assign_animation_id
+  end
+
+  def _free_and_notify
+    STA   dp(_calc0)
+
+    ;; We are ready. Clear RAM
+    LDX   dp(config)
+    SEI
+    JSL   Aoba::Memory.free_miniblock_long
+    CLI
+
+    ;; Notifies the sender thread about our generated sprite
+    CPU.set A: 8
+    LDA   #Aoba::Thread::Event.READYEVENT_ID
+    JSL   Aoba::Thread::Event.allocate_icb_long
+    X.is_a! Aoba::Thread::Event::ReadyEvent
+    LDA   dp(_calc0)
+    STA   X[:event_id]
+    CPU.set A: 16
+    LDA   dp(sprite)
+    STA   X[:userdata]
+
+    Debug.access_8bit_through_16bit
+    LDA   dp(sender_thread_id)
+    JSL   Aoba::Thread.send_event_icb_long
+  end
+
+  ;; Creates the sprite
+  ;; @ignore-thread-safety
+  ID = List.create "CreateSprite" do
+    Y.is_a! Event
+
+    ;; Remembers the sender thread
+    CPU.set A: 8
+    LDA   Y[:sender_thread_id]
+    STA   dp(sender_thread_id)
+    CPU.set A: 16
+
+    ;; Read the events configuration
+    LDX   Y[:config_address]
+    STX   dp(config)
+
+    ;; Creates the sprite
+    _create_sprite_from_config
+    LDY   dp(config)
+    Y.is_a! EventConfig
+    LDA   Y[:palette_group_address]
+    STA   X[:palette_group_id]
+    LDA   Y[:sprite_id]
+    Aoba::Sprite::Action::ManageSprite.assign_sprite_id
+    Aoba::Sprite::Action::ManageSprite.recalculate_after_set_position
+
+    ;; Frees the memory
+    LDA   #ID
+    JMP   _free_and_notify
+  end
+
+end

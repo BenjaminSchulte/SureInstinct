@@ -1,0 +1,13 @@
+name: Tutorial
+scripts:
+  []
+tilemap: tutorial
+palette: wood/main
+top_palette: wood/main
+bottom_palette: wood/dark
+pause_palette: wood/pause
+custom_properties:
+  name: Welcome to Sure Instinct
+  stage: Tutorial
+  stage_index: 0
+  start_position: {x: 5.5, y: 22.5}

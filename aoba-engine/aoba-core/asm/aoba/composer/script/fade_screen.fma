@@ -1,0 +1,44 @@
+module Aoba::Composer
+
+  ;; Fades the screen
+  ;;
+  ;; @param REGA fades the screen
+  Aoba::Script.callback "Composer_FadeScreen", bank: COMPOSER_ROM_BANK do
+    ;; Allocates and configures the event
+    LDA   #Aoba::Thread::Event::USEREVENT_ID
+    JSL   Aoba::Thread::Event.allocate_icb_long
+    X.is_a! Aoba::Composer::Event::FadeScreen::Event
+    LDA   dp(Aoba::Script.register_a)
+    STA   X[:brightness]
+    CPU.set A: 8
+    LDA   #Aoba::Composer::Event::FadeScreen::ID
+    STA   X[:event_id]
+    LDA   Aoba::Composer.thread_id
+    CPU.set A: 16
+
+    JML   Aoba::Thread::send_event_icb_long
+  end
+
+  ;; Waits for the screen fade to finish
+  Aoba::Script.callback "Composer_WaitForFadeReady", bank: COMPOSER_ROM_BANK do
+    ;; Send the ready event request to the level thread
+    CPU.set A: 8
+    LDA   #Aoba::Thread::Event.USEREVENT_ID
+    JSL   Aoba::Thread::Event.allocate_icb_long
+    X.is_a! Aoba::Composer::Event::WaitForFadeScreen::Event
+    LDA   #Aoba::Composer::Event::WaitForFadeScreen::ID
+    STA   X[:event_id]
+    LDA   Aoba::Composer.thread_id
+    CPU.set A: 16
+    JSL   Aoba::Thread.send_event_icb_long
+
+    ;; Waits for the level to be ready
+    CPU.set A: 8
+    LDA   #Aoba::Composer::Event::WaitForFadeScreen::ID
+    XBA
+    LDA   Aoba::Composer.thread_id
+    CPU.set A: 16
+    JML   Aoba::Thread.wait_for_ready_icb_long
+  end
+
+end

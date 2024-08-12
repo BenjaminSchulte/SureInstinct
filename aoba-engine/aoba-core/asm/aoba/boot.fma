@@ -1,0 +1,31 @@
+;; Bootup code
+@register A: 16, XY: 16
+@locate_at bank: Aoba::SYSTEM_ROM_BANK
+def start
+  Aoba::Event.invoke :before_initialize_aoba_modules
+  
+  ;; Starts the core threads
+  Aoba::Event.invoke :initialize_aoba_modules
+  Aoba::SceneThread.allocate_and_queue
+
+  ;; Remembers the thread ID
+  X.is_a! Aoba::Thread::Instance
+  LDA   X[:id]
+  PHA
+
+  ;; Sends a message to the ingame scene
+  CPU.set A: 8
+  LDA   #Aoba::Thread::Event.USEREVENT_ID
+  JSL   Aoba::Thread::Event.allocate_icb_long
+  
+  X.is_a! Aoba::Scene::Event::ExecuteScript::Event
+  LDA   #Aoba::Scene::Event::ExecuteScript::ID
+  STA   X[:event_id]
+  LDA   #__com_aobastudio_aoba_core_initialize.bank
+  STA   X[:script_address] + 2
+  CPU.set A: 16
+  LDA   #__com_aobastudio_aoba_core_initialize
+  STA   X[:script_address]
+  PLA
+  JSL   Aoba::Thread::send_event_icb_long
+end

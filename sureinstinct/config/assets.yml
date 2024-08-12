@@ -1,0 +1,208 @@
+# -----------------------------------------
+Palette16:
+  {}
+
+# -----------------------------------------
+Palettes16:
+  user_interface: {from_file: images/user_interface/palette.png, from_index: 0, to_index: 1}
+  death: {from_file: images/death/palette.png, from_index: 0, to_index: 1}
+  stageclear: {from_file: images/stageclear/palette.png, from_index: 0, to_index: 1}
+  stageselect_bg: {from_file: images/stageselect_bg/full-palette.png, from_index: 0, to_index: 0}
+
+# -----------------------------------------
+LevelPalettes:
+  wood/main: {from_file: tilesets/wood/main-palette.png, from_index: 0, to_index: 5}
+  wood/dark: {from_file: tilesets/wood/dark-palette.png, from_index: 0, to_index: 5}
+  wood/pause: {from_file: tilesets/wood/pause-palette.png, from_index: 0, to_index: 5}
+  stageselect: {from_file: images/stageselect/bg1-palette-load.png, from_index: 0, to_index: 4}
+  logo: {from_file: images/logo/palette.png, from_index: 0, to_index: 4}
+
+IcePalette:
+  icereflect: {from_file: palettes/icereflect/palette.png}
+
+# -----------------------------------------
+AbyssImage:
+  abyss_wood: abyss_wood
+
+# -----------------------------------------
+LevelTileset:
+  wood: wood
+
+# -----------------------------------------
+LevelTilemap:
+  tutorial: tutorial
+  stage1: stage1
+  stage2: stage2
+  stage3: stage3
+  debug: debug
+
+# -----------------------------------------
+Level:
+  tutorial: tutorial
+  stage1: stage1
+  stage2: stage2
+  stage3: stage3
+  debug: debug
+
+# -----------------------------------------
+MonospaceFont:
+  system: system
+
+# -----------------------------------------
+VariableFont:
+  digits: digits
+  largedigits: largedigits
+  stageselect: stageselect
+
+# -----------------------------------------
+MapSprite:
+  particle1: particle1
+  ball: ball
+  fire_tower: fire_tower
+  bomb: bomb
+  parachute: parachute
+  item: item
+  cursor: cursor
+  cursor2: cursor2
+  floor_rotate: floor_rotate
+  bullet: bullet
+
+# -----------------------------------------
+Character:
+  ball: ball
+
+UserInterfaceImage:
+  user_interface: user_interface
+  readygo: readygo
+  tutorial_text1: tutorial-text1
+  tutorial_text2: tutorial-text2
+  tutorial_text3: tutorial-text3
+  tutorial_text4: tutorial-text4
+  tutorial_text5: tutorial-text5
+  tutorial_text6: tutorial-text6
+  tutorial_text7: tutorial-text7
+  tutorial_text8: tutorial-text8
+  tutorial_text9: tutorial-text9
+  tutorial_text10: tutorial-text10
+  tutorial_text11: tutorial-text11
+  stageselect_bg: stageselect_bg
+  pause: pause
+  death: death
+  stageclear: stageclear
+
+Image16:
+  mainmenu: mainmenu
+  intro: intro
+  feedback: feedback
+  challenge: challenge
+  logo: logo
+  stageselect: stageselect
+  map_tutorial: map_tutorial
+  map_stage1: map_stage1
+  map_stage2: map_stage2
+  map_stage3: map_stage3
+
+AbyssImage:
+  abyss_wood: abyss_wood#
+
+# -----------------------------------------
+Sample:
+  sample00: {from_file: samples/sample00.brr}
+  sample01: {from_file: samples/sample01.brr}
+  sample02: {from_file: samples/sample02.brr}
+  sample03: {from_file: samples/sample03.brr}
+  sample04: {from_file: samples/sample04.brr}
+  sample05: {from_file: samples/sample05.brr}
+  sample06: {from_file: samples/sample06.brr}
+  sample07: {from_file: samples/sample07.brr}
+  yatta: {from_file: samples/yatta.yml}
+  go: {from_file: samples/go.yml}
+  ready: {from_file: samples/ready.yml}
+  stageselect: {from_file: samples/stageselect.yml}
+  start: {from_file: samples/start.yml}
+  welcome: {from_file: samples/welcome.yml}
+  bassdrum: {from_file: samples/bassdrum.yml}
+  cymbal1: {from_file: samples/cymbal1.yml}
+  ensamblechord1: {from_file: samples/ensamblechord1.yml}
+  ensamblechord2: {from_file: samples/ensamblechord2.yml}
+  fsnare: {from_file: samples/fsnare.yml}
+  hihat: {from_file: samples/hihat.yml}
+  pearldrop: {from_file: samples/pearldrop.yml}
+  plunk: {from_file: samples/plunk.yml}
+  pointbass: {from_file: samples/pointbass.yml}
+  pointsnare: {from_file: samples/pointsnare.yml}
+  synperc: {from_file: samples/synperc.yml}
+  synthdrum: {from_file: samples/synthdrum.yml}
+  bass1: {from_file: samples/bass1.yml}
+  bass2: {from_file: samples/bass2.yml}
+  bassdrum2: {from_file: samples/bassdrum2.yml}
+  bassdrum3: {from_file: samples/bassdrum3.yml}
+  bassdrum4: {from_file: samples/bassdrum4.yml}
+  bassdrum5: {from_file: samples/bassdrum5.yml}
+  funkbass1: {from_file: samples/funkbass1.yml}
+  snare2: {from_file: samples/snare2.yml}
+  snare3: {from_file: samples/snare3.yml}
+  snare4: {from_file: samples/snare4.yml}
+
+  
+# -----------------------------------------
+Instrument:
+  instrument00: {from_file: instruments/instrument00.yml}
+  instrument01: {from_file: instruments/instrument01.yml}
+  instrument02: {from_file: instruments/instrument02.yml}
+  instrument03: {from_file: instruments/instrument03.yml}
+  instrument04: {from_file: instruments/instrument04.yml}
+  instrument05: {from_file: instruments/instrument05.yml}
+  instrument06: {from_file: instruments/instrument06.yml}
+  instrument07: {from_file: instruments/instrument07.yml}
+  bassdrum: {from_file: instruments/bassdrum.yml}
+  cymbal1: {from_file: instruments/cymbal1.yml}
+  ensamblechord1: {from_file: instruments/ensamblechord1.yml}
+  ensamblechord2: {from_file: instruments/ensamblechord2.yml}
+  fsnare: {from_file: instruments/fsnare.yml}
+  hihat: {from_file: instruments/hihat.yml}
+  pearldrop: {from_file: instruments/pearldrop.yml}
+  plunk: {from_file: instruments/plunk.yml}
+  pointbass: {from_file: instruments/pointbass.yml}
+  pointsnare: {from_file: instruments/pointsnare.yml}
+  synperc: {from_file: instruments/synperc.yml}
+  synthdrum: {from_file: instruments/synthdrum.yml}
+  bass1: {from_file: instruments/bass1.yml}
+  bass2: {from_file: instruments/bass2.yml}
+  bassdrum2: {from_file: instruments/bassdrum2.yml}
+  bassdrum3: {from_file: instruments/bassdrum3.yml}
+  bassdrum4: {from_file: instruments/bassdrum4.yml}
+  bassdrum5: {from_file: instruments/bassdrum5.yml}
+  funkbass1: {from_file: instruments/funkbass1.yml}
+  snare2: {from_file: instruments/snare2.yml}
+  snare3: {from_file: instruments/snare3.yml}
+  snare4: {from_file: instruments/snare4.yml}
+
+Song:
+  snippers: {from_file: songs/snippers.mml}
+  stageselect: {from_file: songs/stageselect.mml}
+
+# -----------------------------------------
+SfxLib:
+  default: default
+
+# -----------------------------------------
+Sfx:
+  explosion: {from_file: sfx/explosion.mml}
+  ball_hitwall: {from_file: sfx/ball_hitwall.mml}
+  item_collect: {from_file: sfx/item_collect.mml}
+  menu_select: {from_file: sfx/menu_select.mml}
+  menu_confirm: {from_file: sfx/menu_confirm.mml}
+  break_floor: {from_file: sfx/break_floor.mml}
+  break_wall: {from_file: sfx/break_wall.mml}
+  door_open: {from_file: sfx/door_open.mml}
+  item_buy: {from_file: sfx/item_buy.mml}
+  ball_explode: {from_file: sfx/ball_explode.mml}
+
+Stream:
+  go: {from_file: streams/go.yml}
+  ready: {from_file: streams/ready.yml}
+  stageselect: {from_file: streams/stageselect.yml}
+  start: {from_file: streams/start.yml}
+  welcome: {from_file: streams/welcome.yml}
+  yatta: {from_file: streams/yatta.yml}

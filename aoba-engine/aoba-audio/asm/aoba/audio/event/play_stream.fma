@@ -1,0 +1,36 @@
+module Aoba::Audio::Event::PlayStream
+
+  ;; The event ID
+  ID = $0B
+
+  ;; The event
+  class Event < Base
+    ;; The ID of this SFX
+    declare :stream_id, as: :uint16
+
+    ;; The panning
+    declare :panning, as: :uint8
+
+    ;; The volume
+    declare :volume, as: :uint8
+  end
+
+  ;; Temporary RAM
+  scope :TempRAM, in: ActionRAM
+
+  ;; Loads the tileset
+  ;; @ignore-thread-safety
+  event_handler = make_audio_event do 
+    Y.is_a! Event
+
+    CPU.set A: 16
+    LDA   Y[:stream_id]
+    TAX
+    LDA   Y[:panning]
+    TAY
+    CPU.set A: 8
+
+    SNES_RAM_JMP Action::PlayStream.invoke_icb, :JMP, :JMP
+  end
+
+end

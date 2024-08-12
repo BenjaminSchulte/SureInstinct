@@ -1,0 +1,22 @@
+module Aoba::Tilemap::Loader
+
+  class TilemapLayerLocationParameter < Parameter
+    macro initialize(layer, storage)
+      super
+      @layer = layer
+      @storage = storage
+    end
+
+    macro size_in_bytes
+      return 2
+    end
+
+    macro load
+      Debug.BRK
+      NOP
+      NOP
+      NOP
+    end
+  end
+
+end

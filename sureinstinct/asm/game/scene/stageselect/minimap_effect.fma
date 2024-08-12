@@ -1,0 +1,371 @@
+module Game::Scene::StageSelect::MinimapEffect
+
+  FONT_RENDER_BUFFER_WIDTH = 6
+
+  VRAM_FONT_RENDER_BUFFER_SIZE = FONT_RENDER_BUFFER_WIDTH * $20
+
+  FONT_RENDER_BUFFER_SIZE = 2 * $20 + VRAM_FONT_RENDER_BUFFER_SIZE
+
+  TEXT_DECOMPRESS_BUFFER_SIZE = $10
+
+
+  scope :TempRAM, in: Game::Effect::TilesLoader::SharedTempRAM
+
+  ;; Pointer to the level list
+  declare :level_list, as: :uint24, in: TempRAM
+
+  ;; The current stage minimap loaded
+  declare :stage_minimap_loaded, as: :uint16, in: SceneVariableRAM
+
+  ;; Whether the effect is active
+  declare :effect_active, as: :uint16, in: SceneVariableRAM
+
+  declare :font_rendering_buffer, as: :uint16, in: SceneVariableRAM
+  declare :text_decompress_buffer, as: :uint16, in: SceneVariableRAM
+  declare :font_rendering_state, as: :uint16, in: SceneVariableRAM
+
+
+  macro _full_allocation_ram
+    return TEXT_DECOMPRESS_BUFFER_SIZE + FONT_RENDER_BUFFER_SIZE + Aoba::Font::Render::State.size
+  end
+
+  macro _allocate_font_ram
+    ;; Allocation stuff
+    LDX   #_full_allocation_ram
+    SEI
+    JSL   Aoba::Memory.allocate_long
+    CLI
+    STX   font_rendering_buffer
+    TXA
+    CLC
+    ADC   #FONT_RENDER_BUFFER_SIZE
+    STA   text_decompress_buffer
+    ADC   #TEXT_DECOMPRESS_BUFFER_SIZE
+    STA   font_rendering_state
+  end
+
+  @locate_at bank: Aoba::EFFECT_ROM_BANK
+  def _prepare_font_write_buffer
+    LDX   font_rendering_state
+    X.is_a! Aoba::Font::Render::State
+    LDA   #$FF06
+    STA   X[:color_and_flags]
+    LDA   #Assets::Font::StageSelect.bank << 8
+    STA   X[:font_address] + 1
+    LDA   #Assets::Font::StageSelect
+    STA   X[:font_address]
+    LDA   font_rendering_buffer
+    STA   X[:target_buffer]
+    LDA   text_decompress_buffer
+    STA   X[:current_line]
+    STZ   X[:state]
+    LDA   #FONT_RENDER_BUFFER_WIDTH >> 1
+    STA   X[:max_num_tiles_per_row]
+  end
+
+  @locate_at bank: Aoba::EFFECT_ROM_BANK
+  def _trigger_write_number
+    ;; Renders the text
+    LDA   #Aoba::Thread::Event::USEREVENT_ID
+    JSL   Aoba::Thread::Event.allocate_icb_long
+    X.is_a! Aoba::Font::Event::RenderText::Event
+    LDA   #Aoba::Font::Event::RenderText::ID
+    STA   X[:event_id]
+    LDA   font_rendering_state
+    STA   X[:renderer_state]
+
+    Debug.access_8bit_through_16bit
+    LDA   Aoba::Font.thread_id
+    JSL   Aoba::Thread.send_event_icb_long
+
+    ;; Waits for the font to be rendered
+    SEI
+    JSL   Aoba::Thread.pause_current_thread_temporary_icb_long
+    CLI
+    LDX   font_rendering_buffer
+    LDY   #FONT_RENDER_BUFFER_WIDTH
+    JSL   Aoba::Composer::Api.convert_2bpp_to_4bpp_icb_long
+  end
+
+  @locate_at bank: Aoba::EFFECT_ROM_BANK
+  def copy_text_attribute_to_vram
+    X.is_a! Aoba::VBlank::Job::JobInstance
+    STA   X[:target_address]
+    LDA   #Aoba::VARIABLE_RAM_BANK << 8
+    STA   X[:source_address] + 1
+
+    LDA   font_rendering_buffer
+    STA   X[:source_address]
+    LDA   #VRAM_FONT_RENDER_BUFFER_SIZE
+    STA   X[:data_size]
+  end
+
+  @locate_at bank: Aoba::EFFECT_ROM_BANK
+  def _render_score_and_time
+    LDY   #LevelListLevelRomFormat.offset_of(:best_score_variable0)
+    LDA   level_list.indirect.long, Y
+
+    JSL   Aoba::GameVariable.load_number_long
+
+    LDY   #0
+    CPX   #0
+    BZE   _skip_write_score_number
+    LDA   text_decompress_buffer
+
+    JSL   Aoba::Font::Decompress::HexDec.write_long
+    BRA   _has_valid_score_pointer
+  _skip_write_score_number:
+    LDY   text_decompress_buffer
+  _has_valid_score_pointer:
+    LDA   SystemText.system_characters.long + Aoba::Font::DIGIT_BASE
+    AND   #$FF
+    STA   0, Y
+    LDA   #$8000
+    STA   2, Y
+    _prepare_font_write_buffer
+    _trigger_write_number
+
+    Aoba::VBlank::Job.allocate_job_icb_long :vram, notify_sender: true
+    LDA   #$3E00 >> 1
+    JSR   copy_text_attribute_to_vram
+    JSL   Aoba::VBlank::Job.try_queue_and_wait_icb_long
+
+    ;; Time
+    LDY   #LevelListLevelRomFormat.offset_of(:best_time_variable0)
+    LDA   level_list.indirect.long, Y
+    JSL   Aoba::GameVariable.load_number_long
+    LDY   #0
+
+    CPU.with_bank 0, from_bank: Aoba::VARIABLE_RAM_BANK do
+      CPU.set A: 8
+      SEI
+      STX   CPU.WRDIVL
+      LDA   #10
+      STA   CPU.WRDIVB
+
+      ; consume time
+      NOP
+      PHX
+      PLX
+      NOP
+      PHX
+      PLX
+
+      TDC
+      XBA
+
+      LDX   CPU.RDDIV
+      LDA   CPU.RDMPY
+      STA   dp(Aoba::Effect._calc0) ;ms
+      STX   CPU.WRDIVL
+      LDA   #60
+      STA   CPU.WRDIVB
+
+      ; consume time
+      PHX
+      PLX
+      PHX
+      PLX
+      PHX
+      PLX
+      
+      LDX   CPU.RDDIV
+      LDA   CPU.RDMPY
+      CLI
+      STA   dp(Aoba::Effect._calc0) + 1 ;seconds
+      CPU.set A: 16
+    end
+
+    LDY   #0
+    LDA   text_decompress_buffer
+    JSL   Aoba::Font::Decompress::HexDec.write_long
+
+    LDA   SystemText.system_characters.long + Aoba::Font::DIGIT_BASE + 13
+    AND   #$FF
+    STA   0, Y
+    INY
+    INY
+    LDA   dp(Aoba::Effect._calc0) + 1
+    AND   #$FF
+    TAX
+    CMP   #10
+    BGE   _no_add_zero
+    LDA   SystemText.system_characters.long + Aoba::Font::DIGIT_BASE
+    AND   #$FF
+    STA   0, Y
+    INY
+    INY
+  _no_add_zero:
+    TYA
+    LDY   #0
+    JSL   Aoba::Font::Decompress::HexDec.write_long
+    
+    LDA   SystemText.system_characters.long + Aoba::Font::DIGIT_BASE + 14
+    AND   #$FF
+    STA   0, Y
+    LDA   dp(Aoba::Effect._calc0)
+    AND   #$FF
+    TAX
+    LDA   SystemText.system_characters.long + Aoba::Font::DIGIT_BASE, X
+    AND   #$FF
+    STA   2, Y
+    LDA   #$8000
+    STA   4, Y
+
+    _prepare_font_write_buffer
+    _trigger_write_number
+
+    Aoba::VBlank::Job.allocate_job_icb_long :vram, notify_sender: true
+    LDA   #$3F00 >> 1
+    JSR   copy_text_attribute_to_vram
+    JSL   Aoba::VBlank::Job.try_queue_and_wait_icb_long
+
+    SEI
+    LDA   Game::Scene::StageSelect::Hdma.flags
+    ORA   #Game::Scene::StageSelect::Hdma::Flag::UPDATE_SCORE_TILES
+    STA   Game::Scene::StageSelect::Hdma.flags
+    CLI
+  end
+
+  macro _copy_unknown_scores_to_vram
+    Aoba::VBlank::Job.allocate_job_icb_long :vram
+    LDA   #$3E00 >> 1
+    JSR   copy_text_attribute_to_vram
+    JSL   Aoba::VBlank::Job.try_queue_icb_long
+    Aoba::VBlank::Job.allocate_job_icb_long :vram, notify_sender: true
+    LDA   #$3F00 >> 1
+    JSR   copy_text_attribute_to_vram
+    JSL   Aoba::VBlank::Job.try_queue_and_wait_icb_long
+
+    SEI
+    LDA   Game::Scene::StageSelect::Hdma.flags
+    ORA   #Game::Scene::StageSelect::Hdma::Flag::UPDATE_SCORE_TILES
+    STA   Game::Scene::StageSelect::Hdma.flags
+    CLI
+  end
+
+  macro _render_unknown_scores
+    _prepare_font_write_buffer
+
+    LDY   text_decompress_buffer
+    LDA   SystemText.system_characters.long + Aoba::Font::DIGIT_BASE + 10
+    AND   #$FF
+    STA   0, Y
+    LDA   #$8000
+    STA   2, Y
+
+    _trigger_write_number
+    _copy_unknown_scores_to_vram
+  end
+
+  macro _free_font_ram
+    LDX   font_rendering_buffer
+    LDY   #_full_allocation_ram
+    SEI
+    JSL   Aoba::Memory.free_long
+    CLI
+  end
+
+
+  ;; The actual effect
+  effect = Aoba::Effect.create "Minimap" do
+    start do
+      LDA   #$FFFF
+      STA   stage_minimap_loaded
+
+      _allocate_font_ram
+
+      queue_update 1
+    end
+
+    update do
+      LDA   effect_active
+      BMI   _stop_effect
+      LDA   selected_stage
+      CMP   stage_minimap_loaded
+      BNE   _update_minimap
+      queue_update 1
+      RTS
+
+      ;; ---
+
+    _stop_effect:
+      trigger_finish
+      RTS
+
+      ;; ---
+
+    _update_minimap:
+      STA   stage_minimap_loaded
+      
+      LDA   #Assets::Image::StageSelectUnknownMinimap
+      LDX   #Assets::Image::StageSelect
+      LDY   #($7966) >> 1
+      Game::Effect.TilesLoader.load
+
+      _render_unknown_scores
+
+      LDA   stage_minimap_loaded
+      BMI   _load_unknown_minimap
+      INC   A
+      CMP   num_stages_visible
+      BEQ   _load_real_minimap
+      BLT   _load_real_minimap
+
+    _load_unknown_minimap:
+      queue_update 1
+      RTS
+
+      ;; ---
+
+    _load_real_minimap:
+      DEC   A
+      LDY   level_list_pointer + 1
+      STY   dp(level_list) + 1
+      JSL   _level_id_to_data_pointer
+      STA   dp(level_list)
+      LDY   #LevelListLevelRomFormat.offset_of(:minimap_address)
+      LDA   level_list.indirect.long, Y
+      BZE   _no_minimap
+
+      TAX
+      PHX
+      LDY   #($5800) >> 1
+      JSL   Aoba::Image.load_tiles_icb_long
+
+      PLX
+      LDY   #($7966) >> 1
+      LDA   #0
+      Game::Effect.TilesLoader.load
+
+      _render_score_and_time
+
+    _no_minimap:
+      queue_update 1
+    end
+
+    finish do
+      _free_font_ram
+      STZ   effect_active
+    end
+  end
+
+  ;; Starts perspective change
+  macro start
+    LDA   #1
+    STA   effect_active.long
+    effect.start
+  end
+
+  macro stop 
+    LDA   #$FFFF
+    STA   effect_active.long
+
+  _loop:
+    LDY   #1
+    JSL   Aoba::Thread.delay_long
+    LDA   effect_active.long
+    BNZ   _loop
+  end
+
+end

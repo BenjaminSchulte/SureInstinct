@@ -1,0 +1,11 @@
+name: ensamblechord1
+sample: ensamblechord1
+volume: 95
+loop: 283.80
+pitch: 0x1800
+adsr:
+  enabled: true
+  ar: 13
+  dr: 7
+  sr: 0
+  sl: 5

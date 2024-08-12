@@ -1,0 +1,40 @@
+module Aoba::Audio::Event::SetupEcho
+
+  ;; The event ID
+  ID = $03
+
+  ;; The event
+  class Event < Base
+    ;; The delay
+    declare :delay, as: :uint8
+
+    ;; The feedback
+    declare :feedback, as: :uint8
+
+    ;; The volume
+    declare :volume, as: :uint8
+  end
+
+  ;; Loads the tileset
+  ;; @ignore-thread-safety
+  event_handler = make_audio_event do 
+    Y.is_a! Event
+
+    when_ready_SEI bank: VARIABLE_RAM_BANK do
+      CPU.set A: 16
+      LDA   Y[:delay]
+      STA   CPU.APUIO1.long
+      CPU.set A: 8
+      LDA   Y[:volume]
+      STA   CPU.APUIO3.long
+      STA   echo_volume.long
+
+      LDA   last_ipc_value
+      AND   #IPC.IPC_TOGGLE_BIT
+      EOR   #IPC.IPC_TOGGLE_BIT | IPC.CMD_SETUP_ECHO
+      STA   CPU.APUIO0.long
+      STA   last_ipc_value
+    end
+  end
+
+end

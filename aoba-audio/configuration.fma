@@ -1,0 +1,71 @@
+;; ==================================================================
+;;   Playback configuration
+;; ==================================================================
+
+;; Default volume
+DEFAULT_VOLUME = $3F
+
+;; Default octave
+DEFAULT_OCTAVE = $06
+
+;; The default SFX speed
+DEFAULT_SFX_SPEED = $60
+
+;; The default song speed
+DEFAULT_SONG_SPEED = $60
+
+;; Total number of song channels
+NUM_SONG_CHANNELS = 8
+
+;; First song channel index
+SONG_CHANNEL_INDEX = 0
+
+;; Bitmask for song channels
+SONG_CHANNEL_MASK = $FF
+
+
+;; Total number of SFX channels
+NUM_SFX_CHANNELS = 2
+
+;; First index of SFX channels
+SFX_CHANNEL_INDEX = 8
+
+;; Bitmask for SFX channels
+SFX_CHANNEL_MASK = $3
+
+
+;; ==================================================================
+;;   Various configuration
+;; ==================================================================
+
+;; Maximum depth of loop nesting
+MAX_LOOP_DEPTH = 3
+
+;; Maximum amount of SNES samples
+MAX_NUM_SNES_SAMPLES = $FF
+
+;; Maximum amount of local samples
+MAX_LOCAL_SAMPLES = $20
+
+
+;; ==================================================================
+;;   Memory configuration
+;; ==================================================================
+
+;; SFX directory offset
+SFX_DIRECTORY_OFFSET = $4000
+
+;; SFX directory size
+SFX_DIRECTORY_SIZE = $2000
+
+;; Song data offset
+SONG_DATA_OFFSET = $2000
+
+;; Song data size
+SONG_DATA_SIZE = $2000
+
+;; Sample offset (Must be aligned to $100)
+SAMPLE_OFFSET = $6000
+
+;; Size of the init code in bytes
+INIT_CODE_SIZE = $58

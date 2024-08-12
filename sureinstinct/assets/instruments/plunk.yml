@@ -1,0 +1,10 @@
+name: plunk
+sample: plunk
+volume: 96
+pitch: 0x1800
+adsr:
+  enabled: true
+  ar: 15
+  dr: 7
+  sr: 15
+  sl: 5

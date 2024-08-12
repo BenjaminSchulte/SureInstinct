@@ -1,0 +1,21 @@
+module Aoba::Audio::Event::SetMasterVolume
+
+  ;; The event ID
+  ID = $04
+
+  ;; The event
+  class Event < Base
+    declare :volume, as: :uint8
+  end
+
+  ;; Sets the master volume
+  ;; @ignore-thread-safety
+  event_handler = make_audio_event do 
+    Y.is_a! Event
+
+    LDA   Y[:volume]
+    STA   master_volume.long
+    SNES_RAM_JMP Action::Volume.update_volume, :JMP, :JMP
+  end
+
+end

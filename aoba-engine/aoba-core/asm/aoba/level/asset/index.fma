@@ -1,0 +1,99 @@
+module Aoba::Level
+
+
+if false
+
+  tiles = Aoba::Tileset::TileFormat.create do
+    tile_size 16, 16
+    bgtile_size 8, 8
+  end
+
+  tileset = Aoba::Tileset::TilesetFormat.create do
+    use tiles
+
+    layer :bg do
+      num_bgs 1
+    end
+
+    layer :fg do
+      num_bgs 1
+    end
+  end
+
+  tilemap = Aoba::Tilemap::TilemapFormat.create do
+    use tileset
+
+    max_size width: 64, height: 64
+
+    layer :bg do
+    end
+
+    layer :fg do
+    end
+  end
+
+  tilemap_storage = Aoba::Tilemap::RamTilemapStorage.create do
+    memory_scope BlahBlubb
+
+    use tilemap
+  end
+
+  tilemap_renderer = Aoba::Tilemap::ScrollableTilemapRenderer.create do
+    use tilemap_storage
+
+  end
+
+  level = Aoba::Level::LevelFormat.create do
+    use tilemap_renderer
+    
+    use Aoba::Level::Feature::ExitList.new
+    use Aoba::Level::Feature::Script.new(:load)
+    use Aoba::Level::Feature::Switch.new
+    use Aoba::Level::Feature::NpcList.new
+
+    data_rom_bank $C4
+    exit_rom_bank $C4
+  end
+
+
+  ; ========= worldmap
+
+  tiles = Aoba::Tileset::TileFormat.create do
+    tile_size 8, 8
+    bgtile_size 8, 8
+  end
+
+  tileset = Aoba::Tileset::TilesetFormat.create do
+    use tiles
+
+    layer :main do
+    end
+  end
+
+  tilemap = Aoba::Tilemap::TilemapFormat.create do
+    use tileset
+
+    max_size width: 256, height: 256
+
+    layer :main do
+    end
+  end
+
+  tilemap_storage = Aoba::Tilemap::LargeTilemapStorage.create do
+    memory_scope BlahBlubb
+
+    use tilemap
+  end
+
+  tilemap_renderer = Aoba::Tilemap::ScrollableTilemapRenderer.create do
+    use tilemap_storage
+  end
+
+  level = Aoba::Level::LevelFormat.create do
+    use tilemap_renderer
+
+  end
+
+
+end
+end

@@ -1,0 +1,15 @@
+module Aoba
+
+  ;; The ROM bank
+  FONT_ROM_BANK ||= $C2
+
+end
+
+require "configuration"
+require "memory"
+require "event"
+
+require "decompress"
+require "render"
+
+require "thread"

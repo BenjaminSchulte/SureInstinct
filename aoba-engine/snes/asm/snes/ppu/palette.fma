@@ -1,0 +1,39 @@
+module PPU
+  ;; Controls the palettes
+  module Palette
+
+    ;; Sets the current address to write/read
+    macro set_color_index(index, target=:default)
+      LDA   #index
+      if target == :dp
+        STA   dp(PPU.CGADD)
+      else
+        STA   PPU.CGADD
+      end
+    end
+
+    ;; Writes a color
+    macro write(color, target=:default)
+      LDA   #color & $FF
+      if target == :dp
+        STA   dp(PPU.CGDATA)
+      else
+        STA   PPU.CGDATA
+      end
+      LDA   #color >> 8
+      if target == :dp
+        STA   dp(PPU.CGDATA)
+      else
+        STA   PPU.CGDATA
+      end
+    end
+
+    ;; Writes a color using RGA
+    ;;
+    ;; Values must be between `0` and `31`
+    macro write_rgb(r, g, b, target=:default)
+      write (r  & $1F) | ((g & $1F) << 5) | ((b & $1F) << 10), target
+    end
+
+  end
+end

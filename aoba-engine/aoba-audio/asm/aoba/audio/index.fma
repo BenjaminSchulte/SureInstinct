@@ -1,0 +1,22 @@
+module Aoba
+
+  ;; The ROM bank
+  AUDIO_ROM_BANK ||= $C1
+
+end
+
+require "configuration"
+require "memory"
+require "mutex"
+require "multithread"
+require "driver"
+require "garbage_collector"
+require "cpu_interface"
+require "action"
+require "event"
+require "thread"
+require "ipc"
+require "api"
+require "preset"
+require "sa1"
+require "setup"

@@ -1,0 +1,24 @@
+name: AOBA core engine
+id: com.aobastudio.aoba.core
+version: 1.0.0
+
+author:
+  - Benjamin Schulte
+
+dependencies:
+  com.aobastudio.snes: 1.0.0
+
+requires_gamescripts:
+  __com_aobastudio_aoba_core_initialize:
+    name: Initialize game
+    description: This script should set up the game
+
+script_libraries:
+  - character.yml
+  - debug.yml
+  - level.yml
+  - screen.yml
+
+includes:
+  - "aoba"
+  - "aoba/boot"

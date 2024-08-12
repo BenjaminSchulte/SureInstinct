@@ -1,0 +1,25 @@
+module Aoba::Palette::Event::LoadPaletteGroup
+
+  ;; The event
+  class Event < Base
+    ;; The palette to load
+    declare :palette_address, as: :uint16
+
+    ;; The upper index
+    declare :target_row, as: :uint8
+  end
+
+  ;; Loads the palette
+  ;; @ignore-thread-safety
+  ID = List.create "LoadPaletteGroup" do
+    Y.is_a! Event
+
+    LDX   Y[:palette_address]
+    LDA   Y[:target_row]
+    AND   #$FF
+    TAY
+    Action::LoadTilemapPalette.load_palettes
+    JMP   CGRAM.upload_tileset_cgram
+  end
+
+end

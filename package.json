@@ -1,0 +1,14 @@
+{
+  "name": "aoba",
+  "version": "1.0.0",
+  "main": "index.js",
+  "repository": "git@gitlab:snes/aoba.git",
+  "author": "Benjamin Schulte <benjamin@dokomi.de>",
+  "license": "MIT",
+  "dependencies": {
+    "canvas": "^2.6.1",
+    "js-yaml": "^4.0.0",
+    "png-js": "^1.0.0",
+    "png.js": "^0.2.1"
+  }
+}

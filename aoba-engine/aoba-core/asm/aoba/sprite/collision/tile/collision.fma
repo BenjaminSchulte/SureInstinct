@@ -1,0 +1,54 @@
+module Aoba::Sprite::Collision::Tile
+
+  class CollisionBuilder
+    macro initialize(collision)
+      @collision = collision
+    end
+
+    macro use(other)
+      other.include_to_sprite_collision @collision
+    end
+  end
+
+  class Collision < Base
+    macro initialize
+      super
+
+      ;; The current tile collision target
+      @tile_collision_target = MemoryVariable.new("tile_collision_target", as: :uint16, in: @TempRAM)
+
+      ;; The current tile collision target
+      @tile_collision_target_bit = MemoryVariable.new("tile_collision_target_bit", as: :uint16, in: @TempRAM)
+    end
+
+    macro finalize
+      @_detect = CollisionDetect.new(self)
+      @_diagonal = CollisionDiagonal.new(self)
+      @_test = CollisionTest.new(self)
+      @_tile_event = CollisionTileEvent.new(self)
+
+      super
+    end
+
+    macro self.create(&block)
+      collision = Collision.new
+      builder = CollisionBuilder.new(collision)
+      block.call with_context builder
+      collision.finalize
+      return collision
+    end
+
+    macro test_collision
+      JSR   @_detect.process_collision
+    end
+
+    macro cache_collision
+      JSR   @_detect.cache_collision
+    end
+
+    macro on_tile_changed
+      JSR   @_tile_event.on_tile_changed
+    end
+  end
+
+end

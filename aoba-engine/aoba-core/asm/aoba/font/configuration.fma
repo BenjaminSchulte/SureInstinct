@@ -1,0 +1,27 @@
+module Aoba::Font
+
+  ;; Maximum text length in characters
+  MAX_TEXT_LENGTH = $100
+
+  ;; Maximum number of text options
+  MAX_OPTIONS = 4
+
+  ;; Number of tiles for an option
+  OPTION_NUM_TILES = 2
+
+  ;; Digit base
+  DIGIT_BASE = 26 * 2
+
+  ;; Pointer to the next color bit
+  RENDER_BUFFER_NEXT_COLOR_BIT_1ROW = 8
+
+  ;; Pointer to the next tile
+  RENDER_BUFFER_NEXT_TILE_X_1ROW = 2 * RENDER_BUFFER_NEXT_COLOR_BIT_1ROW
+
+  ;; Pointer to the next color bit
+  RENDER_BUFFER_NEXT_COLOR_BIT_2ROWS = 8 * 2
+
+  ;; Pointer to the next tile
+  RENDER_BUFFER_NEXT_TILE_X_2ROWS = 2 * RENDER_BUFFER_NEXT_COLOR_BIT_2ROWS
+
+end

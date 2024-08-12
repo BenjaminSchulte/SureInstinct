@@ -1,0 +1,596 @@
+module Game::Level::UserInterface::Attributes
+
+  FONT_RENDER_BUFFER_WIDTH = 8
+
+  FONT_RENDER_BUFFER_SIZE = (FONT_RENDER_BUFFER_WIDTH + 2) * $10
+
+  TEXT_DECOMPRESS_BUFFER_SIZE = $20
+
+  UI_HDMA_SCROLL_BUFFER_SIZE = 224 * 2 + 40 * 2
+
+  ;; Temporary RAM for calculations
+  scope :TempRAM, in: Aoba::Effect::ActionRAM
+
+  ;; Index currently being updated
+  declare :_update_attribute_index, as: :uint16, in: TempRAM
+
+  ;; Bitmask currently being updated
+  declare :_update_bitmask, as: :uint16, in: TempRAM
+
+  ;; The current value
+  declare :_value, as: :uint16, in: TempRAM
+
+  ;; The current value
+  declare :_calc0, as: :uint32, in: TempRAM
+
+
+  ;; ========================================================================
+  ;;   WRITE ROUTINES
+  ;; ========================================================================
+
+  datablock attribute_write_routine_list
+    dw   write_number_left
+    dw   write_number_right
+    dw   write_time
+    dw   write_bar_red
+    dw   write_bar_blue
+    dw   write_score
+    dw   write_current_item
+  end
+
+  def _prepare_write_number_only
+    ;; Configures the font rendering state
+    LDX   font_rendering_state
+    X.is_a! Aoba::Font::Render::State
+    STA   X[:color_and_flags]
+    LDA   #Assets::Font::Digits.bank << 8
+    STA   X[:font_address] + 1
+    LDA   #Assets::Font::Digits
+    STA   X[:font_address]
+    LDA   font_rendering_buffer
+    STA   X[:target_buffer]
+    LDA   text_decompress_buffer
+    STA   X[:current_line]
+    STZ   X[:state]
+    LDA   #FONT_RENDER_BUFFER_WIDTH >> 1
+    STA   X[:max_num_tiles_per_row]
+  end
+
+  def _prepare_write_number
+    _prepare_write_number_only
+
+    ;; Renders the digits
+    LDX   dp(_value)
+    LDY   #0
+    LDA   text_decompress_buffer
+    JSL   Aoba::Font::Decompress::HexDec.write_long
+  end
+
+  def _trigger_write_number
+    LDA   #Aoba::Thread::Event::USEREVENT_ID
+    JSL   Aoba::Thread::Event.allocate_icb_long
+    X.is_a! Aoba::Font::Event::RenderText::Event
+    LDA   #Aoba::Font::Event::RenderText::ID
+    STA   X[:event_id]
+    LDA   font_rendering_state
+    STA   X[:renderer_state]
+    
+    Debug.access_8bit_through_16bit
+    LDA   Aoba::Font.thread_id
+    JSL   Aoba::Thread.send_event_icb_long
+
+    ;; Waits for the font to be rendered
+    SEI
+    JSL   Aoba::Thread.pause_current_thread_temporary_icb_long
+    CLI
+  end
+
+  def write_number_left
+    LDA   #$0007
+
+  configure:
+    _prepare_write_number
+    LDA   #$8000
+    STA   0, Y
+    _trigger_write_number
+    JMP   copy_text_attribute_to_vram
+  end
+
+  def write_number_right
+    LDA   #$FF07
+    JMP   write_number_left.configure
+  end
+
+  def write_score
+    LDA   dp(_value)
+    BNZ   _resume
+    JMP   write_number_right
+
+  _resume:
+    LDA   #$FF07
+    _prepare_write_number
+    LDA   SystemText.system_characters.long + Aoba::Font::DIGIT_BASE
+    AND   #$FF
+    STA   0, Y
+    LDA   #$8000
+    STA   2, Y
+  _is_zero:
+    _trigger_write_number
+    JMP   copy_text_attribute_to_vram
+  end
+
+  def write_bar_red
+    LDY   #hp_statusbar
+    LDA   #$0400
+
+  start:
+    PHY
+    STA   dp(_calc0 + 2)
+
+    LDA   dp(_value) + 1
+    AND   #$FF
+    LSR   A
+    LSR   A
+    LSR   A
+    STA   dp(_calc0)
+    TAX
+    BZE   _skip_full_bar
+
+    LDA   statusbar_tiles + 2
+    AND   #$E3FF
+    ORA   dp(_calc0 + 2)
+  _loop_full_bar:
+    STA   0, Y
+    INY
+    INY
+    DEX
+    BNZ   _loop_full_bar
+
+  _skip_full_bar:
+    LDA   dp(_calc0)
+    CMP   #6
+    BEQ   _done
+
+    LDA   dp(_value) + 1
+    AND   #$7
+    ASL   A
+    TAX
+    LDA   statusbar_tiles + 4, X
+    AND   #$E3FF
+    ORA   dp(_calc0 + 2)
+    STA   0, Y
+    INY
+    INY
+    LDA   dp(_calc0)
+    CMP   #5
+    BEQ   _done
+
+    TAX
+    LDA   statusbar_tiles + 4
+    AND   #$E3FF
+    ORA   dp(_calc0 + 2)
+  _loop_empty_bar:
+    STA   0, Y
+    INY
+    INY
+    INX
+    CPX   #5
+    BNE   _loop_empty_bar
+
+  _done:
+    Aoba::VBlank::Job.allocate_job_icb_long :vram, notify_sender: true
+
+    ;; Configures the job
+    TXY
+    Y.is_a! Aoba::VBlank::Job::JobInstance
+    LDA   #Aoba::VARIABLE_RAM_BANK << 8
+    STA   Y[:source_address] + 1
+
+    LDX   dp(_update_attribute_index)
+    PLA
+    STA   Y[:source_address]
+    LDA   (attribute_update_list.to_sym + 4).long, X
+    STA   Y[:target_address]
+    LDA   #6 * 2
+    STA   Y[:data_size]
+
+    ;; Upload data and wait for it
+    TYX
+    JSL   Aoba::VBlank::Job.try_queue_and_wait_icb_long
+  end
+
+  def write_bar_blue
+    SEI
+    LDA   AssetConfig::Ingame.ingame_hdma_config.flags
+    ORA   #Game::Hdma::Ingame::Flag::NEEDS_UPDATE_DMA_CALL
+    STA   AssetConfig::Ingame.ingame_hdma_config.flags
+    CLI
+
+    LDY   #hp_statusbar
+    LDA   #$0800
+    JMP   write_bar_red.start
+  end
+
+  def write_time
+    LDA   AssetConfig::Ingame.ingame_hdma_config.flags
+    BIT   #Game::Hdma::Ingame::Flag::CHANGE_PERSPECTIVE
+    BNZ   _prevent_time_update
+
+    LDA   global_ingame_flags - 1
+    BPL   _update_time
+
+  _prevent_time_update:
+    ;; Updates the last frame number
+    LDA   dp(_value)
+    STA   last_frame_number
+
+    ;; Updates time on first call
+    LDY   #0
+    LDA   global_ingame_flags
+    BIT   #GlobalIngameFlag.USERINTERFACE_READY
+    BZE   _count_done
+
+  _rts:
+    SEI
+    LDA   global_ingame_flags
+    ORA   #GlobalIngameFlag.USERINTERFACE_READY
+    Debug.access_8bit_through_16bit
+    STA   global_ingame_flags
+    CLI
+
+    LDA   dp(_update_bitmask)
+    ORA   #ModifiedAttribute.TIME
+    STA   dp(_update_bitmask)
+    RTS
+
+    ;; --
+
+  _update_time:
+    ;; Calculates the difference in 100MS
+    LDA   dp(_value)
+    SEC
+    SBC   last_frame_number
+    CMP   #5
+    BLT   _rts
+    LDY   #1
+  _loop_count_100ms:
+    SEC
+    SBC   #5
+    CMP   #5
+    BLT   _count_done
+    INY
+    BRA   _loop_count_100ms
+  _count_done:
+    ;; Updates the last frame number
+    TYA
+    STA   dp(_calc0)
+    ASL   A
+    ASL   A
+    CLC
+    ADC   dp(_calc0)
+    STA   dp(_calc0)
+    ADC   last_frame_number
+    STA   last_frame_number
+
+    ;; Updates the last frame
+    LDA   duration_in_frames
+    CLC
+    ADC   dp(_calc0)
+    STA   duration_in_frames
+    LDA   duration_in_frames + 2
+    ADC   #0
+    STA   duration_in_frames + 2
+
+    ;; Updates ms counter
+    TYA
+    CLC
+    ADC   time_ms
+  _loop_ms:
+    CMP   #10
+    BLT   _ms_done
+    INC   time_seconds
+    SEC
+    SBC   #10
+    BRA   _loop_ms
+  _ms_done:
+    STA   time_ms
+    
+    ;; Updates second counter
+    CPU.set A: 8
+    LDA   time_seconds
+  _loop_seconds:
+    CMP   #60
+    BLT   _seconds_ok
+    INC   time_minutes
+    SEC
+    SBC   #60
+    BRA   _loop_seconds
+  _seconds_ok:
+    STA   time_seconds
+
+    LDA   time_minutes
+    CMP   #100
+    BLT   _minutes_ok
+    LDA   #99
+    STA   time_minutes
+  _minutes_ok:
+
+    CPU.set A: 16
+
+    AND   #$FF
+    TAX
+    LDY   #0
+    LDA   text_decompress_buffer
+    JSL   Aoba::Font::Decompress::HexDec.write_long
+
+    LDA   SystemText.system_characters.long + Aoba::Font::DIGIT_BASE + 13
+    AND   #$FF
+    STA   0, Y
+    INY
+    INY
+    LDA   time_seconds
+    AND   #$FF
+    CMP   #10
+    BGE   _skip_additional_zero
+    STA   dp(_calc0)
+    LDA   SystemText.system_characters.long + Aoba::Font::DIGIT_BASE
+    AND   #$FF
+    STA   0, Y
+    INY
+    INY
+    LDX   dp(_calc0)
+    LDA   SystemText.system_characters.long + Aoba::Font::DIGIT_BASE, X
+    AND   #$FF
+    STA   0, Y
+    INY
+    INY
+    BRA   _after_additional_zero
+
+  _skip_additional_zero:
+    TAX
+    TYA
+    LDY   #0
+    JSL   Aoba::Font::Decompress::HexDec.write_long
+  _after_additional_zero:
+    LDA   SystemText.system_characters.long + Aoba::Font::DIGIT_BASE + 14
+    AND   #$FF
+    STA   0, Y
+    LDA   time_ms
+    AND   #$FF
+    TAX
+    LDA   SystemText.system_characters.long + Aoba::Font::DIGIT_BASE, X
+    AND   #$FF
+    STA   2, Y
+    LDA   #$8000
+    STA   4, Y
+
+    LDA   #$FF07
+    _prepare_write_number_only
+    _trigger_write_number
+    copy_text_attribute_to_vram
+
+    SEI
+    LDA   global_ingame_flags
+    ORA   #GlobalIngameFlag.USERINTERFACE_READY
+    Debug.access_8bit_through_16bit
+    STA   global_ingame_flags
+    CLI
+
+    ;; Force time to be updated next frame again
+    JMP   _rts
+  end
+
+  datablock current_item_num_tiles
+    dw   (AssetConfig::Ingame.ui_num_parachute_tiles.relative_tile_offset) | $3400
+    dw   (AssetConfig::Ingame.ui_num_parachute_tiles.relative_tile_offset + 1) | $3400
+    dw   (AssetConfig::Ingame.ui_num_bridge_tiles.relative_tile_offset) | $3400
+    dw   (AssetConfig::Ingame.ui_num_bridge_tiles.relative_tile_offset + 1) | $3400
+    dw   (AssetConfig::Ingame.ui_num_bomb_tiles.relative_tile_offset) | $3400
+    dw   (AssetConfig::Ingame.ui_num_bomb_tiles.relative_tile_offset + 1) | $3400
+  end
+
+  def write_current_item
+    LDA   dp(_value)
+    ASL   A
+    TAX
+    JMP   _set_item_table.indirect, X
+
+  _set_item_table:
+    dw   _parachute
+    dw   _bridge
+    dw   _bomb
+    dw   _pause
+
+  _parachute:
+    LDA   #Assets::Sprite::Item::ParachuteAnimationID
+    LDY   #current_item_num_tiles.to_sym
+    BRA   _resume
+  _bridge:
+    LDA   #Assets::Sprite::Item::BridgeAnimationID
+    LDY   #current_item_num_tiles.to_sym + 4
+    BRA   _resume
+  _bomb:
+    LDA   #Assets::Sprite::Item::BombAnimationID
+    LDY   #current_item_num_tiles.to_sym + 8
+    BRA   _resume
+  _pause:
+    LDA   #Assets::Sprite::Item::PauseAnimationID
+    LDY   #current_item_num_tiles.to_sym
+
+  _resume:
+    PHY
+    LDX   item_sprite
+    JSL   Aoba::Sprite::Api.set_animation_icb_long
+
+    Aoba::VBlank::Job.allocate_job_icb_long :vram
+    PHX
+    Aoba::VBlank::Job.allocate_job_icb_long :vram
+    PLY
+    X.is_a! Aoba::VBlank::Job::JobInstance
+    Y.is_a! Aoba::VBlank::Job::JobInstance
+    LDA   #current_item_num_tiles.to_sym.bank << 8
+    STA   Y[:source_address] + 1
+    STA   X[:source_address] + 1
+    PLA
+    STA   Y[:source_address]
+    STA   X[:source_address]
+    LDA   #(AssetConfig::Ingame.ui_tilemap.address >> 1) + 5 + 26 * 32
+    STA   Y[:target_address]
+    LDA   #(AssetConfig::Ingame.ui_tilemap.address >> 1) + 5 + 29 * 32
+    STA   X[:target_address]
+    LDA   #4
+    STA   Y[:data_size]
+    STA   X[:data_size]
+    ;; Upload data and wait for it
+    PHY
+    JSL   Aoba::VBlank::Job.try_queue_icb_long
+    PLX
+    JSL   Aoba::VBlank::Job.try_queue_icb_long
+  end
+
+
+  ;; ========================================================================
+  ;;   UPDATE TRIGGER LOGIC
+  ;; ========================================================================
+  def copy_text_attribute_to_vram
+    Aoba::VBlank::Job.allocate_job_icb_long :vram, notify_sender: true
+
+    ;; Configures the job
+    TXY
+    Y.is_a! Aoba::VBlank::Job::JobInstance
+    LDA   #Aoba::VARIABLE_RAM_BANK << 8
+    STA   Y[:source_address] + 1
+
+    LDX   dp(_update_attribute_index)
+    LDA   (attribute_update_list.to_sym + 6).long, X
+    AND   #$FF
+    CLC
+    ADC   font_rendering_buffer
+    STA   Y[:source_address]
+    LDA   (attribute_update_list.to_sym + 4).long, X
+    STA   Y[:target_address]
+    LDA   (attribute_update_list.to_sym + 7).long, X
+    AND   #$FF
+    STA   Y[:data_size]
+
+    ;; Upload data and wait for it
+    TYX
+    JSL   Aoba::VBlank::Job.try_queue_and_wait_icb_long
+  end
+
+  def update_attribute_text
+    TXA
+    8.multiplicated_register_A
+    TAX
+    STX   dp(_update_attribute_index)
+    LDA   attribute_update_list.long, X
+    TAY
+    LDA   0, Y
+    STA   dp(_value)
+    LDA   (attribute_update_list.to_sym + 2).long, X
+    AND   #$FF
+    BNZ   _uint16
+
+  _uint8:
+    LDA   dp(_value)
+    AND   #$FF
+    STA   dp(_value)
+
+  _uint16:
+    LDA   (attribute_update_list.to_sym + 3).long, X
+    AND   #$FF
+    TAX
+    JMP   attribute_write_routine_list.indirect, X
+  end
+
+
+  macro update_attribute_on_change
+
+  _update_next_attribute:
+    ;; Stores the update bitmask to RAM
+    SEI
+    LDA   modified_attributes
+    STZ   modified_attributes
+    CLI
+    ;AND   #ModifiedAttribute::ALL
+    BZE   _skip_update
+
+    ;; Tests which bit has to be updated
+    STA   dp(_update_bitmask)
+    LDA   #1
+    LDX   #0
+  _loop:
+    BIT   dp(_update_bitmask)
+    BNZ   _update_attribute
+    INX
+    ASL   A
+    BNZ   _loop
+    BRA   _skip_update
+
+    ;; Updates the attribute X
+  _update_attribute:
+    EOR   dp(_update_bitmask)
+    STA   dp(_update_bitmask)
+    update_attribute_text
+
+    ;; Sets missing properties for next iteration
+  _update_missing_attributes_value:
+    SEI
+    LDA   modified_attributes
+    ORA   dp(_update_bitmask)
+    STA   modified_attributes
+    CLI
+
+    ;; Force attribute update on start
+    LDA   global_ingame_flags
+    BIT   #GlobalIngameFlag.USERINTERFACE_READY
+    BZE   _update_next_attribute
+
+  _skip_update:
+  end
+
+  macro _full_allocation_ram
+    return TEXT_DECOMPRESS_BUFFER_SIZE + FONT_RENDER_BUFFER_SIZE + Aoba::Font::Render::State.size + UI_HDMA_SCROLL_BUFFER_SIZE
+  end
+
+
+  macro allocate_attribute_memory
+    LDX   #_full_allocation_ram
+    SEI
+    JSL   Aoba::Memory.allocate_long
+    CLI
+    STX   font_rendering_buffer
+    Debug.mark_ram_X_threadsafe FONT_RENDER_BUFFER_SIZE
+    Debug.mark_ram_X_initialized FONT_RENDER_BUFFER_SIZE
+    TXA
+    CLC
+    ADC   #FONT_RENDER_BUFFER_SIZE
+    STA   text_decompress_buffer
+    ADC   #TEXT_DECOMPRESS_BUFFER_SIZE
+    STA   font_rendering_state
+    ADC   #Aoba::Font::Render.State.size
+    STA   ui_hdma_scroll_buffer
+    
+    ;; Initialize the buffer
+    TAX
+    LDY   #224 + 40
+    LDA   #4 + 40
+  _loop_ui_hdma_scroll_buffer:
+    STA   0, X
+    INX
+    INX
+    DEC   A
+    DEY
+    BNZ   _loop_ui_hdma_scroll_buffer
+
+  end
+
+  macro free_attribute_memory
+    LDX   font_rendering_buffer
+    LDY   #_full_allocation_ram
+    SEI
+    JSL   Aoba::Memory.free_long
+    CLI
+  end
+
+end

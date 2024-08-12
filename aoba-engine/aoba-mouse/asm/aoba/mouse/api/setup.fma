@@ -1,0 +1,41 @@
+module Aoba::Mouse::Api
+
+  ;; @param X sprite
+  ;; @param Y palette
+  def enable_mouse
+    PHY
+    PHX
+    LDA   #Aoba::Thread::Event::USEREVENT_ID
+    JSL   Aoba::Thread::Event.allocate_icb_long
+    X.is_a! Aoba::Mouse::Event::Enable::Event
+    LDA   #Aoba::Mouse::Event::Enable::ID
+    STA   X[:event_id]
+    PLA
+    STA   X[:sprite_address]
+    PLA
+    STA   X[:palette_group_address]
+    LDA   Aoba::MouseThread.thread_id
+    JML   Aoba::Thread.send_event_icb_long
+  end
+
+  ;; @param XL boundary left
+  ;; @param XH boundary right
+  ;; @param YL boundary top
+  ;; @param YH boundary bottom
+  def set_boundary
+    PHY
+    PHX
+    LDA   #Aoba::Thread::Event::USEREVENT_ID
+    JSL   Aoba::Thread::Event.allocate_icb_long
+    X.is_a! Aoba::Mouse::Event::SetBoundary::Event
+    LDA   #Aoba::Mouse::Event::SetBoundary::ID
+    STA   X[:event_id]
+    PLA
+    STA   X[:boundary_left]
+    PLA
+    STA   X[:boundary_top]
+    LDA   Aoba::MouseThread.thread_id
+    JML   Aoba::Thread.send_event_icb_long
+  end
+
+end

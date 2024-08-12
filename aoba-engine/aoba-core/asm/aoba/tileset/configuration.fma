@@ -1,0 +1,42 @@
+module Aoba::Tileset
+
+  ;; The header ROM bank
+  HEADER_ROM_BANK ||= $C3
+
+  ;; The animation ROM Bank
+  ANIMATION_ROM_BANK ||= $C3
+
+  ;; The image compression size
+  COMPRESSION_CHUNK_SIZE ||= $1000
+
+  ;; The bytes a single tile index has
+  BYTES_PER_TILE_INDEX = 8
+
+  ;; Maximum number of tile animations
+  MAX_TILE_ANIMATIONS ||= 8
+
+  ;; The header ROM
+  class RomHeader
+    ;; Pointer to the FG layer index
+    declare :fg_layer_index, as: :uint24
+
+    ;; Pointer to the BG layer index
+    declare :bg_layer_index, as: :uint24
+
+    ;; Pointer to the image
+    declare :image_data, as: :uint24
+
+    ;; Number of animations
+    declare :num_animations, as: :uint8
+
+    ;; Animation index pointer
+    declare :animation_index, as: :uint16
+
+    ;; Pointer to the collision data
+    declare :fg_collision_index, as: :uint24
+
+    ;; Pointer to the collision data
+    declare :bg_collision_index, as: :uint24
+  end
+
+end

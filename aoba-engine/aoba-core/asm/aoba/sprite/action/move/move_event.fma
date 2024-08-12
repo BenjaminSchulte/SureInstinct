@@ -1,0 +1,293 @@
+;; Part of move.fma
+module Aoba::Sprite::Action::Move::MoveEvent
+
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;; TODO: MIGRATE THIS TO THE NEW SYSTEM
+if false
+
+  abs_speed_x_decimal = pos_x_decimal
+  abs_speed_x = pos_x
+  abs_speed_y_decimal = pos_y_decimal
+  abs_speed_y = pos_y
+
+  ;; Calculates the walk speed
+  ;; @ignore-thread-safety
+  def __calculate_speed
+    LDA   dp(speed_x_decimal)
+    LDY   dp(speed_x)
+    BPL   _is_positive_x
+
+  _is_negative_x:
+    EOR   #$FFFF
+    CLC
+    ADC   #1
+    STA   dp(abs_speed_x_decimal)
+    TYA
+    EOR   #$FFFF
+    ADC   #0
+    STA   dp(abs_speed_x)
+    BRA   _test_y
+
+  _is_positive_x:
+    STY   dp(abs_speed_x)
+    STA   dp(abs_speed_x_decimal)
+
+  _test_y:
+    LDA   dp(speed_y_decimal)
+    LDY   dp(speed_y)
+    BPL   _is_positive_y
+
+  _is_negative_y:
+    EOR   #$FFFF
+    CLC
+    ADC   #1
+    STA   dp(abs_speed_y_decimal)
+    TYA
+    EOR   #$FFFF
+    ADC   #0
+    STA   dp(abs_speed_y)
+    RTS
+
+  _is_positive_y:
+    STY   dp(abs_speed_y)
+    STA   dp(abs_speed_y_decimal)
+  end
+
+  ;; Calculates the faster speed to X
+  ;; @ignore-thread-safety
+  def __calculate_fastest_speed
+    __calculate_speed
+
+    LDA   dp(abs_speed_y)
+    CMP   dp(abs_speed_x)
+    BEQ   _test_decimal
+    BGE   _toggle
+    RTS
+
+  _test_decimal:
+    LDY   dp(abs_speed_y_decimal)
+    CPY   dp(abs_speed_x_decimal)
+    BGE   _toggle
+    RTS
+
+  _toggle:
+    STA   dp(abs_speed_x)
+    LDA   dp(abs_speed_y_decimal)
+    STA   dp(abs_speed_x_decimal)
+  end
+
+  ;; Restores movement by its fastest speed
+  def __restore_fastest_speed
+    LDA   dp(speed_x)
+    BMI   _negative_x
+    BZE   _test_y
+
+  _direct_copy_x:
+    LDA   dp(abs_speed_x)
+    STA   dp(speed_x)
+    LDA   dp(abs_speed_x_decimal)
+    STA   dp(speed_x_decimal)
+    BRA   _test_y
+
+  _negative_x:
+    LDA   dp(abs_speed_x_decimal)
+    EOR   #$FFFF
+    CLC
+    ADC   #0
+    STA   dp(speed_x_decimal)
+    LDA   dp(abs_speed_x)
+    EOR   #$FFFF
+    ADC   #0
+    STA   dp(speed_x)
+
+  _test_y:
+    LDA   dp(speed_y)
+    BMI   _negative_y
+    BZE   _rts
+
+  _direct_copy_y:
+    LDA   dp(abs_speed_x)
+    STA   dp(speed_y)
+    LDA   dp(abs_speed_x_decimal)
+    STA   dp(speed_y_decimal)
+  _rts:
+    RTS
+
+  _negative_y:
+    LDA   dp(abs_speed_x_decimal)
+    EOR   #$FFFF
+    CLC
+    ADC   #0
+    STA   dp(speed_y_decimal)
+    LDA   dp(abs_speed_x)
+    EOR   #$FFFF
+    ADC   #0
+    STA   dp(speed_y)
+  end
+
+
+  ;; Move event
+  def _invalid_move_event
+    TXA
+    LSR   A
+    Debug.warn "Invalid move event {A}"
+  end
+
+  ;; Slows down movement
+  def _moveevent_slow
+    LDA   dp(speed_x)
+    ASL   A
+    ROR   dp(speed_x)
+    ROR   dp(speed_x_decimal)
+    LDA   dp(speed_y)
+    ASL   A
+    ROR   dp(speed_y)
+    ROR   dp(speed_y_decimal)
+  end
+
+  ;; Stairs south/east
+  ;; @ignore-thread-safety
+  def _moveevent_stairs_upright
+    LDA   dp(speed_x)
+    ORA   dp(speed_y)
+    ORA   dp(speed_x_decimal)
+    ORA   dp(speed_y_decimal)
+    BZE   _apply_y_effect
+
+  _proceed_with_effect:
+    __calculate_fastest_speed
+
+    LDA   dp(speed_x_decimal)
+    CLC
+    ADC   dp(speed_y_decimal)
+    STA   dp(speed_x_decimal)
+    STA   dp(speed_y_decimal)
+    LDA   dp(speed_x)
+    ADC   dp(speed_y)
+    STA   dp(speed_x)
+    STA   dp(speed_y)
+
+    __restore_fastest_speed
+
+  _apply_y_effect:
+    JMP   _moveevent_stairs_downleft._apply_y_effect
+  end
+
+  ;; Stairs north/east
+  ;; @ignore-thread-safety
+  def _moveevent_stairs_downleft
+    LDA   dp(speed_x)
+    ORA   dp(speed_y)
+    ORA   dp(speed_x_decimal)
+    ORA   dp(speed_y_decimal)
+    BZE   _apply_y_effect
+
+  _proceed_with_effect:
+    __calculate_fastest_speed
+
+    LDA   dp(speed_x_decimal)
+    SEC
+    SBC   dp(speed_y_decimal)
+    STA   dp(speed_x_decimal)
+    TAY
+    LDA   dp(speed_x)
+    SBC   dp(speed_y)
+    STA   dp(speed_x)
+    TYA
+    EOR   #$FFFF
+    CLC
+    ADC   #1
+    STA   dp(speed_y_decimal)
+    LDA   dp(speed_x)
+    EOR   #$FFFF
+    ADC   #0
+    STA   dp(speed_y)
+
+    __restore_fastest_speed
+
+  _apply_y_effect:
+    LDX   dp(current_sprite)
+    X.is_a! Instance
+    LDA   X[:y]
+    AND   #7
+    STA   dp(abs_speed_y)
+    LDA   X[:y_decimal]
+    CLC
+    ADC   dp(speed_y_decimal)
+    LDA   dp(abs_speed_y)
+    ADC   dp(speed_y)
+    STA   dp(abs_speed_y)
+    BMI   _zero_y_effect
+    CMP   #8
+    BGE   _zero_y_effect
+    STA   X[:rendering_offset_y]
+  _zero_y_effect:
+    RTS
+  end
+
+  ;; Stairs up/down
+  ;; @ignore-thread-safety
+  def _moveevent_stairs_updown
+    LDX   dp(current_sprite)
+    X.is_a! Instance
+
+    LDA   X[:y_decimal]
+    CLC
+    ADC   dp(speed_y_decimal)
+    LDA   X[:y]
+    ADC   dp(speed_y)
+    AND   #$7
+    STA   X[:rendering_offset_y]
+  end
+
+  def _nop
+  end
+
+  ;; List of all move events (16 - 1)
+  datablock MoveEventList
+    dw   0                            ; 0
+    dw   _moveevent_slow
+    dw   _invalid_move_event
+    dw   _invalid_move_event
+    dw   _moveevent_stairs_downleft   ; 4
+    dw   _moveevent_stairs_upright
+    dw   _moveevent_stairs_updown
+    dw   _invalid_move_event
+    dw   _nop                         ; 8 (diagonal move events)
+    dw   _nop
+    dw   _nop
+    dw   _nop
+    dw   _invalid_move_event          ; C
+    dw   _invalid_move_event
+    dw   _invalid_move_event
+    dw   _invalid_move_event
+  end
+
+  on :before do
+    STZ   X[:rendering_offset_y]
+  end
+end
+
+  ;; Applies the move event
+  macro _apply_move_event
+    X.is_a! Instance
+    
+    config.move_events.event.invoke :before
+
+    LDA   X[:on_move_event]
+    AND   #$FF
+    BZE   _no_move_event
+
+  _has_move_event:
+    TXY
+    TAX
+    JSR   config.move_events.index.indirect, X
+    LDX   dp(current_sprite)
+    X.is_a! Instance
+
+  _no_move_event:
+    config.move_events.event.invoke :after
+  end
+
+end

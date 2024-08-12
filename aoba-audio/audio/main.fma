@@ -1,0 +1,32 @@
+export def main
+
+  ; SPU.PORT0 is $80 as last state!
+  Audio.init
+
+_loop:
+  Stream.update
+  MOV   A, #0
+_op_counter1_bra:
+  CBNE  dp(SPC.COUNTER1), _song_timer_triggered
+  CBNE  dp(SPC.COUNTER0), _sfx_timer_triggered
+  MOV   A, dp(IPC.last_ipc_value)
+  CBNE  dp(SPC.PORT0), _process_new_code
+  BRA   _loop
+
+_process_new_code:
+  IPC.process_new_code
+  BRA   _loop
+
+_echo_timer_triggered:
+  Command::SetupEcho.wait_for_echo_to_finish
+  BRA   _loop
+
+_song_timer_triggered:
+  Song.update
+  BRA   _loop
+
+_sfx_timer_triggered:
+  SFX.update
+  BRA   _loop
+
+end

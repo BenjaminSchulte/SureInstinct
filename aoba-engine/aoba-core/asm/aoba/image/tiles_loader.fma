@@ -1,0 +1,233 @@
+module Aoba::Image::_TilesLoader
+
+  MAX_WIDTH = 32
+
+
+  ;; Temporary RAM
+  scope :TempRAM, in: nil, for: ::SNES::MemoryMap::RAM
+
+  ;; Temporary calc register
+  declare :calc0, as: :uint32, in: TempRAM
+
+  ;; The VRAM address
+  vram_address = calc0 + 2
+
+  ;; Temporary calc register
+  declare :calc1, as: :uint32, in: TempRAM
+
+  ;; Map width
+  declare :map_width, as: :uint16, in: TempRAM
+  
+  ;; Map height
+  map_height = map_width + 1
+
+  ;; Decompression state
+  declare :decompress_state, as: Aoba::Compression::LZW::State, in: TempRAM
+
+  ;; Pointer to the variant
+  variant_data = decompress_state.source_address
+
+  ;; The memory buffer
+  declare :buffer, as: :uint16, in: TempRAM
+
+  ;; The buffer size
+  declare :buffer_size, as: :uint16, in: TempRAM
+
+    ;; Uploads the map
+;    Aoba::VBlank::Job.allocate_job_icb_long :vram, notify_sender: true
+;    X.is_a! Aoba::VBlank::Job::JobInstance
+;    LDA   #VARIABLE_RAM_BANK << 8
+;    STA   X[:source_address] + 1
+;    LDA   dp(buffer)
+;    INC   A
+;    INC   A
+;    STA   X[:source_address]
+;    LDA   dp(vram_address)
+;    AND   #$FF00
+;    STA   X[:target_address]
+;    LDA   dp(buffer_size)
+;    DEC   A
+;    DEC   A
+;    STA   X[:data_size]
+;    JSL   Aoba::VBlank::Job.try_queue_and_wait_icb_long
+
+  ;; Partial upload
+  macro _do_partial_update
+    ;; Calculates the byte-advance per row
+    LDA   dp(map_width)
+    AND   #$FF
+    ASL   A
+    STA   dp(calc0)
+
+
+    ;; Calculates the buffer offset
+    LDA   dp(buffer)
+    INC   A
+    INC   A
+    STA   dp(calc1 + 2) ;current start address
+    
+    ;; Number of rows
+    LDA   dp(map_height)
+    AND   #$FF
+    DEC   A
+    STA   dp(calc1)
+
+  _loop_y:
+    BZE   _load_last
+  _load_mid:
+    Aoba::VBlank::Job.allocate_job_icb_long :vram
+    BRA   _after_allocate
+
+  _load_last:
+    Aoba::VBlank::Job.allocate_job_icb_long :vram, notify_sender: true
+  _after_allocate:
+    X.is_a! Aoba::VBlank::Job::JobInstance
+    LDA   #VARIABLE_RAM_BANK << 8
+    STA   X[:source_address] + 1
+    
+    LDA   dp(calc1 + 2)
+    STA   X[:source_address]
+    CLC
+    ADC   dp(calc0)
+    STA   dp(calc1 + 2)
+
+    LDA   dp(vram_address)
+    STA   X[:target_address]
+    CLC
+    ADC   #$20
+    STA   dp(vram_address)
+
+    LDA   dp(calc0)
+    STA   X[:data_size]
+
+    LDA   dp(calc1)
+    BZE   _send_and_wait
+    JSL   Aoba::VBlank::Job.try_queue_icb_long
+    BRA   _after_send
+
+  _send_and_wait:
+    JSL   Aoba::VBlank::Job.try_queue_and_wait_icb_long
+  _after_send:
+
+    DEC   dp(calc1)
+    BPL   _loop_y
+  end
+
+
+  ;; Loads the tiles
+  ;; @param X image address
+  ;; @param Y vram_address
+  ;; @param A variant_indxe
+  def load
+    ;; Stores the VRAM address
+    STY   dp(vram_address)
+    STX   dp(variant_data)
+
+    ;; Calculates the variant address pointer
+    STA   dp(calc0)
+    ASL   A
+    CLC
+    ADC   dp(calc0)
+    ADC   dp(variant_data)
+    TAX
+    LDA   IMAGE_HEADER_ROM_BANK.as_bank(ImageRomHeader.size + 1).long, X
+    STA   dp(variant_data) + 1
+    
+    LDA   IMAGE_HEADER_ROM_BANK.as_bank(ImageRomHeader.size).long, X
+    STA   dp(variant_data)
+
+    ;; Loads the map size
+    LDY   #Aoba::Tilemap::RomHeader.offset_of(:map_width)
+    LDA   variant_data.long.indirect, Y
+    CLC
+    ADC   #$101
+    STA   dp(map_width)
+    ;AND   #$FF
+    ;STA   dp(decompress_state.num_cols)
+    ;STA   dp(decompress_state.map_width)
+    ;LDA   #MAX_WIDTH * 2
+    ;STA   dp(decompress_state.max_map_width_2x)
+    Debug.access_8bit_through_16bit
+    LDA   dp(map_height)
+    AND   #$FF
+    ;STA   dp(decompress_state.num_rows)
+
+    ;; Allocates the target buffer
+    (MAX_WIDTH * 2).multiplicated_register_A
+    TAX
+    INX ;header
+    INX
+    STX   dp(buffer_size)
+    SEI
+    JSL   Aoba::Memory.allocate_long
+    CLI   
+    STX   dp(buffer)
+    LDA   #VARIABLE_RAM_BANK << 8
+    STA   dp(decompress_state.target_address + 1)
+    STX   dp(decompress_state.target_address)
+
+    ;; Loads the layer pointer
+    LDY   #Aoba::Tilemap::RomHeader.size
+    LDA   variant_data.long.indirect, Y
+    STA   dp(variant_data)
+
+    ;; Decompresses the tiles
+    TDC
+    CLC
+    ADC   #decompress_state
+    JSL   Aoba::Compression::LZW.decompress_long
+
+    LDA   dp(map_width)
+    BIT   #$1F
+    BZE   _full_upload
+    _do_partial_update
+    BRA   _after_upload
+
+  _full_upload:
+    ;; Uploads the map
+    Aoba::VBlank::Job.allocate_job_icb_long :vram, notify_sender: true
+    X.is_a! Aoba::VBlank::Job::JobInstance
+    LDA   #VARIABLE_RAM_BANK << 8
+    STA   X[:source_address] + 1
+    LDA   dp(buffer)
+    INC   A
+    INC   A
+    STA   X[:source_address]
+    LDA   dp(vram_address)
+    AND   #$FF00
+    STA   X[:target_address]
+    LDA   dp(buffer_size)
+    DEC   A
+    DEC   A
+    STA   X[:data_size]
+    JSL   Aoba::VBlank::Job.try_queue_and_wait_icb_long
+
+  _after_upload:
+    LDA   dp(decompress_state.has_more)
+
+    ;; Frees the buffer
+    LDX   dp(buffer)
+    LDY   dp(buffer_size)
+    SEI
+    JSL   Aoba::Memory.free_long
+    CLI
+
+    RTL
+  end
+
+end
+
+
+module Aoba::Image
+  class TilesLoader
+    macro self.create(RAM)
+      RAM.include _TilesLoader.TempRAM
+      TilesLoader.new
+    end
+
+    macro load
+      JSL   _TilesLoader.load
+    end
+  end
+
+end

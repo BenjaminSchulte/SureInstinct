@@ -1,0 +1,201 @@
+module Game::Level::AnimationCommand
+  locate_at bank: Aoba::TILESET_ROM_BANK
+
+  def set_tile_collision
+    CLC
+    ADC   AssetConfig::Ingame.replacement_tile_list
+    TAX
+    LDA   REPLACEMENT_TILE_LIST_BANK.as_bank.long, X
+    AND   #$FF
+    ASL   A
+    TAX
+    TYA
+    STA   AssetConfig::Ingame.tile_collision.long, X
+  end
+
+
+  ;; ---------------------------------------------------------------------------
+  enable_laser1 = Aoba::Tileset::AnimationCommand.create :enable_laser1 do
+    LDA   Game::Ball::Movement.player.long
+    BZE   _skip_add_movement
+    TAX
+    X.is_a! Aoba::Sprite::Instance
+
+    ;; TODO: Use event to set movable flags
+    SEI
+    LDA   X[:movable_flags]
+    ORA   #Aoba::Sprite::MovableFlag::FORCE_COLLISION_TEST
+    Debug.allow_invalid_ram_access 2
+    STA   X[:movable_flags]
+    CLI
+
+  _skip_add_movement:
+    LDA   #AssetConfig::TileList.LASER1H
+    LDY   laser1h_collision_index
+    set_tile_collision
+    LDA   #AssetConfig::TileList.LASER1V
+    LDY   laser1v_collision_index
+    JMP   set_tile_collision
+  end
+
+  disable_laser1 = Aoba::Tileset::AnimationCommand.create :disable_laser1 do
+    LDA   #AssetConfig::TileList.LASER1H
+    LDY   no_collision_index
+    set_tile_collision
+    LDA   #AssetConfig::TileList.LASER1V
+    LDY   no_collision_index
+    JMP   set_tile_collision
+  end
+
+  ;; ---------------------------------------------------------------------------
+  enable_spikes = Aoba::Tileset::AnimationCommand.create :enable_spikes do
+    SEI
+    LDA   global_ingame_flags
+    ORA   #GlobalIngameFlag.SPIKES_ENABLED
+    Debug.access_8bit_through_16bit
+    STA   global_ingame_flags
+    CLI
+  end
+
+  ;; ---------------------------------------------------------------------------
+  disable_spikes = Aoba::Tileset::AnimationCommand.create :disable_spikes do
+    SEI
+    LDA   global_ingame_flags
+    AND   #$FFFF ^ GlobalIngameFlag.SPIKES_ENABLED
+    Debug.access_8bit_through_16bit
+    STA   global_ingame_flags
+    CLI
+  end
+
+
+  ;; ---------------------------------------------------------------------------
+  abyss_animation = Aoba::Tileset::AnimationCommand.create :abyss_animation do
+    LDA   AssetConfig::Ingame.ingame_hdma_config.flags
+    BIT   #Game::Hdma::Ingame::Flag.FRONT_BUFFER_IS_READY
+    BZE   _resume_normal
+
+    LDA   #$FFFF
+    CMP   abyss_last_x
+    BEQ   _rts
+    STA   abyss_last_x
+    STA   abyss_last_y
+    LDA   #16 * 16 * 32 * 4
+    BRA   _set_tile
+
+  _resume_normal:
+    LDA   AssetConfig.static_camera.y.long
+    EOR   #$F
+    STA   dp(Aoba::Tileset._calc0)
+    LDA   AssetConfig.static_camera.y.long
+    LSR   A
+    LSR   A
+    CLC
+    ADC   dp(Aoba::Tileset._calc0)
+    AND   #$F
+    TAY
+    LDA   AssetConfig.static_camera.x.long
+    EOR   #$F
+    STA   dp(Aoba::Tileset._calc0)
+    LDA   AssetConfig.static_camera.x.long
+    LSR   A
+    LSR   A
+    CLC
+    ADC   dp(Aoba::Tileset._calc0)
+    AND   #$F
+    CMP   abyss_last_x
+    BNE   _x_changed
+    CPY   abyss_last_y
+    BEQ   _rts
+
+  _x_changed:
+
+    STA   abyss_last_x
+    STY   abyss_last_y
+    TYA
+    XBA
+    ASL   A
+    ASL   A
+    ASL   A
+    STA   dp(Aoba::Tileset._calc0)
+    LDA   abyss_last_x
+    XBA
+    LSR   A
+    ORA   dp(Aoba::Tileset._calc0)
+  _set_tile:
+    CLC
+    ADC   #Assets::Image::Abyss
+    PHA
+
+    Aoba::VBlank::Job.allocate_job_icb_long :vram
+    ;; Copy data size and target to job
+    LDY   dp(Aoba::Tileset::Action::Animation.current_animation)
+    Y.is_a! Aoba::Tileset::TileAnimation
+    LDA   Y[:data_size]
+    STA   X[:data_size]
+    LDA   Y[:vram_offset]
+    STA   X[:target_address]
+    LDA   #Assets::Image::Abyss.bank << 8
+    STA   X[:source_address] + 1
+    PLA
+    STA   X[:source_address]
+    JSL   Aoba::VBlank::Job.try_queue_icb_long
+
+  _rts:
+    ;; Just a workaround. Needs to be implemented better someday
+    LDA   dp(Aoba::Tileset::Action::Animation.current_script)
+    DEC   A
+    DEC   A
+    STA   dp(Aoba::Tileset::Action::Animation.current_script)
+  end
+
+  ;; ---------------------------------------------------------------------------
+  fell_into_abyss = Aoba::Sprite::AnimationCommand.create :fell_into_abyss do
+    Game::Ball::Abyss.on_fell_down
+  end
+
+  ball_exploded = Aoba::Sprite::AnimationCommand.create :fell_into_abyss do
+    CPU.with_bank! Aoba::VARIABLE_RAM_BANK do
+      STZ   Game::Level.num_lives
+      CPU.set A: 16
+      JSL   Game::Level::UserInterface::Death.trigger_long
+      CPU.set A: 8
+    end
+  end
+
+  parachute_open = Aoba::Sprite::AnimationCommand.create :parachute_open do
+    Game::Ball::Abyss.on_parachute_open
+  end
+
+  ;; ---------------------------------------------------------------------------
+  macro _store_collision_index(target, tile_index)
+    LDX   AssetConfig::Ingame.replacement_tile_list
+    LDA   REPLACEMENT_TILE_LIST_BANK.as_bank(tile_index).long, X
+    AND   #$FF
+    ASL   A
+    TAX
+    LDA   AssetConfig::Ingame.tile_collision.long, X
+    STA   target
+  end
+
+  def initialize_animation_commands
+    _store_collision_index no_collision_index, AssetConfig::TileList.FLOOR
+    _store_collision_index laser1h_collision_index, AssetConfig::TileList.LASER1H
+    _store_collision_index laser1v_collision_index, AssetConfig::TileList.LASER1V
+  end
+
+  ;; ---------------------------------------------------------------------------
+  tileset_animation_commands = Aoba::Tileset::AnimationCommand::Collection.create do
+    add $81, enable_laser1
+    add $82, disable_laser1
+    add $83, enable_spikes
+    add $84, disable_spikes
+    add $85, abyss_animation
+  end
+
+  sprite_animation_commands = Aoba::Sprite::AnimationCommand::Collection.create do
+    add $90, fell_into_abyss
+    add $91, parachute_open
+    add $92, ball_exploded
+  end
+
+end

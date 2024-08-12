@@ -1,0 +1,21 @@
+module Aoba::Audio::Event::StopSong
+
+  ;; The event ID
+  ID = $08
+
+  ;; The event
+  class Event < Base
+  end
+
+  ;; Temporary RAM
+  scope :TempRAM, in: ActionRAM
+
+  ;; Loads the tileset
+  ;; @ignore-thread-safety
+  event_handler = make_audio_event do 
+    Y.is_a! Event
+
+    SNES_RAM_JMP Aoba::Audio::Action::StopSong.invoke_icb, :JMP, :JMP
+  end
+
+end

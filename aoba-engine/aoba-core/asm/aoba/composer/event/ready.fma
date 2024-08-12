@@ -1,0 +1,8 @@
+module Aoba::Composer::Event::ReadyEvent
+
+  ;; @ignore-thread-safety
+  ID = List.create "ReadyEvent" do
+    Aoba::Thread::ReadyEvent.make_event_handler
+  end
+
+end

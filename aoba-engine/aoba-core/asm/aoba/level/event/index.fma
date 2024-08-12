@@ -1,0 +1,14 @@
+module Aoba::Level::Event
+  class Base < Aoba::Thread::Event::Base
+    declare :event_id, as: :uint8
+  end
+
+  List = Aoba::Thread::EventHandlerList.new(LEVEL_ROM_BANK)
+end
+
+require "load_level"
+require "unload_level"
+require "ready"
+require "scroll_level"
+require "apply_switch"
+require "set_dynamic_layer"

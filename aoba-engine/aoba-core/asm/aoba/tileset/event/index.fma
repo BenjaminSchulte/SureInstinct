@@ -1,0 +1,13 @@
+module Aoba::Tileset::Event
+  class Base < Aoba::Thread::Event::Base
+    declare :event_id, as: :uint8
+  end
+
+  List = Aoba::Thread::EventHandlerList.new(TILESET_ROM_BANK)
+end
+
+require "load_tileset"
+require "unload_tileset"
+require "ready"
+require "pause_animation"
+require "resume_animation"

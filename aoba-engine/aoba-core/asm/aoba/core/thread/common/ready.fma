@@ -1,0 +1,38 @@
+module Aoba::Thread::ReadyEvent
+  
+  ;; The event ID
+  ID = $80
+
+  ;; The event itself
+  class Event < Thread::Event::Base
+    ;; The event ID
+    declare :event_id, as: :uint8
+
+    ;; The response ID
+    declare :response_id, as: :uint8
+  end
+
+  ;; Loads the tileset
+  macro make_event_handler
+    Y.is_a! Event
+    
+    CPU.set A: 8
+    LDA   Y[:sender_thread_id]
+    PHA
+    LDA   Y[:response_id]
+    PHA
+
+    ;; Notifies the sender that we are ready
+    LDA   #Thread::Event.READYEVENT_ID
+    JSL   Thread::Event.allocate_icb_long
+    PLA
+    STA   Thread::Event::Base.size, X
+    PLA
+    CPU.set A: 16
+    JSL   Thread::send_event_icb_long
+
+
+  end
+
+end
+

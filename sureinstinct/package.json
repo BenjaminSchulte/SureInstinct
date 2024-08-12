@@ -1,0 +1,11 @@
+{
+  "name": "sureinstinct",
+  "version": "1.0.0",
+  "main": "index.js",
+  "license": "MIT",
+  "dependencies": {
+    "canvas": "^2.8.0",
+    "js-yaml": "^4.1.0",
+    "tmp": "^0.2.1"
+  }
+}

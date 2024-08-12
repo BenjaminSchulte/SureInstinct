@@ -1,0 +1,83 @@
+module Aoba
+
+  class BaseActionCollectionAction
+    macro initialize(id)
+      @id = id
+      @callback = nil
+    end
+  end
+
+  macro _create_collection_action(action, action_name, bank, &block)
+    func = Function.new action_name do
+      A.pretend_size 16
+      X.pretend_size 16
+      block.call with_context action
+      RTS
+    end
+    func.override_located_at bank: bank
+    action.callback = func.to_sym
+    return action
+  end
+
+  class BaseActionCollectionBuilder
+    macro initialize(collection, nop)
+      @collection = collection
+      @_nop = nop
+    end
+
+    macro nop(id)
+      add id, @_nop
+    end
+
+    macro add(id, action)
+      raise "ID must be at least #{@collection.first_id}" if id < @collection.first_id
+
+      _self = self
+      target_index = id - @collection.first_id
+      missing_actions = target_index - @collection.actions.size
+      if missing_actions > 0
+        missing_actions.times do |i|
+          collection.actions[collection.actions.size] = nil
+        end
+      end
+
+      raise "Collection action #{id} already exists" unless @collection.actions[target_index].nil?
+
+      @collection.actions[target_index] = action
+    end
+
+    macro on(id, &block)
+      @collection.event.on id, &block
+    end
+  end
+
+  class BaseActionCollection < EngineObject
+    macro initialize(type_id, bank, first_id=0)
+      super
+  
+      @first_id = first_id
+      @type_id = type_id
+      @actions = []
+      @index = nil
+      @bank = bank
+      @event = Aoba::Event::Emitter.new
+    end
+
+    macro finalize
+      _self = self
+      _index = DataBlock.new "#{@type_id}_list" do
+        _self.actions.size.times do |i|
+          if _self.actions[i].nil?
+            dw 0
+          else
+            dw _self.actions[i].callback
+          end
+        end
+        db 0 if _self.actions.size == 0
+      end
+      _index.override_located_at bank: @bank
+      @index = _index.to_sym
+    end
+  end
+
+end

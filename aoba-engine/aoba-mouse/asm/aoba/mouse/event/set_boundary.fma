@@ -1,0 +1,33 @@
+module Aoba::Mouse::Event::SetBoundary
+
+  class Event < Base
+    declare :boundary_left, as: :uint8
+    declare :boundary_right, as: :uint8
+    declare :boundary_top, as: :uint8
+    declare :boundary_bottom, as: :uint8
+  end
+
+  scope :TempRAM, in: ActionRAM
+
+
+  ID = MouseThread.event_list.create "Enable" do
+    Y.is_a! Event
+    LDA   Y[:boundary_left]
+    CPU.set A: 8
+    STZ   dp(boundary_left) + 1
+    STZ   dp(boundary_top) + 1
+    STZ   dp(boundary_right) + 1
+    STZ   dp(boundary_bottom) + 1
+
+    STA   dp(boundary_left)
+    XBA
+    STA   dp(boundary_right)
+
+    LDA   Y[:boundary_top]
+    STA   dp(boundary_top)
+    LDA   Y[:boundary_bottom]
+    STA   dp(boundary_bottom)
+    CPU.set A: 16
+  end
+
+end

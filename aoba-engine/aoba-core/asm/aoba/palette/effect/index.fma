@@ -1,0 +1,10 @@
+require "rotate"
+require "shared"
+
+module Aoba::Palette::Effect
+
+  datablock effect_addresses
+    dw Rotate.execute
+  end
+
+end

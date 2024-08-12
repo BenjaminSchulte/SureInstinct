@@ -1,0 +1,73 @@
+module IPC::Transfer
+
+  scope :TransferRAM, in: ::Memory.SharedPage0
+  declare :transfer_target_address, as: :uint16, in: TransferRAM
+  declare :transfer_data_size, as: :uint16, in: TransferRAM
+
+  scope :SharedTransferRAM, in: TransferRAM, shared: true
+
+  ;; Transfers the actual data
+  def transfer
+    MOVW  YA, dp(transfer_target_address)
+
+    ;; Override opcode address at _op1.._op3
+    MOV   _op1+1, A
+    MOV   _op1+2, Y
+    INC   A
+    BNZ   _no_inc_op1
+    INC   Y
+  _no_inc_op1:
+    MOV   _op2+1, A
+    MOV   _op2+2, Y
+    INC   A
+    BNZ   _no_inc_op2
+    INC   Y
+  _no_inc_op2:
+    MOV   _op3+1, A
+    MOV   _op3+2, Y
+
+    ; Prepare values
+    MOV   Y, dp(IPC.last_ipc_value)
+    MOV   X, #0
+
+  _loop:
+    CMP   Y, dp(SPC.PORT0)
+    BEQ   _loop
+    MOV   Y, dp(SPC.PORT0)
+
+    ; Write data to RAM
+    MOV   A, dp(SPC.PORT2)
+  _op1:
+    MOV   addr($0, X), A
+    MOV   A, dp(SPC.PORT3)
+  _op2:
+    MOV   addr($1, X), A
+    MOV   A, dp(SPC.PORT1)
+    ; send ack
+    MOV   dp(SPC.PORT0), Y
+  _op3:
+    MOV   addr($2, X), A
+
+    ; check whether we are done
+    DECW  dp(transfer_data_size)
+    BEQ   _end_of_data
+
+    ; advance pointer
+    INC   X
+    INC   X
+    INC   X
+    CMP   X, #3
+    BGE   _loop
+
+    ; modify pointers
+    INC   _op1+2
+    INC   _op2+2
+    INC   _op3+2
+
+    BRA   _loop
+
+  _end_of_data:
+    MOV   dp(IPC.last_ipc_value), Y
+  end
+
+end

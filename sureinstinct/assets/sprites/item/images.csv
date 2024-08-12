@@ -1,0 +1,6 @@
+image,palette,x,y,w,h,px,py,priority,include
+main-frames.png,main-palette.png,0,0,21,20,0,0,0,
+main-frames.png,main-palette.png,0,20,21,20,0,0,0,
+main-frames.png,main-palette.png,0,40,21,20,0,0,0,
+main-frames.png,main-palette.png,0,60,21,20,0,0,0,
+main-frames.png,main-palette.png,0,80,21,20,0,0,0,

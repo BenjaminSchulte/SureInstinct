@@ -1,0 +1,66 @@
+module Aoba::Scene::Manager
+
+  all_scene_modes = []
+
+  macro register_scene_mode(mode)
+    all_scene_modes << mode
+  end
+
+  datablock mode_setup_pointer
+    Manager.all_scene_modes.each do |mode|
+      dw mode.load.to_sym
+    end
+    db 0 if Manager.all_scene_modes.empty?
+  end
+
+  datablock mode_release_pointer
+    Manager.all_scene_modes.each do |mode|
+      dw mode.unload.to_sym
+    end
+    db 0 if Manager.all_scene_modes.empty?
+  end
+
+  ;; Sets the new scene mode
+  ;; @param A new scene mode
+  def set_scene_mode_icb
+    Thread.assert_thread thread_id
+
+    AND   dp(x00FF)
+    CPU.set A: 8
+    ;; Tests if we currently are in the current scene mode
+    CMP   current_scene_mode.long
+    BEQ   _rts
+  
+    PHA
+    LDA   current_scene_mode.long
+    BZE   _skip_unload_scene_mode
+
+  _unload_scene_mode:
+    Debug.warn "Unloading scene mode {A}"
+    DEC   A
+    CPU.set A: 16
+    ASL   A
+    TAX
+    Debug.fatal "Not implemented: unload scene mode"
+    AND   dp(x00FF)
+    CPU.set A: 8
+
+  _skip_unload_scene_mode:
+    PLA
+    STA   current_scene_mode.long
+    BZE   _rts
+
+    Debug.warn "Loading scene mode {A}"
+    DEC   A
+    CPU.set A: 16
+    ASL   A
+    TAX
+    JMP   mode_setup_pointer.indirect, X
+
+    ;; ---
+
+  _rts:
+    CPU.set A: 16
+  end
+
+end

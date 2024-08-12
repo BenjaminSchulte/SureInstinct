@@ -1,0 +1,17 @@
+module Aoba::Composer::Event
+  class Base < Aoba::Thread::Event::Base
+    declare :event_id, as: :uint8
+  end
+
+  List = Aoba::Thread::EventHandlerList.new(COMPOSER_ROM_BANK)
+end
+
+require "fade_screen"
+require "set_screen_mode"
+require "wait_for_fade_screen"
+require "set_hdma_mode"
+require "disable_hdma_mode"
+require "load_image"
+require "load_image_tiles"
+require "load_image_tiles_ex"
+require "ready"

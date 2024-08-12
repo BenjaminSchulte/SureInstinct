@@ -1,0 +1,47 @@
+module SA1
+  module Init
+    locate_at bank: 0
+
+    ;; @ignore-thread-safety
+    def return_from_interrupt
+      RTI
+    end
+
+    ;; @ignore-thread-safety
+    def main
+      SEI
+      CLC
+      XCE
+      REP   #$18
+      LDX   #$07FF
+      TXS
+
+      JML   ::sa1_main
+    end
+  end
+
+  module Interrupt
+    RESET = Init.main.to_sym
+    IRQ = Init.return_from_interrupt.to_sym
+    NMI = Init.return_from_interrupt.to_sym
+  end
+
+  macro configure
+    LDA   #Interrupt.RESET | $8000
+    STA   CRV
+
+    LDA   #Interrupt.NMI | $8000
+    STA   CNV
+
+    LDA   #Interrupt.IRQ | $8000
+    STA   CIV
+  end
+
+  macro boot
+    CPU.set A: 8
+    LDA   #8
+    STA   CCNT.long
+    CPU.set A: 16
+  end
+
+end

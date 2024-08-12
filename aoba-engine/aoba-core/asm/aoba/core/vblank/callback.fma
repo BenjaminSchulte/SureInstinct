@@ -1,0 +1,63 @@
+module Aoba::VBlank
+
+  ;; Creates a new callback
+  class Callback
+
+    ;; Initialize the callback
+    macro initialize
+      @size = 0
+      @last_offset = 0
+      @params = {}
+
+      yield with_context self
+    end
+
+    ;; Returns whether there are any params
+    macro no_params?
+      return @size == 0
+    end
+
+    ;; Adds a parameter
+    macro param(name, as, length=1)
+      @params[name] = @size
+      @size += as.size_in_bytes * length
+    end
+
+    ;; Invokes the configuration routine
+    macro invoke_configure(&configure)
+      reverse_dpparams = {}
+      total_size = @size
+      _self = self
+
+      @params.keys.each do |key|
+        reverse_dpparams[key] = dp(2 + _self.params[key])
+      end
+
+      configure.call **reverse_dpparams
+    end
+
+    ;; Execute this task now or later
+    macro queue(use_A=false, &block)
+      Queue.add self, use_A, &block
+    end
+
+    ;; Adds a callback
+    macro execute(&callback)
+      _self = self
+      ; TODO: Is this really only created once?
+      @function = Function.new "vblank_callback" do
+        A.pretend_size 8
+        X.pretend_size 16
+        callback.call REGISTER_BASE
+        RTS
+      end
+      @function.allow_located_at bank: SYSTEM_ROM_BANK
+
+      raise "VBLANK callback exceeds stack size limit" if @size > VBLANK_MAX_COMMAND_STACK - 2
+      
+      return @function
+    end
+
+  end
+
+end

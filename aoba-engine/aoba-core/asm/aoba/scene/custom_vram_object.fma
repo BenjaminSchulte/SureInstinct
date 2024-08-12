@@ -1,0 +1,41 @@
+module Aoba::Scene
+  class CustomVramObject < Aoba::VramObject
+    macro initialize(size_in_bytes=0, num_tiles=0, bpp=4, tilemap_width=0, tilemap_height=0, align=nil, after=nil)
+      super
+
+      tilemap_size = tilemap_width * tilemap_height
+
+      if align.nil?
+        align = $800 if tilemap_size > 0
+        align = $2000 if num_tiles > 0
+      end
+
+      @_size_in_bytes = size_in_bytes + num_tiles * bpp * 8 + tilemap_size * 2
+      @__previous = after
+      @align = align
+      @__address_offset = 0
+      @_bpp = bpp
+
+      __append_to_previous unless after.nil?
+    end
+
+    macro size_in_bytes
+      return @_size_in_bytes
+    end
+
+    macro relative_tile_offset
+      return @__address_offset / @_bpp / 8
+    end
+
+    macro relative_tilemap_offset
+      return @__address_offset >> 1
+    end
+
+    macro __append_to_previous
+      first = __first
+
+      @__address_offset = first._size_in_bytes
+      first._size_in_bytes += @_size_in_bytes
+    end
+  end
+end

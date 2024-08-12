@@ -1,0 +1,132 @@
+module Aoba::Tileset::Loader
+
+  class TilesetLoaderBuilder
+    macro initialize(loader)
+      @loader = loader
+    end
+
+    macro configure_generator(bank, temp_ram)
+      temp_ram.include @loader.TempRAM
+      @loader.class.__static_locate_at_kwargs = {bank: bank}
+    end
+
+    macro data_bank(bank)
+      @loader.data_bank = bank
+    end
+    
+    macro use(other)
+      other.include_to_tileset_loader @loader
+    end
+
+    macro add(param)
+      param.loader = @loader
+      param.offset = @loader.header_size
+      @loader.header_size += param.size_in_bytes
+      @loader.parameter << param
+      param.preconfigure
+    end
+
+    macro on(id, &block)
+      @loader.event.on id, &block
+    end
+  end
+
+  class TilesetLoader < Aoba::StaticRoutineEngineObject
+    register A: 16, XY: 16
+
+    macro initialize
+      super
+
+      @load_event_id = Event::LoadTileset.create_for(self)
+      @unload_event_id = Event::UnloadTileset.create_for(self)
+      @load_event_ready_id = @load_event_id
+
+      @TempRAM = MemoryScope.new("TilesetLoaderTempRAM", in: nil, for: ::SNES::MemoryMap::RAM)
+      @SharedTempRAM = MemoryScope.new("SharedTilesetLoaderTempRAM", in: @TempRAM, shared: true)
+
+      @_vram_address = MemoryVariable.new("_vram_address", as: :uint16, in: @TempRAM)
+      @_current_tileset = MemoryVariable.new("_current_tileset", as: :uint16, in: @TempRAM)
+
+      @event = Aoba::Event::Emitter.new
+
+      @header_size = 0
+      @parameter = []
+    end
+
+    ;; Finalizes the loader
+    macro finalize
+      @parameter.each do |p|
+        p.finalize
+      end
+      setup_static_routines
+    end
+
+    ;; Loads header
+    macro read_header_at(offset)
+      LDA   @data_bank.as_bank(offset).long, X
+    end
+
+    ;; Unloads the tileset
+    routine :_unload do
+      LDX   dp(@_current_tileset)
+      BNZ   _do_unload
+      RTS
+
+    _do_unload:
+Debug.fatal "Unload tileset {X}"
+      @event.invoke :before_unload
+      @parameter.each do |p|
+        p.unload
+      end
+      @event.invoke :after_unload
+      STZ   current_loaded_tileset
+      RTS
+    end
+
+    routine :_load do
+      @event.invoke :before_load
+      @parameter.each do |p|
+        p.load
+      end
+      @event.invoke :after_load
+      RTS
+    end
+
+    ;; Loads the Tileset
+    ;; @param X header address
+    ;; @param A vram target address
+    routine :load do
+      STA   dp(@_vram_address)
+      STX   dp(@_current_tileset)
+
+      ;; tests if current loaded tileset is $FFFF
+      LDA   current_loaded_tileset
+      INC   A
+      BEQ   _is_first_tileset
+      
+      CPX   current_loaded_tileset
+      BEQ   _skip_load_tileset
+
+      _unload
+      LDX   dp(@_current_tileset)
+
+    _is_first_tileset:
+      STX   current_loaded_tileset
+    Debug.log "LOAD TILESET {X}"
+      _load
+
+    _skip_load_tileset:
+      RTS
+    end
+
+    ;; Creates the storage
+    macro self.create(&block)
+      loader = TilesetLoader.new
+      builder = TilesetLoaderBuilder.new(loader)
+      block.call with_context builder
+      loader.finalize
+      return loader
+    end
+  end
+
+end

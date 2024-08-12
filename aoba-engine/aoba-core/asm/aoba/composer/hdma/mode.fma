@@ -1,0 +1,174 @@
+module Aoba::Composer::Hdma
+
+  __all_hdma_modes = []
+
+  class ModeBuilder
+    macro initialize(mode)
+      @mode = mode
+    end
+
+    macro configuration(Klass) 
+      @mode.has_config? = true
+      @mode.Config = Klass
+    end
+
+    macro enable_script_support(name)
+      __create_hdma_script_commands name, @mode
+    end
+
+    macro _header_size
+      return Aoba::Composer::Hdma::HDMA_CHANNEL_HEADER_SIZE
+    end
+
+    macro on(id, &block)
+      @mode.event.on id, &block
+    end
+
+    macro use(other)
+      other.include_in_hdma_mode @mode
+    end
+
+    macro load(&block)
+      @mode.event.on :load, &block
+    end
+
+    macro table_setup8(&block)
+      @mode.event.on :table_setup8, &block
+    end
+
+    macro table_setup16(&block)
+      @mode.event.on :table_setup16, &block
+    end
+
+    macro dma_setup(&block)
+      @mode.event.on :dma_setup, &block
+    end
+
+    macro enable8(&block)
+      @mode.event.on :enable8, &block
+    end
+
+    macro enable16(&block)
+      @mode.event.on :enable16, &block
+    end
+
+    macro release(&block)
+      @mode.event.on :release, &block
+    end
+
+    macro update(&block)
+      _mode = @mode
+      @mode.event.on :enable16 do
+        set_hdma_vblank_update _mode._update
+      end
+      @mode.event.on :update, &block
+    end
+
+    macro routine(id, &block)
+      @mode.instance_routine id, &block
+      self[id] = @mode[id]
+    end
+  end
+
+  class Mode < StaticRoutineEngineObject
+    locate_at bank: HDMA_COMPOSER_ROM_BANK
+    register A: 16, XY: 16
+
+    macro initialize(id)
+      super
+      @id = id
+      @event = Aoba::Event::Emitter.new
+
+      @has_config? = false
+      @Config = nil
+    end
+
+    macro finalize
+      setup_static_routines
+    end
+
+    routine :_update do
+      Y.is_a! @Config
+      A.pretend_size 8
+      @event.invoke :update
+      RTL
+    end
+
+    routine :_setup do
+      Y.is_a! @Config
+      @event.invoke :load
+      RTS
+    end
+
+    routine :_enable do
+      Y.is_a! @Config
+      CPU.set A: 8
+      LDX   hdma_header_ram
+      @event.invoke :table_setup8
+      CPU.set A: 16
+      @event.invoke :table_setup16
+      PHD
+      LDA   #$4300
+      TCD
+      @event.invoke :dma_setup
+      PLD
+      @event.invoke :enable16
+      CPU.set A: 8
+      @event.invoke :enable8
+      CPU.set A: 16
+      RTS
+    end
+
+    routine :_release do
+      Y.is_a! @Config
+      @event.invoke :release
+      RTS
+    end
+
+    macro enable(param=nil)
+      LDA   #id
+      LDX   param unless param.nil?
+      JSL   Aoba::Composer::Api.set_hdma_mode_long
+    end
+
+    macro self.create(&block)
+      base = Mode.new(__all_hdma_modes.length + 1)
+      builder = ModeBuilder.new(base)
+      block.call with_context builder
+      base.finalize
+      __all_hdma_modes << base
+      return base
+    end
+  end
+
+  DisabledMode = Mode.create do
+    enable8 do
+      disable_hdma_vblank_update
+      LDA   #0
+      STZ   HDMAEN
+      STA   CPU.HDMAEN.long
+    end
+  end
+
+  datablock mode_setup_pointer
+    __all_hdma_modes.each do |mode|
+      dw mode._setup.to_sym
+    end
+    db 0 if __all_hdma_modes.empty?
+  end
+
+  datablock mode_enable_pointer
+    __all_hdma_modes.each do |mode|
+      dw mode._enable.to_sym
+    end
+    db 0 if __all_hdma_modes.empty?
+  end
+
+  datablock mode_release_pointer
+    __all_hdma_modes.each do |mode|
+      dw mode._release.to_sym
+    end
+    db 0 if __all_hdma_modes.empty?
+  end
+
+end

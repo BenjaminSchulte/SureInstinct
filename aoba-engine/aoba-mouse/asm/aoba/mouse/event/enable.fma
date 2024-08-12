@@ -1,0 +1,114 @@
+module Aoba::Mouse::Event::Enable
+
+  class Event < Base
+    declare :sprite_address, as: :uint16
+    declare :palette_group_address, as: :uint16
+  end
+
+  scope :TempRAM, in: ActionRAM
+
+  declare :sprite_address, as: :uint16, in: TempRAM
+  declare :palette_group_address, as: :uint16, in: TempRAM
+
+
+  macro __create_mouse_sprite
+    ;; Allocates the configuration RAM
+    LDA   Aoba::Sprite.thread_id
+    LDX   #Aoba::Sprite::Event::CreateSprite::EventConfig.size
+    SEI
+    JSL   Aoba::Memory.allocate_miniblock_long
+    CLI
+    X.is_a! Aoba::Sprite::Event::CreateSprite::EventConfig
+    
+    ;; Creates the sprite
+    LDA   #SNES::Arch::SCREEN_WIDTH >> 1
+    STA   X[:x]
+    LDA   #SNES::Arch::SCREEN_HEIGHT >> 1
+    STA   X[:y]
+    LDA   #Animation::Animation::stand
+    STA   X[:animation]
+    LDA   #Animation::Direction::down | $3100
+    STA   X[:direction]
+    LDA   dp(palette_group_address)
+    STA   X[:palette_group_address]
+    LDA   dp(sprite_address)
+    STA   X[:sprite_id]
+    JSL   Aoba::Sprite::Api.create_sprite_icb_long
+    
+    ;; Configures the sprite
+    X.is_a! Aoba::Sprite::Instance
+    LDA   X[:basic_flags]
+    ORA   #Aoba::Sprite::BasicFlag.SKIP_MOVE_ROUTINE
+    STA   X[:basic_flags]
+    LDA   X[:renderable_configuration_flags]
+    ORA   #Aoba::Sprite::RenderableConfigurationFlag.NO_CAMERA_RELATIVE
+    STA   X[:renderable_configuration_flags]
+    STX   mouse_sprite
+  end
+
+  macro __add_mouse_listener
+    JSL   Aoba::Control.allocate_listener_icb_long
+    Y.is_a! Aoba::Control::Listener
+    STY   mouse_listener
+
+    LDA   MouseThread.thread_id
+    STA   Y[:thread_id]
+    LDA   #Aoba::Control::ListenerFlag::MOUSE_EVENTS
+    STA   Y[:listener_flags]
+    LDA   #Aoba::Control::Key.bitmap(:lmb, :rmb)
+    STA   Y[:keydown_triggermask]
+    STA   Y[:keyup_triggermask]
+
+    JSL   Aoba::Control.attach_global_listener_icb_long
+  end
+
+  macro __ask_for_mouse_gamepad
+    JSL   Aoba::Control.find_mouse_gamepad_icb_long
+    STX   mouse_gamepad
+
+    CPX   #0
+    BNE   _skip_hide
+
+    LDX   mouse_sprite
+    X.is_a! Aoba::Sprite::Instance
+    LDA   X[:renderable_configuration_flags]
+    ORA   #Aoba::Sprite::RenderableConfigurationFlag.HIDDEN
+    STA   X[:renderable_configuration_flags]
+
+  _skip_hide:
+  end
+
+
+  ID = MouseThread.event_list.create "Enable" do
+    Y.is_a! Event
+    LDA   Y[:sprite_address]
+    STA   dp(sprite_address)
+    LDA   Y[:palette_group_address]
+    STA   dp(palette_group_address)
+
+    SEI
+    LDA   global_flags
+    BPL   _new_sprite
+  
+  _update_sprite:
+    CLI
+    RTS
+
+    ;; ---
+
+  _new_sprite:
+    ORA   #GlobalFlag::MOUSE_ENABLED
+    STA   global_flags
+    CLI
+
+    __create_mouse_sprite
+    __add_mouse_listener
+    __ask_for_mouse_gamepad
+
+    LDX   mouse_sprite
+    JSL   Aoba::Sprite::Api.queue_sprite_icb_long
+
+    JMP   _configure_timer
+  end
+
+end

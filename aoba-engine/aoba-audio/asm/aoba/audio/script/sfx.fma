@@ -1,0 +1,65 @@
+module Aoba::Audio
+  ;; Sets the sfx volume
+  ;;
+  ;; @param REGA volume
+  Aoba::Script.callback "Audio_SetSfxVolume", bank: AUDIO_ROM_BANK do
+    ;; Allocates and configures the event
+    LDA   #Aoba::Thread::Event::USEREVENT_ID
+    JSL   Aoba::Thread::Event.allocate_icb_long
+    X.is_a! Aoba::Audio::Event::SetSfxVolume::Event
+    CPU.set A: 8
+    LDA   dp(Aoba::Script.register_a)
+    STA   X[:volume]
+    LDA   #Aoba::Audio::Event::SetSfxVolume::ID
+    STA   X[:event_id]
+    LDA   Aoba::Audio.thread_id
+    CPU.set A: 16
+
+    JML   Aoba::Thread::send_event_icb_long
+  end
+
+  ;; Loads a song
+  ;;
+  ;; @param REGA sfx library address
+  Aoba::Script.callback "Audio_UploadSfxLibrary", bank: AUDIO_ROM_BANK do
+
+    ;; Allocates and configures the event
+    LDA   #Aoba::Thread::Event::USEREVENT_ID
+    JSL   Aoba::Thread::Event.allocate_icb_long
+    X.is_a! Aoba::Audio::Event::LoadSfxDatabase::Event
+    LDA   dp(Aoba::Script.register_a)
+    STA   X[:sfx_database_address]
+    CPU.set A: 8
+    LDA   dp(Aoba::Script.register_a) + 2
+    STA   X[:sfx_database_address] + 2
+    LDA   #Aoba::Audio::Event::LoadSfxDatabase::ID
+    STA   X[:event_id]
+    LDA   Aoba::Audio.thread_id
+    CPU.set A: 16
+
+    JML   Aoba::Thread::send_event_icb_long
+
+  end
+
+  ;; Loads a sfx
+  ;;
+  ;; @param REGA sfx library address
+  Aoba::Script.callback "Audio_PlaySfx", bank: AUDIO_ROM_BANK do
+    
+    ;; Allocates and configures the event
+    LDA   #Aoba::Thread::Event::USEREVENT_ID
+    JSL   Aoba::Thread::Event.allocate_icb_long
+    X.is_a! Aoba::Audio::Event::PlaySfx::Event
+    LDA   dp(Aoba::Script.register_a)
+    STA   X[:id]
+    CPU.set A: 8
+    LDA   #Aoba::Audio::Event::PlaySfx::ID
+    STA   X[:event_id]
+    LDA   Aoba::Audio.thread_id
+    CPU.set A: 16
+
+    JML   Aoba::Thread::send_event_icb_long
+
+  end
+
+end

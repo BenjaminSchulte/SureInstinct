@@ -1,0 +1,87 @@
+module Aoba::Sprite::Collision::Pixel
+
+  class TestCollision < StaticRoutineClass
+    locate_at bank: SPRITE_ROM_BANK
+    register A: 16, XY: 16
+
+    macro initialize(parent)
+      @parent = parent
+      setup_static_routines
+
+      @TempRAM = MemoryScope.new("TestCollisionTempRAM", in: @parent.TempRAM)
+      @_left_collision_pointer = MemoryVariable.new("_left_collision_pointer", as: :uint16, in: @TempRAM)
+      @_right_collision_pointer = MemoryVariable.new("_right_collision_pointer", as: :uint16, in: @TempRAM)
+      
+      @_hitbox = MemoryVariable.new("_hitbox", as: :uint16, in: @TempRAM)
+      @_hitbox_bottom = MemoryVariable.new("_hitbox_bottom", as: :uint16, in: @TempRAM)
+
+      @_collision_left_right = MemoryVariable.new("_collision_left_right", as: :uint16, in: @TempRAM)
+      @_collision_flags = MemoryVariable.new("_collision_flags", as: :uint16, in: @TempRAM)
+      
+      @_tile_index = MemoryVariable.new("_tile_index", as: :uint16, size: 4, in: @TempRAM)
+      @_tile_data = MemoryVariable.new("_tile_data", as: :uint16, size: 4, in: @TempRAM)
+
+      @_row_test = TestRow.new(self)
+    end
+
+    ;; Reads the tile data within the storage
+    ;; @param A relative X position
+    ;; @param Y relative Y position
+    routine :read_relative_tile_data do
+      @parent.__calculate_tile_index_from_storage _out_of_map
+
+      @parent.tilemap_storage.read_from_storage_pointer_A @parent.layer
+      STA   dp(@parent.collision_tile)
+
+      AND   #$3FFF if @parent.tilemap_storage.format_size_in_bytes > 1
+      @parent.layer_data[@parent.layer][:tile_data_format].size_in_bytes.multiplicated_register_A
+      TAX
+      LDA   @parent.layer_data[@parent.layer][:tile_data].long, X
+      STA   dp(@parent.collision_tile_data)
+      RTS
+
+    _out_of_map:
+      LDA   #0
+      RTS
+    end
+
+
+    ;; ---------------------------------------------------------------
+    ;;   MAIN ROUTINE
+    ;; ---------------------------------------------------------------
+    routine :process_collision do
+      X.is_a! Instance
+      LDA   X[:movable_flags]
+      AND   #$FFFF ^ MovableFlag::FORCE_COLLISION_TEST
+      STA   X[:movable_flags]
+
+      CPU.with_bank FIXED_RAM_BANK, from_bank: VARIABLE_RAM_BANK do
+        _row_test.iterate_all_rows
+
+        LDA   dp(@_hitbox)
+        BNZ   _has_collision
+        LDA   dp(@_collision_flags)
+        BZE   _rts
+        JMP   _has_event
+      _rts:
+        PLB
+        RTS
+        
+        ;; ---
+
+      _has_collision:
+        @parent.event.invoke :collided
+        PLB
+        RTS
+
+        ;; ---
+
+      _has_event:
+        @parent.event.invoke :event_collided
+
+      end
+      RTS
+    end
+  end
+
+end

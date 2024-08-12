@@ -1,0 +1,22 @@
+module Aoba::Image
+
+  ;; Header rom bank
+  IMAGE_HEADER_ROM_BANK = $C3
+
+  ;; The image tileset header rom bank
+  TILESET_IMAGE_HEADER_ROM_BANK = $C3
+
+  ;; Image rom header
+  class ImageRomHeader
+    ;; Pointer to the tileset
+    declare :tileset, as: :uint24
+
+    ;; Variants following
+  end
+
+  ;; Image tileset rom header
+  class ImageTilesetRomHeader
+    ;; Pointer to the image data
+    declare :image_data, as: :uint24
+  end
+end

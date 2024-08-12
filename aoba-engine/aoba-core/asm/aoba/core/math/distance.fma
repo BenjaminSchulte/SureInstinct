@@ -1,0 +1,115 @@
+module Aoba::Math
+
+  ;; Calculates the distance of the line
+  ;; @param X axis X (max $3F)
+  ;; @param Y axis Y (max $3F)
+  def quick_distance_near
+    routine from_A: 16, from_XY: 16 do
+      is_thread_safe
+      output A
+
+      declare :calc, as: :uint16
+
+      execute do |calc|
+        ;; Ensures that the X axis is ok
+        TXA
+        BPL   _x_is_positive
+        EOR   #$FFFF
+        INC   A
+      _x_is_positive:
+        LSR   A
+        CMP   #$3F
+        BLT   _x_is_in_range
+        LDA   #$3F
+      _x_is_in_range:
+        STA   dp(calc)
+
+        ;; Ensures that the Y axis is ok
+        TYA
+        BPL   _y_is_positive
+        EOR   #$FFFF
+        INC   A
+      _y_is_positive:
+        5.times_asl_A
+        AND   #$FFC0
+        CMP   #$3F << 6
+        BLT   _y_is_in_range
+        LDA   #$3F << 6
+      _y_is_in_range:
+        ORA   dp(calc)
+        TAX
+        LDA   quick_distance_table.long, X
+        AND   #$FF
+      end
+    end
+  end
+
+  ;; Calculates the distance of the line
+  ;; @param X axis X (max $3FF)
+  ;; @param Y axis Y (max $3FF)
+  def quick_distance_far
+    routine from_A: 16, from_XY: 16 do
+      is_thread_safe
+      output A
+
+      declare :calc, as: :uint16
+
+      execute do |calc|
+        ;; Ensures that the X axis is ok
+        TXA
+        BPL   _x_is_positive
+        EOR   #$FFFF
+        INC   A
+      _x_is_positive:
+        BZE   _x_is_ready
+        4.times_lsr_A
+        BNZ   _x_is_ready
+        INC   A
+      _x_is_ready:
+        CMP   #$3F
+        BLT   _x_is_in_range
+        LDA   #$3F
+      _x_is_in_range:
+        STA   dp(calc)
+
+        ;; Ensures that the Y axis is ok
+        TYA
+        BPL   _y_is_positive
+        EOR   #$FFFF
+        INC   A
+      _y_is_positive:
+        BZE   _y_is_ready
+        ASL   A
+        AND   #$FFC0
+        BNZ   _y_is_ready
+        LDA   #1 << 6
+      _y_is_ready:
+        CMP   #$3F << 6
+        BLT   _y_is_in_range
+        LDA   #$3F << 6
+      _y_is_in_range:
+        ORA   dp(calc)
+        TAX
+        LDA   quick_distance_table.long, X
+        AND   #$FF
+        ASL   A
+        ASL   A
+        ASL   A
+      end
+    end
+  end
+
+  ;; Calculates the distance of the line
+  ;; @param X axis X (max $3F)
+  ;; @param Y axis Y (max $3F)
+  def quick_distance_near_long
+    quick_distance_near
+    RTL
+  end
+
+  def quick_distance_far_long
+    quick_distance_far
+    RTL
+  end
+
+end

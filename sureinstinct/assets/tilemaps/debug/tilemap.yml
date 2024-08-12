@@ -1,0 +1,4 @@
+size: {width: 48, height: 48}
+tileset: wood
+switches:
+  - mission2

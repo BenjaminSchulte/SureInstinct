@@ -1,0 +1,430 @@
+module Aoba::Memory
+  ;; @param X Number of bytes to allocate
+  ;;
+  ;; @return X pointer in VARIABLE_RAM_BANK
+  ;; @return Y allocated size
+  def allocate
+    routine bank: FIXED_RAM_BANK do
+      assert_thread_safe
+      declare :num_word_blocks, as: :uint16
+      declare :num_byte_blocks, as: :uint8
+      declare :current_block_start, as: :uint8
+
+      execute do |num_word_blocks, num_byte_blocks, current_block_start|
+        ;; Calculates the required amount of blocks
+        TXA
+        CLC
+        ADC   #$FF
+        XBA
+        CPU.set A: 8
+        STZ   dp(num_byte_blocks)
+        LSR   A
+        BZE   _only_one_byte_block
+
+        ;; We are looking for a block of at least two bytes
+      _at_least_two_bytes_block:
+        ROL   dp(num_byte_blocks)
+        STA   dp(num_word_blocks)
+        STZ   dp(num_word_blocks) + 1
+        LDX   #0
+        CPU.set A: 16, XY: 8
+
+        ;; Try to find a new block beginning
+      _large_loop_outer:
+        LDY   dp(num_word_blocks)
+        ;; Tests the next index
+      _large_loop_inner:
+        LDA   block_usage_table, X
+        BZE   _large_found_word_start
+        INX
+        INX
+        BNZ   _large_loop_inner
+        BRA   _no_block_found
+
+        ;; Try to find all missing word slots
+      _large_found_word_start:
+        STX   dp(current_block_start)
+      _large_found_word_start_loop:
+        DEY
+        BZE   _large_found_all_words
+        INX
+        INX
+        BZE   _no_block_found
+        LDA   block_usage_table, X
+        BZE   _large_found_word_start_loop
+        INX
+        INX
+        BNZ   _large_loop_outer
+        BRA   _no_block_found
+
+        ;; Test if we need to read a single byte
+      _large_found_all_words:
+        LDY   dp(num_byte_blocks)
+        BZE   _large_found
+
+        INX
+        LDA   block_usage_table, X
+        BZE   _large_found
+        INX
+        BNZ   _large_loop_outer
+        BRA   _no_block_found
+
+        ;; We only need one block
+        X.pretend_size 16
+      _only_one_byte_block:
+        LDX   #0
+        CPU.set XY: 8
+
+      _only_one_byte_block_loop:
+        LDA   block_usage_table, X
+        BZE   _found_free_single_block
+        INX
+        BNZ   _only_one_byte_block_loop
+
+        ;; No block could be found
+      _no_block_found:
+        CPU.set A: 16, XY: 16
+        LDX   #0
+        BRA   _return_result
+
+        X.pretend_size 16
+      _large_found:
+        CPU.set A: 8
+        LDA   active_thread_id.long
+        XBA
+        LDA   active_thread_id.long
+        CPU.set A: 16
+
+        LDX   dp(current_block_start)
+        LDY   dp(num_word_blocks)
+      _large_set_loop:
+        STA   block_usage_table, X
+        INX
+        INX
+        DEY
+        BNZ   _large_set_loop
+
+        LDY   dp(num_byte_blocks)
+        BZE   _large_no_set_byte
+        DEX
+        STA   block_usage_table, X
+      _large_no_set_byte:
+
+        CPU.set A: 8
+        LSR   dp(num_byte_blocks)
+        CPU.set A: 16, XY: 16
+        LDA   dp(num_word_blocks)
+        ROL   A
+        XBA
+        TAY
+        LDA   dp(current_block_start)
+        AND   #$FF
+        XBA
+        TAX
+        BRA   _return_result
+
+        ;; Single block has been found
+      _found_free_single_block:
+        LDA   active_thread_id.long
+        STA   block_usage_table, X
+        CPU.set A: 16, XY: 16
+        TXA
+        XBA
+        TAX
+        LDY   #$100
+
+      _return_result:
+        Debug.profile_memory_allocate
+      end
+    end
+  end
+
+  ;; Allocates X bytes
+  def allocate_long
+    allocate
+    RTL
+  end
+
+  ;; Allocates X bytes
+  def waitfor_allocate_long
+    PHP
+    SEI
+    allocate
+    BNZ   _return
+
+    fatal_error "todo waitfor_allocate_long"
+
+  _return:
+    PLP
+    RTL
+  end
+
+  ;; Allocates X bytes from behind
+  ;;
+  ;; Returns X pointer in VARIABLE_RAM_BANK
+  ;; Returns Y allocated size
+  def allocate_from_behind
+    routine bank: FIXED_RAM_BANK do
+      assert_thread_safe
+      declare :num_word_blocks, as: :uint16
+      declare :num_byte_blocks, as: :uint8
+      declare :current_block_end, as: :uint16
+
+      execute do |num_word_blocks, num_byte_blocks, current_block_end|
+        ;; Calculates the required amount of blocks
+        TXA
+        CLC
+        ADC   #$FF
+        XBA
+        CPU.set A: 8
+        STZ   dp(num_byte_blocks)
+        LSR   A
+        BZE   _only_one_byte_block
+
+        ;; We are looking for a block of at least two bytes
+      _at_least_two_bytes_block:
+        ROL   dp(num_byte_blocks)
+        STA   dp(num_word_blocks)
+        STZ   dp(num_word_blocks) + 1
+
+        CPU.set A: 16, XY: 16
+        LDX   #$FE
+
+        ;; Try to find a new block beginning
+      _large_loop_outer:
+        LDY   dp(num_word_blocks)
+        ;; Tests the next index
+      _large_loop_inner:
+        LDA   block_usage_table, X
+        BZE   _large_found_word_start
+        DEX
+        DEX
+        BPL   _large_loop_inner
+        BRA   _no_block_found
+        
+        ;; Try to find all missing word slots
+      _large_found_word_start:
+        STX   dp(current_block_end)
+      _large_found_word_start_loop:
+        DEY
+        BZE   _large_found_all_words
+        DEX
+        DEX
+        BMI   _no_block_found
+        LDA   block_usage_table, X
+        BZE   _large_found_word_start_loop
+        DEX
+        DEX
+        BPL   _large_loop_outer
+        BRA   _no_block_found
+
+        ;; Tests if we need to read a single byte
+      _large_found_all_words:
+        LDA   dp(num_byte_blocks)
+        LSR   A
+        BCC   _large_found
+
+        DEX
+        LDA   block_usage_table, X
+        BZE   _large_found
+        DEX
+        BPL   _large_loop_outer
+        BRA   _no_block_found
+
+        ;; We only need one block
+      _only_one_byte_block:
+        LDX   #$FF
+        
+      _only_one_byte_block_loop:
+        LDA   block_usage_table, X
+        BZE   _found_free_single_block
+        DEX
+        BPL   _only_one_byte_block_loop
+
+        ;; No block could be found
+      _no_block_found:
+        CPU.set A: 16, XY: 16
+        LDX   #0
+        BRA   _return_result
+
+        ;;We found a large record
+      _large_found:
+        CPU.set A: 8
+        LDA   active_thread_id.long
+        XBA
+        LDA   active_thread_id.long
+        CPU.set A: 16
+
+        ;; Updates the records to the thread ID
+        LDX   dp(current_block_end)
+        LDY   dp(num_word_blocks)
+      _large_set_loop:
+        STA   block_usage_table, X
+        DEY
+        BZE   _after_large_set_loop
+        DEX
+        DEX
+        BRA   _large_set_loop
+      
+      _after_large_set_loop:
+        ;; Tests if we need to update an additional byte
+        CPU.set A: 8
+        STA   dp(current_block_end)
+        LDA   dp(num_byte_blocks)
+        LSR   A
+        BCC   _large_no_set_byte
+        DEX
+        LDA   dp(current_block_end)
+        STA   block_usage_table, X
+      _large_no_set_byte:
+
+        ;; @param Y num bytes allocated
+        LSR   dp(num_byte_blocks)
+        CPU.set A: 16
+        LDA   dp(num_word_blocks)
+        ROL   A
+        XBA
+        TAY
+
+        ;; @param X data address
+        TXA
+        AND   #$FF
+        XBA
+        TAX
+        BRA   _return_result
+
+        ;; Single block has been found
+      _found_free_single_block:
+        LDA   active_thread_id.long
+        STA   block_usage_table, X
+        CPU.set A: 16, XY: 16
+        TXA
+        XBA
+        TAX
+        LDY   #$100
+
+      _return_result:
+        Debug.profile_memory_allocate
+      end
+    end
+  end
+
+  ;; Allocates X bytes from behind
+  def allocate_from_behind_long
+    allocate_from_behind
+    RTL
+  end
+
+  ;; Allocates X bytes from behind, but waits until the required memory can be allocated
+  def waitfor_allocate_from_behind
+    routine do
+      is_thread_safe
+      declare :requested_size, as: :uint16
+
+      execute do |requested_size|
+        STX   dp(requested_size)
+
+      _loop:
+        SEI
+        LDX   dp(requested_size)
+        JSR   Memory.allocate_from_behind
+        CLI
+
+        ;; Retry another time if we failed
+        CPX   #$0000
+        BNE   _ok
+
+        ;; Delay for one frame
+        Debug.warn "allocate_from_behind failed. Waiting one frame before retry."
+        LDY   #1
+        JSL   Thread.delay_long
+        BRA   _loop
+
+      _ok:
+      end
+    end
+  end
+
+  ;; Allocates X bytes from behind, but waits until the required memory can be allocated
+  def waitfor_allocate_from_behind_long
+    waitfor_allocate_from_behind
+    RTL
+  end
+
+  ;; Frees a block
+  ;;
+  ;; @param X data pointer
+  ;; @param Y data size
+  def free
+    routine bank: FIXED_RAM_BANK do
+      make_thread_safe
+
+      execute do
+        Debug.profile_memory_free
+        
+        ;; Calculates the size to 256 byte blocks
+        TYA
+        CLC
+        ADC   #$FF
+        XBA
+        AND   #$FF
+        TAY
+
+        ;; Ensures the address to be correct
+        TXA
+        XBA
+        AND   #$FF
+        TAX
+
+        ;; Resets all block usages to zero
+        CPU.set A: 8
+        XBA
+      _loop:
+        STA   block_usage_table, X
+        INX
+        DEY
+        BNZ   _loop
+        
+        CPU.set A: 16
+      end
+    end
+  end
+
+  ;; Frees a block
+  ;;
+  ;; @param X data pointer
+  ;; @param Y data size
+  def free_long
+    free
+    RTL
+  end
+
+  ;; Frees all data blocks owned by a specific thread 
+  ;;
+  ;; @param A thread ID
+  def free_all_thread_blocks
+    routine A: 8, bank: FIXED_RAM_BANK do
+      is_thread_safe
+      input A
+
+      execute do
+        LDX   #255
+        BRA   _loop
+
+      _remove_record:
+        STZ   block_usage_table, X
+        DEX
+        BMI   _end_of_loop
+
+      _loop:
+        CMP   block_usage_table, X
+        BEQ   _remove_record
+
+        DEX
+        BPL   _loop
+
+      _end_of_loop:
+      end
+    end
+  end
+end

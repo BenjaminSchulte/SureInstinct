@@ -1,0 +1,130 @@
+module Game::Level::UserInterface
+
+  _hdma_header_size = Aoba::Composer::Hdma::HDMA_CHANNEL_HEADER_SIZE
+
+  @locate_at bank: Aoba::SYSTEM_ROM_BANK
+  def hdma_disable_menu
+    CPU.set A: 8
+    LDA   #$38 | $80
+    STA   3 * _hdma_header_size + 6, X
+    STA   3 * _hdma_header_size + 9, X
+    DEC   A
+    STA   3 * _hdma_header_size + 12, X
+    CPU.set A: 16
+
+    LDA   ui_hdma_scroll_buffer
+    CLC
+    ADC   #31 * 2 + $38 * 2
+    STA   3 * _hdma_header_size + 10, X
+    ADC   #$38 * 2
+    STA   3 * _hdma_header_size + 13, X
+  end
+
+  @locate_at bank: Aoba::SYSTEM_ROM_BANK
+  def hdma_enable_menu
+    CPU.set A: 8
+    LDA   AssetConfig::Ingame.ingame_hdma_config.menu_y
+    ORA   #$80
+    STA   3 * _hdma_header_size + 6, X
+    LDA   AssetConfig::Ingame.ingame_hdma_config.menu_size
+    STA   3 * _hdma_header_size + 9, X
+    LDA   #$a7
+    SEC
+    SBC   AssetConfig::Ingame.ingame_hdma_config.menu_y
+    SBC   AssetConfig::Ingame.ingame_hdma_config.menu_size
+    ORA   #$80
+    STA   3 * _hdma_header_size + 12, X
+    CPU.set A: 16
+
+    LDA   AssetConfig::Ingame.ingame_hdma_config.menu_offset
+    ASL   A
+    CLC
+    ADC   ui_hdma_scroll_buffer
+    STA   3 * _hdma_header_size + 10, X
+
+    LDA   AssetConfig::Ingame.ingame_hdma_config.menu_y
+    CLC
+    ADC   AssetConfig::Ingame.ingame_hdma_config.menu_size
+    ADC   #31
+    ASL   A
+    ADC   ui_hdma_scroll_buffer
+    STA   3 * _hdma_header_size + 13, X
+  end
+
+  ;; Sets up generally
+  macro setup_hdma
+    LDA   #11 + 2
+    STA   3 * _hdma_header_size + 0, X
+    LDA   #10
+    STA   3 * _hdma_header_size + 3, X
+    LDA   #1
+    STA   3 * _hdma_header_size + 15, X
+    STZ   3 * _hdma_header_size + 18, X
+
+    CPU.set A: 16
+    LDA   ui_hdma_scroll_buffer
+    CLC
+    ADC   #40 * 2
+    STA   3 * _hdma_header_size + 1, X
+    SEC
+    SBC   #22 * 2
+    STA   3 * _hdma_header_size + 4, X
+    CLC
+    ADC   #13 * 2
+    STA   3 * _hdma_header_size + 7, X
+    CLC
+    ADC   #22 * 2 + 10 * 2 - 13 * 2
+    STA   3 * _hdma_header_size + 16, X
+
+    hdma_disable_menu
+
+    CPU.set A: 8
+  end
+
+  macro update_hdma
+    LDA   ball_power
+    BZE   _disable_power_bar
+    activate_power_bar
+    BRA   _after_power_bar
+  _disable_power_bar:
+    deactivate_power_bar
+  _after_power_bar:
+
+    LDA   AssetConfig::Ingame.ingame_hdma_config.menu_size
+    BZE   _disable_menu
+  _enable_menu:
+    hdma_enable_menu
+    BRA   _after_menu
+  _disable_menu:
+    hdma_disable_menu
+
+  _after_menu:
+  end
+
+  macro activate_power_bar
+    LDA   ui_hdma_scroll_buffer
+    CLC
+    ADC   #(40 - 6) * 2
+    STA   3 * _hdma_header_size + 4, X
+    CPU.set A: 8
+    LDA   #11
+    STA   3 * _hdma_header_size + 0, X
+    INC   A
+    STA   3 * _hdma_header_size + 3, X
+    CPU.set A: 16
+  end
+
+  macro deactivate_power_bar
+    LDA   ui_hdma_scroll_buffer
+    CLC
+    ADC   #(40 - 22) * 2
+    STA   3 * _hdma_header_size + 4, X
+    CPU.set A: 8
+    LDA   #11 + 2
+    STA   3 * _hdma_header_size + 0, X
+    LDA   #10
+    STA   3 * _hdma_header_size + 3, X
+    CPU.set A: 16
+  end
+
+end

@@ -1,0 +1,41 @@
+module Aoba::Palette::Effect
+  ;; Looksup for a tilemap slot
+  macro _find_tilemap_slot
+    TXA
+    LDY   #0
+    
+  _loop:
+    Y.is_a! PaletteEffectSlot
+    CMP   Y[:timer] + tilemap_effects
+    BEQ   _found_slot
+    TYA
+    CLC
+    ADC   #PaletteEffectSlot.size
+    TAY
+    TXA
+    CPY   #PaletteEffectSlot.size * NUM_TILEMAP_PALETTE_EFFECTS
+    BLT   _loop
+    BRA   _no_slot_found
+
+  _found_slot:
+    STX   dp(_calc0)
+    LDA   Y[:effect_id] + tilemap_effects
+    AND   dp(x00FF)
+    TAX
+    JSR   effect_addresses.indirect, X
+
+  _no_slot_found:
+  end
+
+  ;; The effect has been triggered
+  ;; @param X TimerInstance
+  def _palette_effect_timer_triggered
+    Thread.assert_thread thread_id
+
+    X.is_a! Aoba::Thread::Timer::TimerInstance
+    Y.is_a! PaletteEffectSlot
+    CPU.with_bank FIXED_RAM_BANK, from_bank: VARIABLE_RAM_BANK do
+      _find_tilemap_slot
+    end
+  end
+end

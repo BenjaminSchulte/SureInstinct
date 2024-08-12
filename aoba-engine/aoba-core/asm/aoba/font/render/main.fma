@@ -1,0 +1,98 @@
+module Aoba::Font::Render
+
+  ;; Sets up the RAM used by all states
+  def _setup_global_ram
+    STA   dp(state)
+    TAX
+    X.is_a! State
+    Debug.mark_ram_X_threadsafe State.size
+    LDA   X[:font_address]
+    STA   dp(font_address)
+    CPU.set A: 8
+    LDA   X[:font_address] + 2
+    STA   dp(font_address) + 2
+    STZ   X[:state]
+    STZ   dp(status)
+    LDA   X[:internal_state]
+    STA   dp(internal_status)
+    CPU.set A: 16
+    LDA   X[:current_line]
+    STA   dp(current_line)
+  end
+
+  ;; Initial global RAM
+  macro _setup_initial_global_ram
+    X.is_a! State
+    CPU.set A: 8
+    STZ   X[:internal_state]
+    STZ   dp(internal_status)
+    CPU.set A: 16
+  end
+
+  ;; Copies the global RAM to the state
+  macro _copy_global_ram_to_state
+    LDX   dp(state)
+    X.is_a! State
+    LDA   dp(current_line)
+    STA   X[:current_line]
+    CPU.set A: 8
+    LDA   X[:state]
+    ORA   dp(status)
+    ORA   #Status::FINISHED
+    STA   X[:state]
+    LDA   dp(internal_status)
+    STA   X[:internal_state]
+    CPU.set A: 16
+    Debug.mark_ram_X_threadsafe State.size
+  end
+
+  ;; Sets the state
+  macro _set_state(value)
+    CPU.set A: 8
+    LDX   dp(state)
+    X.is_a! State
+    LDA   #value
+    STA   X[:state]
+    CPU.set A: 16
+  end
+
+  ;; Renders the state in A
+  ;; @param A State
+  def render_icb
+    Thread.assert_thread thread_id
+
+    _setup_global_ram
+    _setup_initial_global_ram
+
+    ;; Calculates the current line length
+    Stage::LineLength.execute
+
+    ;; Clears the line buffer
+    Stage::ClearBuffer.execute
+
+    ;; Sets the safe flag
+  _resume_from_here:
+    _set_state Status::HAS_DATA
+
+  ;; Renders all characters
+  _loop_characters:
+    Stage::StartChar.execute
+    BCS   _row_finished
+    Stage::RenderChar.execute
+    BRA   _loop_characters
+
+    ;; We finished the row
+  _row_finished:
+    _copy_global_ram_to_state
+  end
+
+  ;; Renders the state in A (resume)
+  def resume_render_icb
+    Thread.assert_thread thread_id
+
+    _setup_global_ram
+
+    JMP   render_icb._resume_from_here
+  end
+
+end

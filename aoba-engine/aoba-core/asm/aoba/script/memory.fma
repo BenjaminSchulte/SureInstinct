@@ -1,0 +1,89 @@
+module Aoba::Script
+
+  locate_at bank: SCRIPT_ROM_BANK
+
+
+  ;; Additional script data
+  class ScriptData
+    ;; The current dialog
+    declare :current_dialog, as: :uint16
+
+    ;; The player sprite who triggered this script
+    declare :sender_sprite, as: :uint16
+
+    ;; Allocated userdata
+    declare :userdata, as: :uint16
+
+    ;; Restore stack for all gamepad listeners
+    declare :previous_gamepad_listener, as: :uint16, length: Control.MAX_GAMEPADS
+
+    ;; How many times did we disable gamepads
+    declare :gamepad_disable_counter, as: :uint16, length: Control.MAX_GAMEPADS
+
+    ;; Stack for the own gamepad listener
+    declare :gamepad_listener, as: :uint16, length: Control.MAX_GAMEPADS
+
+    ;; Maximum number of custom timers
+    declare :custom_timer, as: :uint16, length: MAX_CUSTOM_TIMERS
+
+    ;; Thread which sent the KILL event
+    declare :kill_event_sender_thread_id, as: :uint8
+
+    ;; Unprocessed event bitmask for keydown
+    declare :unprocessed_keydown_bitmask, as: :uint16
+
+    ;; Unprocessed event bitmask for keydown
+    declare :unprocessed_keyup_bitmask, as: :uint16
+  end
+
+  
+  ;; The thread RAM
+  scope :RAM, in: ::Memory::ThreadRAM
+
+  ;; The static RAM
+  scope :StaticRAM, in: ::Memory::FixedRAM
+
+
+  ;; The stack pointer
+  scope :ActionRAM, in: RAM, shared: true
+
+
+  ;; The stack pointer
+  declare :stack_pointer, as: :uint16, in: RAM
+
+  ;; The stack RAM
+  declare :stack_ram, as: :uint16, in: RAM
+
+  ;; The script pointer
+  declare :script_pointer, as: :uint24, in: RAM
+  
+  ;; The A register
+  declare :register_a, as: :uint32, in: RAM
+  
+  ;; The X register
+  declare :register_x, as: :uint32, in: RAM
+  
+  register_y = register_x + 2
+  
+  ;; The C register
+  declare :register_c0, as: :uint16, in: RAM
+  
+  ;; The P register (parameter)
+  declare :register_p, as: :uint16, in: RAM
+  
+  ;; Pointer to the currently open dialog memory
+  declare :script_data, as: ScriptData.pointer(:uint16), in: RAM
+  
+  ;; Calculation register
+  declare :calc0, as: :uint32, in: RAM
+
+  ;; The current command
+  declare :current_command, as: :uint24, in: RAM
+  temp_calc = current_command + 1
+
+  ;; The current flags
+  declare :flags, as: :uint8, in: RAM
+
+  ;; Mask for calculations
+  declare :x00FF, as: :uint16, in: RAM
+end

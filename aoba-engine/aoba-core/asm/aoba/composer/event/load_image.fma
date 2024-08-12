@@ -1,0 +1,24 @@
+module Aoba::Composer::Event::LoadImage
+
+  ;; The event
+  class Event < Base
+    ;; The screen mode
+    declare :image_address, as: :uint16
+
+    ;; Parameter for the mode
+    declare :vram_address, as: :uint16
+  end
+
+  ;; Sets the screen mode
+  ;; @ignore-thread-safety
+  ID = List.create "LoadImage" do
+    Y.is_a! Event
+    LDA   Y[:image_address]
+    TAX
+    LDA   Y[:vram_address]
+    TAY
+
+    JSL   Aoba::Image.load_tiles_icb_long
+  end
+
+end

@@ -1,0 +1,142 @@
+module Aoba::Control
+
+  module Key
+    ;; Right mouse button
+    MOUSE_RIGHT = $8000
+
+    ;; Left mouse button
+    MOUSE_LEFT = $4000
+
+    ;; B key
+    KEY_B = $0800
+
+    ;; Y key
+    KEY_Y = $0400
+
+    ;; Select
+    KEY_SELECT = $0200
+
+    ;; Start
+    KEY_START = $0100
+
+    ;; Up
+    KEY_UP = $0080
+
+    ;; Down
+    KEY_DOWN = $0040
+
+    ;; Left
+    KEY_LEFT = $0020
+
+    ;; Right
+    KEY_RIGHT = $0010
+
+    ;; A
+    KEY_A = $0008
+
+    ;; X
+    KEY_X = $0004
+
+    ;; L (shoulder)
+    KEY_L = $0002
+    
+    ;; R (shoulder)
+    KEY_R = $0001
+
+    ;; Direction keys
+    KEY_DIRECTION = KEY_UP | KEY_DOWN | KEY_LEFT | KEY_RIGHT
+
+    ;; Action buttons
+    KEY_ACTION = KEY_A | KEY_B | KEY_X | KEY_Y
+
+    ;; System buttons
+    KEY_SYSTEM = KEY_START | KEY_SELECT
+
+    ;; Shoulder keys
+    KEY_SHOULDER = KEY_L | KEY_R
+
+    ;; All keys
+    KEY_ALL = KEY_DIRECTION | KEY_ACTION | KEY_SYSTEM | KEY_SHOULDER
+
+    macro bitmap(*keys)
+      _value = 0
+      keys.each do |key|
+        case key
+        when :a
+          _value |= KEY_A
+        when :b
+          _value |= KEY_B
+        when :x
+          _value |= KEY_X
+        when :y
+          _value |= KEY_Y
+        when :l
+          _value |= KEY_L
+        when :r
+          _value |= KEY_R
+        when :start
+          _value |= KEY_START
+        when :select
+          _value |= KEY_SELECT
+        when :up
+          _value |= KEY_UP
+        when :down
+          _value |= KEY_DOWN
+        when :left
+          _value |= KEY_LEFT
+        when :right
+          _value |= KEY_RIGHT
+        when :direction
+          _value |= KEY_DIRECTION
+        when :lmb
+          _value |= MOUSE_LEFT
+        when :rmb
+          _value |= MOUSE_RIGHT
+        else
+          raise "Unknown key for key bitmap: #{key}"
+        end
+      end
+      return _value
+    end
+  end
+
+  ;; Number of maximum players
+  MAX_GAMEPADS ||= 3
+
+  ;; Whether mouse should be enabled
+  MOUSE_SUPPORT ||= false
+
+  ;; Number of keys
+  NUM_KEYS = 12
+
+  ;; The last key
+  LAST_KEY_BIT = 1 << (NUM_KEYS - 1)
+
+  ;; Event ID
+  KEYDOWN_EVENT_ID = 1
+
+  ;; Event ID
+  KEYUP_EVENT_ID = 2
+
+  ;; Mouse connect event
+  MOUSE_CONNECT_EVENT_ID = 3
+
+  ;; Mouse disconnect
+  MOUSE_DISCONNECT_EVENT_ID = 4
+
+  ;; Max event id
+  MAX_EVENT_ID = 4
+
+  ;; Event class
+  class ControlEvent < Aoba::Thread::Event::Base
+    ;; The control event ID
+    declare :event_id, as: :uint8
+
+    ;; The origin gamepad
+    declare :gamepad_id, as: :uint8
+    
+    ;; The changed keys
+    declare :keys, as: :uint16
+  end
+
+end

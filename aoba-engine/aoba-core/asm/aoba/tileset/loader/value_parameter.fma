@@ -1,0 +1,42 @@
+module Aoba::Tileset::Loader
+
+  class ValueParameter < Parameter
+    macro initialize(target, as)
+      super
+      @target = target
+      @as = as
+    end
+
+    macro size_in_bytes
+      return @as.size_in_bytes
+    end
+
+    macro load
+      _size = @as.size_in_bytes
+      _start = 0
+      
+      if _size == 1
+        CPU.set A: 8
+        @loader.read_header_at @offset
+        STA   @target
+        CPU.set A: 16
+      elsif _size == 2
+        @loader.read_header_at @offset
+        STA   @target
+      elsif _size == 3
+        @loader.read_header_at @offset + 1
+        STA   @target + 1
+        @loader.read_header_at @offset
+        STA   @target
+      elsif _size == 4
+        @loader.read_header_at @offset + 2
+        STA   @target + 2
+        @loader.read_header_at @offset
+        STA   @target
+      else
+        raise "Unsupported ValueParameter size"
+      end
+    end
+  end
+
+end

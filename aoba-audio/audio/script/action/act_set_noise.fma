@@ -1,0 +1,32 @@
+module Script::Action::SetNoise
+
+  def enable_noise
+    MOV   X, A
+    MOV   dp(SPC.DSP_ADDR), #DSP.FLG
+    MOV   A, dp(DSP.flags)
+    AND   A, #$E0
+    OR    A, indirect(Script.address, X)
+    MOV   dp(DSP.flags), A
+    MOV   dp(SPC.DSP_DATA), A
+    INCW  dp(Script.address)
+
+    BBS0  dp(ch_control_flags), _is_sfx_channel
+    OR    dp(Song.song_enabled_noise_voices), dp(Channel.voice_bit_pointer)
+    BRA   _set_noise_on
+
+  _is_sfx_channel:
+    OR    dp(SFX.sfx_enabled_noise_voices), dp(Channel.voice_bit_pointer)
+
+  _set_noise_on:
+    MOV   dp(SPC.DSP_ADDR), #DSP.NON
+    MOV   A, dp(Song.song_enabled_noise_voices)
+    EOR   A, dp(SFX.sfx_enabled_noise_voices)
+    AND   A, dp(Channel.enabled_voices)
+    MOV   dp(SPC.DSP_DATA), A
+  end
+
+  macro set_noise_on
+    CALL  enable_noise._set_noise_on
+  end
+
+end

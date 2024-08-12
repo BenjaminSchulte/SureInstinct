@@ -1,0 +1,30 @@
+module Debug
+
+  ;; @ignore-thread-safety
+  def _assert_register_size_failed
+    Aoba::fatal_error "assert_register_size_failed"
+  end
+
+  macro assert_register_size(A=nil)
+    Debug.only do
+      _old_A_size = ::A.size
+      PHP
+      CPU.set A: 8
+      PHA
+      LDA   2, S
+
+      _bitmask = 0
+      _compare = 0
+      _bitmask |= $20 unless A.nil?
+      _compare |= $20 if A == 8
+      AND   #_bitmask
+      CMP   #_compare
+      BEQ   _ok
+      JML   _assert_register_size_failed
+    _ok:
+      PLA
+      ::A.pretend_size _old_A_size
+      PLP
+    end
+  end
+end

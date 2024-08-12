@@ -1,0 +1,238 @@
+module Aoba::Tilemap::Renderer
+
+  class ScrollTilemapRendererBuilder < BaseBuilder
+  end
+
+  class ScrollTilemapRenderer < Base
+    macro initialize
+      super
+
+      @scroll_axis_tile_limit = 2
+
+      @_copy_start = MemoryVariable.new("copy_start", as: :uint16, in: @TempRAM)
+      @_update_counter = MemoryVariable.new("update_counter", as: :uint16, in: @TempRAM)
+    end
+
+    macro finalize
+      super
+
+      @renderer = @parent_tilemap_renderer
+      @scroll_event_id = Aoba::Level::Event::ScrollLevel.create_for(self)
+
+      @_scroll_buffer_y = MemoryVariable.new("scroll_buffer_y", as: :uint16, in: @RAM, length: scroll_buffer_size_y, align: $100)
+      @_scroll_buffer_x = MemoryVariable.new("scroll_buffer_x", as: :uint16, in: @RAM, length: scroll_buffer_size_x, align: $100)
+
+      @_scroll_buffer_pos_y_x = {}
+      @_scroll_buffer_pos_y_y = {}
+      @_scroll_buffer_pos_x_x = {}
+      @_scroll_buffer_pos_x_y = {}
+
+      _self = self
+      @layers.each do |layer|
+        _self._scroll_buffer_pos_y_x[layer] = MemoryVariable.new("scroll_buffer_pos_y_x", as: :uint16, in: _self.RAM, length: 2)
+        _self._scroll_buffer_pos_y_y[layer] = MemoryVariable.new("scroll_buffer_pos_y_y", as: :uint16, in: _self.RAM, length: 2)
+        _self._scroll_buffer_pos_x_x[layer] = MemoryVariable.new("scroll_buffer_pos_x_x", as: :uint16, in: _self.RAM, length: 2)
+        _self._scroll_buffer_pos_x_y[layer] = MemoryVariable.new("scroll_buffer_pos_x_y", as: :uint16, in: _self.RAM, length: 2)
+      end
+
+      @_axis_x = ScrollTilemapRendererAxisX.new(self)
+      @_axis_y = ScrollTilemapRendererAxisY.new(self)
+
+      @renderer.event.on :before_render_fixed do
+        __reset_scroll_cache
+      end
+
+      @renderer.RAM.include @RAM
+      @renderer.SharedTempRAM.include @TempRAM
+    end
+
+    macro include_to_sprite_thread(thread)
+      thread.tilemap_scroll_renderer = self
+    end
+
+    macro index_of_layer(layer)
+      return @layers.index(layer)
+    end
+
+    ;; ------------------------------------------------------
+    ;;  HELPER METHODS
+    ;; ------------------------------------------------------
+    macro scroll_buffer_size_x
+      return @renderer.screen_tile_height * @renderer.tile_format.num_bgtiles * @renderer.num_bgs * 2 ;bytes
+    end
+
+    macro scroll_buffer_size_y
+      return @renderer.screen_tile_width * @renderer.tile_format.num_bgtiles * @renderer.num_bgs * 2 ;bytes
+    end
+
+    ;; ------------------------------------------------------
+    ;;  FAST RENDERER
+    ;; ------------------------------------------------------
+    macro __copy_render_position_to_all_bgs
+      return if @renderer.num_bgs <= 1
+      _self = self
+      _any_layer = @renderer.layers.first
+
+      LDA   @renderer.rendered_area_top_tile[_any_layer]
+      @renderer.layers.each do |layer|
+        STA   _self.renderer.rendered_area_top_tile[layer] if layer != _any_layer
+      end
+      LDA   @renderer.rendered_area_left_tile[_any_layer]
+      @renderer.layers.each do |layer|
+        STA   _self.renderer.rendered_area_left_tile[layer] if layer != _any_layer
+      end
+    end
+
+
+    ;; ------------------------------------------------------
+    ;;  COMMON RENDERER
+    ;; ------------------------------------------------------
+    macro _test_scroll(current_pixel, rendered_area_tile, far_tile, tile_size, max_size)
+      Debug.access_8bit_through_16bit
+      LDA   max_size
+      AND   #$FF
+      ASL   A
+      STA   dp(renderer._calc32a + 2)
+
+      LDA   current_pixel
+      tile_size.divided_register_A
+      SEC
+      SBC   rendered_area_tile
+      BZE   _after_scroll_y
+      BMI   _update_scroll_top
+
+    _update_scroll_bottom:
+      CMP   #@scroll_axis_tile_limit
+      BLT   _update_scroll_bottom_start
+      LDA   #@scroll_axis_tile_limit
+    _update_scroll_bottom_start:
+      STA   dp(@_update_counter)
+    _update_scroll_bottom_loop:
+      INC   rendered_area_tile
+      LDA   rendered_area_tile
+      CLC
+      ADC   #far_tile * 2
+      CMP   dp(renderer._calc32a + 2)
+      BGE   _skip_bottom
+      yield
+    _skip_bottom:
+      DEC   dp(@_update_counter)
+      BNZ   _update_scroll_bottom_loop
+      BRA   _after_scroll_y
+
+    _update_scroll_top:
+      EOR   #$FFFF
+      INC   A
+      CMP   #@scroll_axis_tile_limit
+      BLT   _update_scroll_top_start
+      LDA   #@scroll_axis_tile_limit
+    _update_scroll_top_start:
+      STA   dp(@_update_counter)
+    _update_scroll_top_loop:
+      DEC   rendered_area_tile
+      LDA   rendered_area_tile
+      BMI   _skip_top
+      yield
+    _skip_top:
+      DEC   dp(@_update_counter)
+      BNZ   _update_scroll_top_loop
+
+    _after_scroll_y:
+    end
+
+    routine :_scroll_level_parallax do
+      unless camera.has_variable_layer_option?
+        RTS
+        return
+      end
+
+      @layers.each do |layer|
+        _test_scroll camera.layer_y[layer], renderer.rendered_area_top_tile[layer], 14, 8, renderer.storage.height do
+          _axis_y.scroll_layer layer
+        end
+        _test_scroll camera.layer_x[layer], renderer.rendered_area_left_tile[layer], 16, 8, renderer.storage.width do
+          _axis_x.scroll_layer layer
+        end
+      end
+      RTS
+    end
+    
+    routine :_invoke_icb do
+      if @camera.has_variable_layer_option?
+        @camera.update_variable_layer
+        BCC   _fast_scroll
+      _parallax_scroll_mode:
+        JMP   _scroll_level_parallax
+      else
+      end
+
+      ;; --
+
+    _fast_scroll:
+      _any_layer = @renderer.layers.first
+      _test_scroll @camera.y, @renderer.rendered_area_top_tile[_any_layer], 14, 8, renderer.storage.height do
+        _axis_y.scroll
+      end
+      _test_scroll @camera.x, @renderer.rendered_area_left_tile[_any_layer], 16, 8, renderer.storage.width do
+        _axis_x.scroll
+      end
+
+
+      __copy_render_position_to_all_bgs
+      
+      RTS
+    end
+
+    ;; Invokes the scrolling
+    macro invoke_icb
+      CPU.with_bank FIXED_RAM_BANK, from_bank: VARIABLE_RAM_BANK do
+        JSR   _invoke_icb
+      end
+    end
+
+    ;; Test changed and invoke
+    routine :invoke_if_changed_icb do
+      CPU.with_bank FIXED_RAM_BANK, from_bank: VARIABLE_RAM_BANK do
+        CPX   @camera.x
+        BNE   _scrolling_changed
+        CPY   @camera.y
+        BEQ   _rts
+
+      _scrolling_changed:
+        STX   @camera.x
+        STY   @camera.y
+        JSR   _invoke_icb
+
+      end
+    _rts:
+      RTS
+    end
+
+    ;; Resets the scroll render cache
+    macro __reset_scroll_cache
+      _self = self
+
+      LDA   #$FFFF
+      @layers.each do |layer|
+        STA   _self._scroll_buffer_pos_x_x[layer]
+        STA   _self._scroll_buffer_pos_x_y[layer]
+        STA   _self._scroll_buffer_pos_y_x[layer]
+        STA   _self._scroll_buffer_pos_y_y[layer]
+        STA   _self._scroll_buffer_pos_x_x[layer] + 2
+        STA   _self._scroll_buffer_pos_x_y[layer] + 2
+        STA   _self._scroll_buffer_pos_y_x[layer] + 2
+        STA   _self._scroll_buffer_pos_y_y[layer] + 2
+      end
+    end
+
+    ;; Creates the renderer
+    macro self.create(&block)
+      renderer = ScrollTilemapRenderer.new
+      builder = ScrollTilemapRendererBuilder.new(renderer)
+      block.call with_context builder
+      renderer.finalize
+      return renderer
+    end
+  end
+
+end

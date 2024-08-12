@@ -1,0 +1,234 @@
+module Aoba::Sprite
+
+  locate_at bank: SPRITE_ROM_BANK
+
+  ;; Global flags
+  module GlobalFlag
+    ;; Camera is enabled
+    CAMERA_ENABLED = $80
+
+    ;; Whether any level loader is active
+    VALID_MAX_SCROLL = $40
+
+    ;; Sprite scroll listener active
+    SCROLL_THREAD_READY = $20
+
+    ;; Whether all sprites are freeze
+    FREEZE_SPRITES = $01
+  end
+
+  ;; Direct OAM records
+  class DirectOamRecord
+    declare :configuration, as: :uint16
+    declare :flags, as: :uint8
+    declare :x, as: :uint16
+    declare :y, as: :uint16
+  end
+
+  ;; The thread RAM
+  scope :RAM, in: ::Memory::ThreadRAM
+
+  ;; The event RAM
+  scope :ActionRAM, in: RAM, shared: true
+
+  ;; The static RAM
+  scope :StaticRAM, in: ::Memory::FixedRAM
+  
+  ;; The thread ID for the tileset thread
+  declare :thread_id, as: :uint8, in: ::Memory::VariableRAM
+  
+  ;; RAM for 0x00FF 
+  declare :x00FF, as: :uint16, in: RAM
+  
+  ;; RAM for 0x00FF 
+  declare :_calc0, as: :uint32, in: RAM
+  
+  ;; RAM for 0x00FF 
+  declare :_calc1, as: :uint32, in: RAM
+
+  ;; Stores the current scroll position
+  declare :scroll_x, as: :int16, in: ::Memory::VariableRAM
+
+  ;; Stores the current scroll position
+  declare :scroll_y, as: :int16, in: ::Memory::VariableRAM
+
+  ;; Stores the current scroll position
+  declare :scroll_bitmask_x, as: :uint16, in: ::Memory::VariableRAM
+
+  ;; Stores the current scroll position
+  declare :scroll_bitmask_y, as: :uint16, in: ::Memory::VariableRAM
+
+  ;; Stores the current scroll position
+  declare :target_scroll_x, as: :int16, in: ::Memory::VariableRAM
+
+  ;; Stores the current scroll position
+  declare :target_scroll_y, as: :int16, in: ::Memory::VariableRAM
+  
+  ;; The first sprite
+  declare :first_sprite, as: Base.pointer(:uint16), in: ::Memory.VariableRAM
+
+  ;; A list of sprites which have been destroyed but wait for the script to stop
+  declare :first_destroyed_sprite, as: Base.pointer(:uint16), in: ::Memory.VariableRAM
+  
+  ;; The current sprite (global)
+  declare :current_sprite, as: :uint16, in: RAM
+
+  ;; Global flags
+  declare :global_flags, as: :uint8, in: ::Memory::VariableRAM
+
+  ;; List of all sprites
+  declare :sprite_index_table, as: :uint16, in: ::Memory::VariableRAM, size: MAX_NUM_SPRITES
+
+  ;; List of all NPC sprites
+  declare :npc_sprite_index_table, as: :uint16, in: ::Memory::VariableRAM, size: MAX_NUM_SPRITES - MAX_NUM_PLAYER_SPRITES
+
+  ;; List of all player sprites
+  declare :player_sprite_index_table, as: :uint16, in: ::Memory::VariableRAM, size: MAX_NUM_PLAYER_SPRITES
+
+  ;; The current amount of NPC sprites
+  declare :num_npc_sprites, as: :uint16, in: ::Memory::VariableRAM
+
+  ;; The current amount of player sprites
+  declare :num_player_sprites, as: :uint16, in: ::Memory::VariableRAM
+
+  ;; ============
+  ;;   OAM
+  ;; ============
+
+  ;; The OAM
+  scope :oam, length: 512+32, in: ::Memory.VariableRAM
+  
+  ;; The last OAM final offset
+  declare :previous_oam_final_offset, as: :uint16, in: RAM
+
+  ;; The previous OAM offset
+  declare :previous_oam_high_offset, as: :uint16, in: RAM
+
+  ;; =============
+  ;;   RENDERING
+  ;; =============
+
+  ;; The animation update queue
+  scope :animation_queue, length: MAX_ANIMATION_QUEUE_SIZE * 2, in: ::Memory::VariableRAM
+  
+  ;; First pointer in animation queue
+  declare :animation_queue_first, as: :uint16, in: ::Memory::VariableRAM
+  
+  ;; Last pointer in animation queue
+  declare :animation_queue_last, as: :uint16, in: ::Memory::VariableRAM
+
+  ;; Maximum scroll position X
+  declare :max_scroll_x, as: :uint16, in: ::Memory::VariableRAM
+
+  ;; Maximum scroll position Y
+  declare :max_scroll_y, as: :uint16, in: ::Memory::VariableRAM
+  
+  ;; =============
+  ;;   SLOT
+  ;; =============
+
+  ;; Pointer to the first slot
+  declare :first_slot, as: :uint16, in: ::Memory::VariableRAM
+
+  ;; Pointer to the last slot
+  declare :last_slot, as: :uint16, in: ::Memory::VariableRAM
+
+  ;; Number of slots free after the last slot record
+  declare :free_slots_after, as: :uint8, in: ::Memory::VariableRAM
+
+
+  import __asset_sprite_addresses
+  import __asset_sprite_banks
+  import __asset_sprite_viewboxes
+  import __datatable_character_speed
+  import __asset_characterset_hitbox_left
+  import __asset_characterset_hitbox_top
+  import __asset_characterset_hitbox_width
+  import __asset_characterset_hitbox_height
+  SpriteIndexBanks = __asset_sprite_banks
+  SpriteIndexAddresses = __asset_sprite_addresses
+  SpriteViewboxList = __asset_sprite_viewboxes
+  CharacterSpeedTable = __datatable_character_speed
+
+
+  ;; Used to check whether a NPC is close to another NPC
+  datablock axis_collision_bitmask
+    dw   $0001    ; 0 = test 00000000 00000001
+    dw   $0003    ; 1 = test 00000000 00000011
+    dw   $0006    ; 2 = test 00000000 00000110
+    dw   $000C    ; 3 = test 00000000 00001100
+    dw   $0018    ; 3 = test 00000000 00011000
+    dw   $0030    ; 4 = test 00000000 00110000
+    dw   $0060    ; 5 = test 00000000 01100000
+    dw   $00C0    ; 6 = test 00000000 11000000
+    dw   $0180    ; 7 = test 00000001 10000000
+    dw   $0300    ; 8 = test 00000011 00000000 
+    dw   $0600    ; 9 = test 00000110 00000000 
+    dw   $0C00    ; A = test 00001100 00000000 
+    dw   $1800    ; B = test 00011000 00000000 
+    dw   $3000    ; C = test 00110000 00000000 
+    dw   $6000    ; D = test 01100000 00000000 
+    dw   $C000    ; E = test 11000000 00000000 
+    dw   $8000    ; F = test 10000000 00000000 
+  end
+
+  ;; Hitbox test for camera (X)
+  datablock axis_screen_bitmask
+    dw   $001F    ; 0 = test 00000000 00011111
+    dw   $003F    ; 1 = test 00000000 00111111
+    dw   $007E    ; 2 = test 00000000 01111110
+    dw   $00FC    ; 3 = test 00000000 11111100
+    dw   $01F8    ; 4 = test 00000001 11111000
+    dw   $03F0    ; 5 = test 00000011 11110000
+    dw   $07E0    ; 6 = test 00000111 11100000
+    dw   $0FC0    ; 7 = test 00001111 11000000
+    dw   $1F80    ; 8 = test 00011111 10000000
+    dw   $3F00    ; 9 = test 00111111 00000000
+    dw   $7E00    ; A = test 01111110 00000000
+    dw   $FC00    ; B = test 11111100 00000000
+    dw   $F800    ; C = test 11111000 00000000
+    dw   $F000    ; D = test 11110000 00000000 (invalid)
+    dw   $E000    ; E = test 11100000 00000000 (invalid)
+    dw   $C000    ; F = test 11000000 00000000 (invalid)
+  end
+
+  ;; Initializes the RAM
+  ;; @ignore-thread-safety
+  def initialize_ram
+    LDA   #$FF
+    STA   dp(x00FF)
+    STZ   first_sprite
+    STZ   first_destroyed_sprite
+    STZ   animation_queue_first
+    STZ   animation_queue_last
+    STZ   scroll_x
+    STZ   scroll_y
+    STZ   target_scroll_x
+    STZ   target_scroll_y
+    STZ   first_slot
+    STZ   last_slot
+    STZ   max_scroll_x
+    STZ   max_scroll_y
+    STZ   num_npc_sprites
+    STZ   num_player_sprites
+    STZ   scroll_bitmask_x
+    STZ   scroll_bitmask_y
+
+    LDX   #MAX_NUM_SPRITES * 2 - 2
+  _loop_sprite_index:
+    STZ   sprite_index_table, X
+    DEX
+    DEX
+    BPL   _loop_sprite_index
+
+    CPU.set A: 8
+    LDA   #MAX_SLOTS
+    STA   free_slots_after
+    STZ   global_flags
+
+    ::Aoba::Event.invoke :sprite_initialize_ram8
+    CPU.set A: 16
+    ::Aoba::Event.invoke :sprite_initialize_ram16
+  end
+
+end

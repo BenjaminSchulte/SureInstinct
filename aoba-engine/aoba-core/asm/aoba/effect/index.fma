@@ -1,0 +1,13 @@
+module Aoba
+
+  ;; The ROM bank
+  EFFECT_ROM_BANK ||= $C1
+
+end
+
+require "configuration"
+require "memory"
+require "thread"
+require "base"
+require "effect"
+require "vblank"

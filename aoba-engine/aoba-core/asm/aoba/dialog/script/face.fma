@@ -1,0 +1,105 @@
+module Aoba::Dialog
+
+  ;; Free the sprite face
+  ;; @param A sprite face
+  def __free_sprite_face
+    PHA
+    CPU.set A: 8
+    LDA   #Aoba::Thread::Event.USEREVENT_ID
+    JSL   Aoba::Thread::Event.allocate_icb_long
+    X.is_a! Sprite::Event::DestroySprite::Event
+    LDA   #Sprite::Event::DestroySprite::ID
+    STA   X[:event_id]
+    PLY
+    Y.is_a! Sprite::Instance
+    LDA   Y[:id]
+    STA   X[:sprite_id]
+    LDA   Sprite.thread_id
+    CPU.set A: 16    
+    JML   Aoba::Thread::send_event_icb_long
+  end
+
+  ;; Allocates the sprite face
+  def __allocate_sprite_face
+    ;; Allocates the configuration RAM
+    LDA   Sprite.thread_id
+    LDX   #Sprite::Event::CreateCharacter::EventConfig.size
+    Thread.safe do
+      JSL   Memory.allocate_miniblock_long
+    end
+    X.is_a! Sprite::Event::CreateCharacter::EventConfig
+
+    ;; Remembers the dialog for some configuration
+    LDY   dp(Aoba::Script.calc0) + 2
+    Y.is_a! Aoba::Dialog::Hdma::Configuration
+
+    LDA   Y[:position]
+    AND   dp(Aoba::Script.x00FF)
+    STA   X[:y]
+    LDA   #10
+    STA   X[:x]
+    
+    ;; Reads the character address
+    LDA   Aoba::Script.script_pointer.long.indirect
+    STA   X[:creature_address]
+    INC   dp(Aoba::Script.script_pointer)
+    INC   dp(Aoba::Script.script_pointer)
+    LDA   Aoba::Script.script_pointer.long.indirect
+    STA   X[:animation]
+
+    _movement_flags = Sprite::Event::CreateCharacter::MovementFlag.NO_SCROLLING | Sprite::Event::CreateCharacter::MovementFlag.NO_MOVEMENT
+    _flags = Sprite::Event::CreateSprite::Flag.VISIBLE | Sprite::Event::CreateSprite::Flag.PRIORITY_BITMASK
+
+    LDA   #(_movement_flags << 8) | _flags
+    STA   X[:flags] ; +movement_flags
+    CPU.set A: 8
+    STZ   X[:direction]
+    CPU.set A: 16
+
+    ;; Creates the sprite
+    JSL   Sprite::Api.create_character_icb_long
+    
+    ;; The sprite
+    TXA
+    LDX   dp(Aoba::Script.calc0) + 2
+    X.is_a! Aoba::Dialog::Hdma::Configuration
+    STA   X[:face_sprite]
+
+    RTL
+  end
+
+  ;; Script command for dialog faces
+  Aoba::Script.command $F3, "dialog_face" do
+    Aoba::Script.update_script_pointer
+
+    ;; Loads the current dialog
+    LDX   dp(Aoba::Script.script_data)
+    X.is_a! Script::ScriptData
+    LDA   X[:current_dialog]
+    TAX
+    STA   dp(Aoba::Script.calc0) + 2
+    X.is_a! Aoba::Dialog::Hdma::Configuration
+    LDA   X[:face_sprite]
+    BNZ   _update_allocated_face
+
+  _allocate_face:
+    JSL   __allocate_sprite_face
+    NOP
+    NOP
+    NOP
+
+  _update_allocated_face:
+    NOP
+    NOP
+    NOP
+
+  _skip_allocate:
+    ;; Delay one frame
+    LDY   #1
+    JSL   Thread.delay_long
+
+    ;; Resumes the script
+    LDY   #2
+  end
+
+end

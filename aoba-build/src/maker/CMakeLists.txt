@@ -1,0 +1,17 @@
+FILE(GLOB_RECURSE MAKER_SRC src *.cpp)
+FILE(GLOB_RECURSE MAKER_INCLUDE include *.hpp)
+FILE(GLOB_RECURSE MAKER_UI ui *.ui)
+
+SET(CMAKE_CXX_STANDARD 11)
+SET(CMAKE_AUTOUIC_SEARCH_PATHS ui)
+
+FIND_PACKAGE(Qt5 COMPONENTS Core Gui Widgets REQUIRED)
+
+ADD_EXECUTABLE(maker 
+  ${MAKER_SRC}
+  ${MAKER_INCLUDE}
+  ${MAKER_UI}
+  resources/Resources.qrc
+)
+TARGET_LINK_LIBRARIES(maker libaoba libaobascript librpg libmaker Qt5::Core Qt5::Gui Qt5::Widgets)
+TARGET_INCLUDE_DIRECTORIES(maker PRIVATE include)

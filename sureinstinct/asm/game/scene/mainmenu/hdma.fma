@@ -1,0 +1,96 @@
+module Game::Scene::MainMenu::Hdma
+
+  SHOW_TIME = 35
+  HIDE_TIME = 35
+
+  OBJ_FULL = $13
+  OBJ_MIN = $12
+
+  ;; Configuration class
+  class Configuration
+    declare :tmts_enable, as: :uint16
+    declare :tmts, as: :uint16
+    declare :timer, as: :uint16
+  end
+
+  declare :config, as: Configuration, in: SceneVariableRAM
+
+  HdmaMode = Aoba::Composer::Hdma::Mode.create do
+    configuration Configuration
+
+    enable_script_support "MainMenu"
+
+    load do
+      LDA   #OBJ_FULL | OBJ_FULL << 8
+      STA   config.tmts
+      STA   config.tmts_enable
+      LDA   #SHOW_TIME
+      STA   config.timer
+    end
+
+    release do
+    end
+    
+    enable8 do
+      LDA   #$82
+      STA   CPU.HDMAEN.long
+    end
+
+    dma_setup do
+      LDX   #(PPU.TM << 8) | DMA[0].configure_value(:transfer_2_once, indirect: true)
+      STX   dp(DMA[1].control)
+      LDX   #(PPU.WH[0].to_sym << 8) | DMA[0].configure_value(:transfer_2_once, indirect: true)
+      STX   dp(DMA[7].control)
+    end
+
+    table_setup8 do
+      LDA   #127
+      STA   0 * _header_size + 0, X
+      LDA   #14
+      STA   0 * _header_size + 3, X
+      LDA   #11
+      STA   0 * _header_size + 6, X
+      LDA   #1
+      STA   0 * _header_size + 9, X
+      LDA   #0
+      STA   0 * _header_size + 12, X
+      STZ   6 * _header_size + 0, X
+    end
+
+    table_setup16 do
+      LDA   #config.tmts_enable
+      STA   0 * _header_size + 1, X
+      STA   0 * _header_size + 4, X
+      STA   0 * _header_size + 10, X
+      LDA   #config.tmts
+      STA   0 * _header_size + 7, X
+      LDA   #Aoba::Screen.ppu_register.WH0
+      STA   6 * _header_size + 1, X
+    end
+
+    update do
+      DEC   config.timer
+      BNZ   _rts
+
+      LDA   config.tmts
+      CMP   #OBJ_FULL | (OBJ_FULL << 8)
+      BEQ   _enable
+
+    _disable:
+      LDA   #OBJ_FULL | (OBJ_FULL << 8)
+      STA   config.tmts
+      LDA   #SHOW_TIME
+      STA   config.timer
+      BRA   _rts
+
+    _enable:
+      LDA   #OBJ_MIN | (OBJ_MIN << 8)
+      STA   config.tmts
+      LDA   #HIDE_TIME
+      STA   config.timer
+
+    _rts:
+    end
+  end
+
+end

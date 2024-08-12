@@ -1,0 +1,34 @@
+module Sample
+
+
+  ;; Activates the sample on the current sample
+  def activate
+    MOV   Y, dp(Channel.pointer)
+
+    ; Set sample to DSP register
+    MOV   A, dp(Channel.voice_base_pointer)
+    OR    A, #4
+    MOV   dp(SPC.DSP_ADDR), A
+    MOV   A, addr(Channel.samples, Y)
+    MOV   X, A
+    MOV   A, addr(Sample.snes_sample_id_map, X)
+    MOV   dp(SPC.DSP_DATA), A
+
+    ; Set ADSR to sample
+    MOV   A, dp(Channel.voice_base_pointer)
+    OR    A, #5
+    MOV   dp(SPC.DSP_ADDR), A
+    MOV   A, addr(Channel.sample_adsr_low_bytes, Y)
+    MOV   dp(SPC.DSP_DATA), A
+
+    MOV   A, dp(Channel.voice_base_pointer)
+    OR    A, #6
+    MOV   dp(SPC.DSP_ADDR), A
+    MOV   A, addr(Channel.sample_adsr_high_bytes, Y)
+    MOV   dp(SPC.DSP_DATA), A
+
+    MOV   A, addr(Channel.sample_volumes, Y)
+    JMP   Channel.update_volume
+  end
+
+end

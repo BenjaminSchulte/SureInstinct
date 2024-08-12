@@ -1,0 +1,11 @@
+module Aoba
+  ;; Game variable ROM bank
+  GAMEVAR_ROM_BANK ||= $C0
+end
+
+require "configuration"
+require "memory"
+require "sram"
+require "setup"
+require "read"
+require "write"

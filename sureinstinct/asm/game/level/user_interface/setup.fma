@@ -1,0 +1,316 @@
+module Game::Level::UserInterface
+
+  scope :SetupTempRAM, in: Aoba::Effect::ActionRAM
+
+  ;; Decompression state
+  declare :decompress_state, as: Aoba::Compression::LZW::State, in: SetupTempRAM
+
+  macro _plot_set_address(x, y, base=nil)
+    base = AssetConfig::Ingame.ui_tilemap.address if base.nil?
+    LDY   #(base >> 1) + x + y * 32
+    STY   dp(PPU.VMADD)
+  end
+
+  macro _plot_tile(address, priority, palette)
+    value = address | palette << 10
+    value |= $2000 if priority
+    LDX   #value
+    STX   dp(PPU.VMDATA)
+  end
+
+  macro _plot_next_tile(repeat=1)
+    repeat.times do
+      INX
+      STX   dp(PPU.VMDATA)
+    end
+  end
+
+  macro _plot_overnext_tile(repeat=1)
+    repeat.times do
+      INX
+      INX
+      STX   dp(PPU.VMDATA)
+    end
+  end
+
+  macro _plot_tile_again
+    STX   dp(PPU.VMDATA)
+  end
+
+  macro _plot_key(key, x, y)
+    _plot_set_address x, y
+    _plot_tile key.relative_tile_offset, true, 5
+    _plot_next_tile
+    DEX
+    _plot_set_address x, y + 3
+    _plot_tile_again
+    _plot_next_tile
+  end
+
+  @locate_at bank: Aoba::SYSTEM_ROM_BANK
+  def setup_vblank_vram
+    A.pretend_size 8
+    PHD
+    PEA   #$2100
+    PLD
+    
+    LDA   #$80
+    STA   dp(PPU.VMAIN)
+    _plot_key AssetConfig::Ingame.ui_num_keys_green_tiles,  8,  26
+    _plot_key AssetConfig::Ingame.ui_num_keys_red_tiles,    11, 26
+    _plot_key AssetConfig::Ingame.ui_num_keys_blue_tiles,   14, 26
+    _plot_key AssetConfig::Ingame.ui_num_keys_yellow_tiles, 17, 26
+    _plot_set_address 25, 1
+    _plot_tile AssetConfig::Ingame.ui_score_tiles.relative_tile_offset, true, 5
+    _plot_next_tile repeat: 4
+    _plot_set_address 26, 26
+    _plot_tile AssetConfig::Ingame.ui_num_coins_tiles.relative_tile_offset, true, 5
+    _plot_next_tile repeat: 3
+    _plot_set_address 26, 29
+    _plot_tile AssetConfig::Ingame.ui_num_coins_tiles.relative_tile_offset, true, 5
+    _plot_next_tile repeat: 3
+    _plot_set_address 25, 3
+    _plot_tile AssetConfig::Ingame.ui_time_tiles.relative_tile_offset, true, 5
+    _plot_next_tile repeat: 4
+    _plot_set_address 25, 5
+    _plot_tile AssetConfig::Ingame.ui_time_tiles.relative_tile_offset, true, 5
+    _plot_next_tile repeat: 4
+
+    PLD
+
+    LDX   Aoba::Composer::Hdma.hdma_header_ram
+    setup_hdma
+
+    RTS
+  end
+  
+  @locate_at bank: Aoba::SYSTEM_ROM_BANK
+  def update_vblank_vram
+    CPU.set A: 16
+    LDX   Aoba::Composer::Hdma.hdma_header_ram
+
+    LDA   AssetConfig::Ingame.ingame_hdma_config.custom_hdma_routine
+    INC   A
+    BZE   _no_custom_hdma
+    PEA   #_rts.to_sym - 1
+    PHA
+    RTS
+
+    ;; ---
+
+    A.pretend_size 16
+  _no_custom_hdma:
+
+    update_hdma
+
+  _rts:
+    CPU.set A: 8
+  end
+
+  macro open_menu(offset, y, size)
+    offset = 0 - offset
+    offset += y
+
+    offset += 256 if offset < 0
+    offset -= 256 if offset >= 256
+
+    SEI
+    LDA   #offset
+    STA   AssetConfig::Ingame.ingame_hdma_config.menu_offset
+    LDA   #y unless offset == y
+    STA   AssetConfig::Ingame.ingame_hdma_config.menu_y
+    LDA   #size unless size == y
+    STA   AssetConfig::Ingame.ingame_hdma_config.menu_size
+    LDA   AssetConfig::Ingame.ingame_hdma_config.flags
+    ORA   #Game::Hdma::Ingame::Flag::NEEDS_UPDATE_DMA_CALL
+    STA   AssetConfig::Ingame.ingame_hdma_config.flags
+    CLI
+  end
+
+  macro close_menu
+    ;; SEI is already!
+    STZ   AssetConfig::Ingame.ingame_hdma_config.menu_size
+    LDA   AssetConfig::Ingame.ingame_hdma_config.flags
+    ORA   #Game::Hdma::Ingame::Flag::NEEDS_UPDATE_DMA_CALL
+    STA   AssetConfig::Ingame.ingame_hdma_config.flags
+  end
+
+  def load_menu_tiles_in_effect_thread
+    PHA
+    TAX
+    LDY   #((((AssetConfig::Ingame.ui_tilemap.address + $200) >> 9) & $FF) << 8)
+    LDA   #0
+    Game::Effect::TilesLoader.load
+
+    PLX
+    LDA   #0
+    LDY   #AssetConfig::Ingame.ui_menu_tiles.address >> 1
+    JSL   Aoba::Image.load_tiles_icb_long
+  end
+
+  ;; Loads menu tiles
+  ;; @param A image address
+  def load_menu_tiles
+    PHA
+
+    ;; Loads the user image tiles
+    LDA   #Aoba::Thread::Event::USEREVENT_ID
+    JSL   Aoba::Thread::Event.allocate_icb_long
+    X.is_a! Aoba::Composer::Event::LoadImageTiles::Event
+    LDA   #Aoba::Composer::Event::LoadImageTiles::ID
+    STA   X[:event_id]
+    LDA   1, S
+    STA   X[:image_address]
+    LDA   #0 | ((((AssetConfig::Ingame.ui_tilemap.address + $200) >> 9) & $FF) << 8)
+    STA   X[:variant_index]
+    LDA   Aoba::Composer.thread_id
+    JSL   Aoba::Thread.send_event_icb_long
+
+    ;; Loads the user interface image
+    LDA   #Aoba::Thread::Event::USEREVENT_ID
+    JSL   Aoba::Thread::Event.allocate_icb_long
+    X.is_a! Aoba::Composer::Event::LoadImage::Event
+    LDA   #Aoba::Composer::Event::LoadImage::ID
+    STA   X[:event_id]
+    PLA
+    STA   X[:image_address]
+    LDA   #AssetConfig::Ingame.ui_menu_tiles.address >> 1
+    STA   X[:vram_address]
+    LDA   Aoba::Composer.thread_id
+    JSL   Aoba::Thread.send_event_icb_long
+  end
+
+  ;; Sets up generally
+  macro setup_vram
+    ;; Loads the palette
+    LDA   #Aoba::Thread::Event::USEREVENT_ID
+    JSL   Aoba::Thread::Event.allocate_icb_long
+    X.is_a! Aoba::Palette::Event::LoadPaletteGroup::Event
+    LDA   #Aoba::Palette::Event::LoadPaletteGroup::ID
+    STA   X[:event_id]
+    LDA   #Assets::Palette::UserInterface
+    STA   X[:palette_address]
+    LDA   #0
+    STA   X[:target_row]
+    LDA   Aoba::Palette.thread_id
+    JSL   Aoba::Thread.send_event_icb_long
+
+    ;; Loads the user image tiles
+    LDA   #Aoba::Thread::Event::USEREVENT_ID
+    JSL   Aoba::Thread::Event.allocate_icb_long
+    X.is_a! Aoba::Composer::Event::LoadImageTiles::Event
+    LDA   #Aoba::Composer::Event::LoadImageTiles::ID
+    STA   X[:event_id]
+    LDA   #Assets::Image::UserInterface
+    STA   X[:image_address]
+    LDA   #0 | (((AssetConfig::Ingame.ui_tilemap.address >> 9) & $FF) << 8)
+    STA   X[:variant_index]
+    LDA   Aoba::Composer.thread_id
+    JSL   Aoba::Thread.send_event_icb_long
+
+    ;; Loads the user interface image   
+    LDA   #Aoba::Thread::Event::USEREVENT_ID
+    JSL   Aoba::Thread::Event.allocate_icb_long
+    X.is_a! Aoba::Composer::Event::LoadImage::Event
+    LDA   #Aoba::Composer::Event::LoadImage::ID
+    STA   X[:event_id]
+    LDA   #Assets::Image::UserInterface
+    STA   X[:image_address]
+    LDA   #AssetConfig::Ingame.ui_tiles.address >> 1
+    STA   X[:vram_address]
+    LDA   Aoba::Composer.thread_id
+    JSL   Aoba::Thread.send_event_icb_long
+
+    ;; Loads the ready go menu
+    LDA   #Assets::Image::ReadyGo
+    load_menu_tiles
+
+    JSL   Aoba::Composer::Api.request_ready_event_long
+
+    ;; Decompresses the statusbar to RAM
+    LDA   (Assets::Image::UserInterface.to_sym + Aoba::Image::ImageRomHeader.size + 3 + 1).long
+    STA   dp(decompress_state.source_address + 1)
+    LDA   (Assets::Image::UserInterface.to_sym + Aoba::Image::ImageRomHeader.size + 3).long
+    STA   dp(decompress_state.source_address)
+    LDY   #Aoba::Tilemap::RomHeader.size
+    LDA   decompress_state.source_address.indirect.long, Y
+    STA   dp(decompress_state.source_address)
+    LDA   #Aoba::VARIABLE_RAM_BANK << 8
+    STA   dp(decompress_state.target_address + 1)
+    LDA   #statusbar_tiles
+    STA   dp(decompress_state.target_address)
+    TDC
+    CLC
+    ADC   #decompress_state
+    JSL   Aoba::Compression::LZW.decompress_long
+
+    ;; Waits for the level to be ready
+    JSL   Aoba::Composer::Api.wait_for_ready_event_long
+
+    ;; Triggers the HDMA config
+    SEI
+    LDA   AssetConfig::Ingame.ingame_hdma_config.flags
+    ORA   #Game::Hdma::Ingame::Flag.NEEDS_SETUP_DMA_CALL
+    STA   AssetConfig::Ingame.ingame_hdma_config.flags
+    CLI
+  end
+
+  def _create_item_sprite
+    ;; Allocates the configuration RAM
+    LDA   Aoba::Sprite.thread_id
+    LDX   #Aoba::Sprite::Event::CreateSprite::EventConfig.size
+    SEI
+    JSL   Aoba::Memory.allocate_miniblock_long
+    CLI
+    X.is_a! Aoba::Sprite::Event::CreateSprite::EventConfig
+
+    LDA   #10
+    STA   X[:x]
+    LDA   #196
+    STA   X[:y]
+    LDA   #Assets::Sprite::Item::GridAnimationID
+    STA   X[:animation]
+    LDA   #Assets::Sprite::Item::DirectionID | $3100
+    STA   X[:direction]
+    LDA   #Assets::Sprite::Item::ID
+    STA   X[:sprite_id]
+    LDA   #Assets::Sprite::Item::PaletteID
+    STA   X[:palette_group_address]
+    JSL   Aoba::Sprite::Api.create_sprite_icb_long
+    X.is_a! Aoba::Sprite::Instance
+    CPU.set A: 8
+    LDA   #PRIORITY_UI
+    STA   X[:render_priority]
+    CPU.set A: 16
+    LDA   X[:basic_flags]
+    ORA   #Aoba::Sprite::BasicFlag.SKIP_MOVE_ROUTINE
+    STA   X[:basic_flags]
+    LDA   X[:renderable_configuration_flags]
+    ORA   #Aoba::Sprite::RenderableConfigurationFlag.NO_CAMERA_RELATIVE
+    STA   X[:renderable_configuration_flags]
+    PHX
+    JSL   Aoba::Sprite::Api.queue_sprite_icb_long
+    PLX
+  end
+
+  macro setup_sprites
+    _create_item_sprite
+    STX   grid_sprite
+    _create_item_sprite
+    STX   item_sprite
+  end
+
+  macro release_sprites
+    LDX   grid_sprite
+    X.is_a! Aoba::Sprite::Instance
+    STZ   grid_sprite
+    LDA   X[:id]
+    JSL   Aoba::Sprite::Api.destroy_sprite_icb_long
+    LDX   item_sprite
+    X.is_a! Aoba::Sprite::Instance
+    STZ   item_sprite
+    LDA   X[:id]
+    JSL   Aoba::Sprite::Api.destroy_sprite_icb_long
+  end
+
+end

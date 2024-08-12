@@ -1,0 +1,547 @@
+module Aoba::Palette::Action::FadePalette
+
+  ;; Temporary RAM
+  scope :TempRAM, in: Aoba::Palette::TempRAM
+
+  ;; Shared RAM for other tasks
+  scope :SharedTempRAM, in: TempRAM, shared: true
+
+  ;; The palette mask
+  declare :fade_speed, as: :uint24, in: TempRAM
+  palette_mask = fade_speed + 1
+
+  ;; The shift amount
+  declare :times_shift, as: :uint16, in: TempRAM
+
+  ;; The current palette index (2x)
+  declare :palette_index, as: :uint16, in: TempRAM
+
+  ;; Color counter
+  declare :color_counter, as: :uint16, in: TempRAM
+
+  ;; Negative red
+  declare :negative_shift, as: :uint16, in: TempRAM
+
+  ;; First palette updated
+  declare :first_palette, as: :uint16, in: TempRAM
+
+  ;; The last palette updateed
+  declare :last_palette, as: :uint16, in: TempRAM
+
+  ;; The current bit of the palette index
+  declare :set_palette_flags, as: :uint16, in: TempRAM
+
+  ;; Palette group address
+  declare :palette_group_pointer, as: :uint16, in: TempRAM
+
+
+  ;; Negative table depending on shift value
+  datablock negative_bits_shift
+    dw  $0000     ; 0 shift
+    dw  $8000     ; 1 shift
+    dw  $C000     ; 2 shift
+    dw  $E000     ; 3 shift
+    dw  $F000     ; 4 shift
+    dw  $F800     ; 5 shift
+  end
+
+
+  ;; Configures the calculation registers
+  macro _configure_palettecalc_registers
+    LDA   #0
+    CPU.set A: 8
+
+    ;; Calculates the shift amount for calculation
+    STA   palette_calculation_delay_counter, Y
+    STA   palette_calculation_delay, Y
+    STA   current_palette_step, Y
+    
+    LDA   dp(fade_speed)
+    CMP   #6
+    BLT   _no_delay
+
+  _with_delay:
+    SEC
+    SBC   #5
+    STA   palette_calculation_delay, Y
+    STA   palette_calculation_delay_counter, Y
+    LDA   #5
+
+  _no_delay:
+    STA   dp(times_shift)
+    TAX
+    LDA   PowerOfTwo8.long, X
+    STA   num_palette_calc_steps, Y
+    LDA   #$6B
+    STA   shift_code, X
+    CPU.set A: 16
+    TXA
+    ASL   A
+    TAX
+    LDA   negative_bits_shift.long, X
+    STA   dp(negative_shift)
+  end
+
+  ;; Saves the old CGRAM palette
+  ;;
+  ;; @param Y palette index pointer
+  macro _save_original_cgram_palette
+    LDA   palette_flags, X
+    AND   #$FFFF ^ PaletteFlag.IS_RESTORING
+    ORA   dp(set_palette_flags)
+    STA   palette_flags, X
+    BIT   #PaletteFlag.IS_FADING
+    BNZ   _skip_save_palette
+    ORA   #PaletteFlag.IS_FADING
+    STA   palette_flags, X
+
+    STY   dp(palette_index)
+    LDX   #15
+  _loop:
+    LDA   cgram, Y
+    STA   original_cgram, Y
+    INY
+    INY
+    DEX
+    BNZ   _loop
+    LDY   dp(palette_index)
+
+  _skip_save_palette:
+  end
+
+  ;; Fades a palette to the cached palette
+  ;;
+  ;; TODO: This routine is very slow. Can we optimize it? Move it completely to RAM?
+  ;;
+  ;; @param dp(fade_speed) fade speed
+  ;; @param Y palette index
+  def fade_to_cached_palette
+    ;; Prepares the palette index
+    _configure_palettecalc_registers
+
+    TYX
+    TYA
+    16.multiplicated_register_A
+    INC   A
+    ASL   A
+    TAY
+    _save_original_cgram_palette
+
+    ;Y = index in cgram + 1
+    LDX   #2
+    LDA   #15
+    STA   dp(color_counter)
+
+  _loop:
+    LDA   cgram_red, Y
+    AND   #$1F00
+    STA   cgram_red, Y
+    LDA   cgram_green, Y
+    AND   #$1F << 5
+    STA   cgram_green, Y
+    LDA   cgram_blue, Y
+    AND   #$1F << 10
+    STA   cgram_blue, Y
+
+    LDA   cgram + 16 * 32, X
+    STA   dp(_calc0)
+
+    ;; Red
+    XBA
+    AND   #$1F00
+    SEC
+    SBC   cgram_red, Y
+    PHP
+    JSL   shift_code
+    PLP
+    BPL   _skip_red
+    ORA   dp(negative_shift)
+  _skip_red:
+    STA   cgram_red_calc, Y
+
+    ;; Green
+    LDA   dp(_calc0)
+    AND   #$1F << 5
+    SEC
+    SBC   cgram_green, Y
+    PHP
+    JSL   shift_code
+    PLP
+    BPL   _skip_green
+    ORA   dp(negative_shift)
+  _skip_green:
+    STA   cgram_green_calc, Y
+
+    ;; Blue
+    LDA   dp(_calc0)
+    AND   #$1F << 10
+    SEC
+    SBC   cgram_blue, Y
+    PHP
+    JSL   shift_code
+    PLP
+    BPL   _skip_blue
+    ORA   dp(negative_shift)
+  _skip_blue:
+    STA   cgram_blue_calc, Y
+
+    INX
+    INX
+    INY
+    INY
+    DEC   dp(color_counter)
+    BPL   _loop
+
+    LDA   dp(times_shift)
+    AND   dp(x00FF)
+    TAX
+    LDA   #$4A4A
+    STA   shift_code, X
+  end
+
+  ;; Creates and queues the fade timer
+  def start_fade_timer
+    Thread.assert_thread thread_id
+
+    LDX   dp(fade_timer)
+    BNZ   _rts
+
+    LDA   thread_id.long
+    JSL   Thread::Timer.allocate_long
+    STX   dp(fade_timer)
+
+  _rts:
+    LDA   #0
+    LDY   #1
+    JSL   Thread::Timer.queue_long
+  end
+
+  ;; Processes a single palette
+  ;;
+  ;; @param X palette index
+  ;; @ignore-thread-safety
+  def _timer_process_palette
+    INC   current_palette_step, X
+    STX   dp(last_palette)
+
+    CPU.set A: 16
+    TXA
+    16.multiplicated_register_A
+    INC   A
+    ASL   A
+    TAY
+    LDX   #15
+  _loop:
+    LDA   cgram_red, Y
+    CLC
+    ADC   cgram_red_calc, Y
+    STA   cgram_red, Y
+    XBA
+    AND   #$1F
+    STA   dp(_calc0)
+
+    LDA   cgram_green, Y
+    CLC
+    ADC   cgram_green_calc, Y
+    STA   cgram_green, Y
+    AND   #$1F << 5
+    TSB   dp(_calc0)
+
+    LDA   cgram_blue, Y
+    CLC
+    ADC   cgram_blue_calc, Y
+    STA   cgram_blue, Y
+    AND   #$1F << 10
+    ORA   dp(_calc0)
+    STA   cgram, Y
+    
+    INY
+    INY
+
+    DEX
+    BNZ   _loop
+
+  _test_fade_finished:
+    LDX   dp(last_palette)
+    LDA   current_palette_step, X
+    EOR   num_palette_calc_steps, X
+    AND   dp(x00FF)
+    BNZ   _not_finished
+
+    ;; Remove from fading bitmask
+    LDA   palette_flags, X
+    BIT   #PaletteFlag.IS_RESTORING
+    BZE   _not_restoring
+
+    AND   #$FFFF ^ PaletteFlag.IS_RESTORING ^ PaletteFlag.IS_FADING
+    STA   palette_flags, X
+
+  _not_restoring:
+    ;; Remove from fading bitmask
+    TXA
+    ASL   A
+    TAX
+    LDA   PowerOfTwo16.long, X
+    EOR   fading_palette_bitmask
+    STA   fading_palette_bitmask
+
+  _not_finished:
+    LDX   dp(last_palette)
+    CPU.set A: 8
+  end
+
+  ;; @param A bitmask (8 bit)
+  ;; @param X palette index
+  ;; @ignore-thread-safety
+  def _timer_process_bitmap
+  _resume_next:
+    BZE   _return
+  _resume_next_no_zerotest:
+    INX
+  _start:
+    LSR   A
+    BCC   _resume_next
+
+  _test_palette_delay:
+    DEC   palette_calculation_delay, X
+    BPL   _resume_next_no_zerotest
+
+  _modify_palette:
+    STA   dp(fade_speed)
+    LDA   palette_calculation_delay_counter, X
+    STA   palette_calculation_delay, X
+
+    LDA   dp(first_palette)
+    BPL   _skip_set_first_palette
+    STX   dp(first_palette)
+  _skip_set_first_palette:
+    _timer_process_palette
+    LDA   dp(fade_speed)
+
+    BNZ   _resume_next_no_zerotest
+
+  _return:
+    RTS
+  end
+
+  ;; Uploads all changes
+  macro _upload_modified_palettes
+    LDA   dp(first_palette)
+    BMI   _skip_upload
+
+  _do_upload:
+    16.multiplicated_register_A
+    INC   A
+    STA   dp(_calc0)
+    ASL   A
+    CLC
+    ADC   #cgram
+    TAX
+
+    LDA   dp(last_palette)
+    SEC
+    SBC   dp(first_palette)
+    INC   A
+    16.multiplicated_register_A
+    DEC   A
+    ASL   A
+    TAY
+
+    LDA   dp(_calc0)
+    AND   dp(x00FF)
+    ORA   #FIXED_RAM_BANK << 8
+    JSL   Aoba::VBlank::queue_cgram_update_long
+
+  _skip_upload:
+  end
+
+  ;; Fade timer triggered
+  def on_timer_triggered
+    STZ   dp(first_palette)
+    DEC   dp(first_palette)
+
+    CPU.with_bank FIXED_RAM_BANK, from_bank: VARIABLE_RAM_BANK do
+      CPU.set A: 8
+      LDX   #0
+      LDA   fading_palette_bitmask
+      BZE   _skip_tilemap
+      JSR   _timer_process_bitmap._start
+    _skip_tilemap:
+      LDX   #8
+      LDA   fading_palette_bitmask + 1
+      BZE   _skip_sprite
+      JSR   _timer_process_bitmap._start
+    _skip_sprite:
+      CPU.set A: 16
+      LDA   fading_palette_bitmask
+      BZE   _skip_trigger_timer
+
+    _trigger_timer:
+      LDX   dp(fade_timer)
+      LDY   #1
+      LDA   #0
+      JSL   Thread::Timer.queue_long
+
+    _skip_trigger_timer:
+      _upload_modified_palettes
+    end
+  end
+
+  ;; Fades to the palette stored in the palette cache (row 16)
+  ;;
+  ;; @param AL fade speed
+  ;; @param X target palette address
+  ;; @param Y palette bitmask
+  def fade_all_to_palette
+    Thread.assert_thread thread_id
+
+    STA   dp(fade_speed)
+    STY   dp(palette_mask)
+    STZ   dp(set_palette_flags)
+
+    CPU.with_bank FIXED_RAM_BANK, from_bank: VARIABLE_RAM_BANK do
+      TYA
+      ORA   fading_palette_bitmask
+      STA   fading_palette_bitmask
+
+      ;; Loads the target palette to the cache
+      Action::LoadPalette.load_palette_to_cache
+      LDY   #0
+      BRA   _start
+
+    _loop_with_finish_test:
+      BZE   _end_of_loop
+    _loop:
+      INY
+    _start:
+      LSR   dp(palette_mask)
+      BCC   _loop_with_finish_test
+
+      PHY
+      fade_to_cached_palette
+      PLY
+      BRA   _loop
+
+    _end_of_loop:
+      start_fade_timer
+    end
+  end
+
+  ;; Fades to the palette stored in the palette cache (row 16)
+  ;;
+  ;; @param AL fade speed
+  ;; @param X target palette address
+  ;; @param Y palette bitmask
+  def fade_all_to_palette_group
+    Thread.assert_thread thread_id
+
+    STA   dp(fade_speed)
+    STY   dp(palette_mask)
+    INX
+    INX
+    STX   dp(palette_group_pointer)
+    STZ   dp(set_palette_flags)
+
+    CPU.with_bank FIXED_RAM_BANK, from_bank: VARIABLE_RAM_BANK do
+      TYA
+      ORA   fading_palette_bitmask
+      STA   fading_palette_bitmask
+
+      LDY   #0
+      BRA   _start
+
+    _loop_with_finish_test:
+      BZE   _end_of_loop
+    _loop:
+      INY
+    _start:
+      LSR   dp(palette_mask)
+      BCC   _loop_with_finish_test
+
+      PHY
+      LDX   dp(palette_group_pointer)
+      LDA   DATA_ROM_BANK.as_bank.long, X
+      INX
+      INX
+      STX   dp(palette_group_pointer)
+      TAX
+      Action::LoadPalette.load_palette_to_cache
+      LDA   1, S
+      TAY
+      fade_to_cached_palette
+      PLY
+      BRA   _loop
+
+    _end_of_loop:
+      start_fade_timer
+    end
+  end
+
+  ;; Fades to the palette stores in the palette cache
+
+  ;; Restores the palette
+  ;;
+  ;; @param Y palette index
+  def restore_palette
+    PHY
+    LDA   #15
+    STA   dp(color_counter)
+    TYA
+    16.multiplicated_register_A
+    INC   A
+    ASL   A
+    TAY
+    LDX   #2
+  _loop:
+    LDA   original_cgram, Y
+    STA   cgram + 16 * 32, X
+    INX
+    INX
+    INY
+    INY
+    DEC   dp(color_counter)
+    BNZ   _loop
+
+    PLY
+    JMP   fade_to_cached_palette
+  end
+
+  ;; Restores all palettes
+  ;;
+  ;; @param AL fade speed
+  ;; @param Y palette bitmask
+  def restore_all_palettes
+    Thread.assert_thread thread_id
+
+    STA   dp(Action::FadePalette.fade_speed)
+    STY   dp(palette_mask)
+    LDA   #PaletteFlag.IS_RESTORING
+    STA   dp(set_palette_flags)
+
+    CPU.with_bank FIXED_RAM_BANK, from_bank: VARIABLE_RAM_BANK do
+      TYA
+      ORA   fading_palette_bitmask
+      STA   fading_palette_bitmask
+
+      LDY   #0
+      BRA   _start
+    
+    _loop_with_finish_test:
+      BZE   _end_of_loop
+    _loop:
+      INY
+    _start:
+      LSR   dp(palette_mask)
+      BCC   _loop_with_finish_test
+
+      PHY
+      restore_palette
+      PLY
+      BRA   _loop
+
+    _end_of_loop:
+      start_fade_timer
+    end
+  end
+
+end

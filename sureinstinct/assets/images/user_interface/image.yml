@@ -1,0 +1,14 @@
+name: Dialog
+
+color_depth: 4
+tile_size: {width: 8, height: 8}
+
+variants:
+  default:
+    image: image.png
+    priority: priority.png
+    palette: palette.png
+  additional:
+    image: statusbar.png
+    priority: priority.png
+    palette: palette.png

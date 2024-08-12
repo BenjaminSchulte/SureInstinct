@@ -1,0 +1,115 @@
+module Aoba::Thread
+
+  ;; Sets the priority and returns the old priority
+  ;;
+  ;; @param A new priority
+  ;; @return A old priority
+  def set_priority_icb_long
+    PHP
+    SEI
+    TAY
+    CPU.set A: 16
+    TSC
+    AND   #$FF00
+    TAX
+    LDA   THREAD_RAM_BANK.as_bank($FE).long, X
+    TAX
+    CPU.set A: 8
+    X.is_a! Instance
+    LDA   X[:priority]
+    XBA
+    TYA
+    STA   X[:priority]
+    XBA
+    PLP
+    RTL
+  end
+
+  ;; Returns the current thread pointer
+  macro current_thread_pointer
+    dp($FE)
+  end
+
+  ;; @ignore-thread-safety
+  def __test_thread_is_valid
+    X.is_a! Instance
+    LDA   X[:status] - 1
+    BPL   _ok
+    Debug.fatal "Call to get_thread_pointer_from_thread_id returns invalid thread."
+    NOP
+    Debug.BRK
+    NOP
+  _ok:
+  end
+
+  ;; @ignore-thread-safety
+  ;; @param A thread ID
+  ;; @return X thread pointer
+  def get_thread_pointer_from_thread_id
+    AND   #$1F
+    DEC   A
+    XBA
+    ORA   #$6000 if ENABLE_SA1
+    TAX
+    LDA   THREAD_RAM_BANK.as_bank($FE).long, X
+    TAX
+
+    Debug.only do
+      __test_thread_is_valid
+    end
+  end
+
+  ;; @ignore-thread-safety
+  ;; @return X ThreadInstance
+  def get_current_thread_pointer_X
+    TSC
+    AND   #$FF00
+    TAX
+    LDA   THREAD_RAM_BANK.as_bank($FE).long, X
+    TAX
+
+    Debug.only do
+      __test_thread_is_valid
+    end
+  end
+
+  def get_current_thread_pointer_X_long
+    get_current_thread_pointer_X
+    RTL
+  end
+
+  ;; @ignore-thread-safety
+  ;; @return Y ThreadInstance
+  def get_current_thread_pointer_Y
+    TSC
+    AND   #$FF00
+    PHX
+    TAX
+    LDA   THREAD_RAM_BANK.as_bank($FE).long, X
+    PLX
+    TAY
+  end
+
+  ;; Sends a kill event to the thread in A
+  ;; @param A thread ID
+  ;; @param X userdata
+  def send_kill_event_icb_long
+    PHP
+    CPU.set A: 16
+    PHA
+    PHX
+    LDA   #Event::SYSTEMEVENT_ID
+    JSR   Event.allocate_icb
+    LDA   Memory.active_thread_id
+    AND   #$FF
+    XBA
+    ORA   #Event.KILLEVENT_ID
+    STA   Event::Base.size, X
+    PLA
+    STA   Event::Base.size + 2, X
+    PLA
+    JSR   send_event_icb
+    PLP
+    RTL
+  end
+end

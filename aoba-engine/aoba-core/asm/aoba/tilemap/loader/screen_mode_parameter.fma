@@ -1,0 +1,28 @@
+module Aoba::Tilemap::Loader
+
+  class ScreenModeParameter < Parameter
+    macro size_in_bytes
+      return 1
+    end
+
+    macro load
+      CPU.set A: 8
+
+      ;; Query the screen mode setting
+      LDA   #Aoba::Thread::Event.USEREVENT_ID
+      JSL   Aoba::Thread::Event.allocate_icb_long
+      X.is_a! Aoba::Composer::Event::SetScreenMode::Event
+      Y.is_a! Tilemap.RomHeader
+
+      LDA   #Aoba::Composer::Event::SetScreenMode::ID
+      STA   X[:event_id]
+      @loader.read_header_at @offset
+      STA   X[:mode]
+      LDA   Aoba::Composer.thread_id
+      CPU.set A: 16
+
+      JSL   Aoba::Thread.send_event_icb_long
+    end
+  end
+
+end

@@ -1,0 +1,86 @@
+exports:
+  # Images
+  - {as: "Assets::Image::UserInterface", type: UserInterfaceImage, id: user_interface, attribute: address}
+  - {as: "Assets::Image::Death", type: UserInterfaceImage, id: death, attribute: address}
+  - {as: "Assets::Image::Pause", type: UserInterfaceImage, id: pause, attribute: address}
+  - {as: "Assets::Image::StageClear", type: UserInterfaceImage, id: stageclear, attribute: address}
+  - {as: "Assets::Image::StageSelect", type: Image16, id: stageselect, attribute: address}
+  - {as: "Assets::Image::StageSelectUnknownMinimap", type: Image16, id: stageselect/map_unknown, attribute: variant_index}
+  - {as: "Assets::Image::ReadyGo", type: UserInterfaceImage, id: readygo, attribute: address}
+  - {as: "Assets::Image::Abyss", type: AbyssImage, id: abyss_wood, attribute: address}
+
+  - {as: "Assets::Image::TutorialText1", type: UserInterfaceImage, id: tutorial_text1, attribute: address}
+  - {as: "Assets::Image::TutorialText2", type: UserInterfaceImage, id: tutorial_text2, attribute: address}
+  - {as: "Assets::Image::TutorialText3", type: UserInterfaceImage, id: tutorial_text3, attribute: address}
+  - {as: "Assets::Image::TutorialText4", type: UserInterfaceImage, id: tutorial_text4, attribute: address}
+  - {as: "Assets::Image::TutorialText5", type: UserInterfaceImage, id: tutorial_text5, attribute: address}
+  - {as: "Assets::Image::TutorialText6", type: UserInterfaceImage, id: tutorial_text6, attribute: address}
+  - {as: "Assets::Image::TutorialText7", type: UserInterfaceImage, id: tutorial_text7, attribute: address}
+  - {as: "Assets::Image::TutorialText8", type: UserInterfaceImage, id: tutorial_text8, attribute: address}
+  - {as: "Assets::Image::TutorialText9", type: UserInterfaceImage, id: tutorial_text9, attribute: address}
+  - {as: "Assets::Image::TutorialText10", type: UserInterfaceImage, id: tutorial_text10, attribute: address}
+  - {as: "Assets::Image::TutorialText11", type: UserInterfaceImage, id: tutorial_text11, attribute: address}
+  - {as: "Assets::Image::StageSelectVariant::Feedback", type: Image16, id: stageselect/name_feedback, attribute: variant_index}
+
+  # Palettes
+  - {as: "Assets::Palette::UserInterface", type: Palettes16, id: user_interface, attribute: address}
+  - {as: "Assets::Palette::UserInterfaceDeath", type: Palettes16, id: death, attribute: address}
+  - {as: "Assets::Palette::UserInterfaceStageClear", type: Palettes16, id: stageclear, attribute: address}
+  - {as: "Assets::Palette::IceReflect", type: IcePalette, id: icereflect, attribute: address}
+
+  # Other
+  - {as: "Assets::Font::Digits", type: VariableFont, id: digits, attribute: address}
+  - {as: "Assets::Font::LargeDigits", type: VariableFont, id: largedigits, attribute: address}
+  - {as: "Assets::Font::StageSelect", type: VariableFont, id: stageselect, attribute: address}
+
+  # Sprite: Particle
+  - {as: "Assets::Particle1::SpriteID", type: MapSprite, id: particle1, attribute: id}
+  - {as: "Assets::Particle1::CommonPaletteID", type: MapSprite, id: particle1, attribute: palette_group_address}
+
+  # Sprite: Ball
+  - {as: "Assets::Sprite::Ball::MainPaletteID", type: MapSprite, id: ball/main-palette.png, attribute: palette_index}
+  - {as: "Assets::Sprite::Ball::IcePaletteID", type: MapSprite, id: ball/ice-palette.png, attribute: palette_index}
+  - {as: "Assets::Sprite::Ball::MetalPaletteID", type: MapSprite, id: ball/metal-palette.png, attribute: palette_index}
+  - {as: "Assets::Sprite::Parachute::ID", type: MapSprite, id: parachute, attribute: id}
+  - {as: "Assets::Sprite::Parachute::PaletteID", type: MapSprite, id: parachute, attribute: palette_group_address}
+  - {as: "Assets::Sprite::Bomb::ID", type: MapSprite, id: bomb, attribute: id}
+  - {as: "Assets::Sprite::Bomb::PaletteID", type: MapSprite, id: bomb, attribute: palette_group_address}
+  - {as: "Assets::Sprite::Cursor::ID", type: MapSprite, id: cursor, attribute: id}
+  - {as: "Assets::Sprite::Cursor2::ID", type: MapSprite, id: cursor2, attribute: id}
+  - {as: "Assets::Sprite::Cursor::PaletteID", type: MapSprite, id: cursor, attribute: palette_group_address}
+  - {as: "Assets::Sprite::FireTower::ID", type: MapSprite, id: fire_tower, attribute: id}
+  - {as: "Assets::Sprite::FireTower::PaletteID", type: MapSprite, id: fire_tower, attribute: palette_group_address}
+  - {as: "Assets::Sprite::Bullet::ID", type: MapSprite, id: bullet, attribute: id}
+  - {as: "Assets::Sprite::Bullet::PaletteID", type: MapSprite, id: bullet, attribute: palette_group_address}
+  - {as: "Assets::Sprite::FloorRotate::ID", type: MapSprite, id: floor_rotate, attribute: id}
+  - {as: "Assets::Sprite::FloorRotate::BrightPaletteID", type: MapSprite, id: floor_rotate, attribute: palette_group_address}
+
+  # Sprite: Items
+  - {as: "Assets::Sprite::Item::ID", type: MapSprite, id: item, attribute: id}
+  - {as: "Assets::Sprite::Item::DirectionID", type: MapSprite, id: item/down, attribute: direction_id}
+  - {as: "Assets::Sprite::Item::PaletteID", type: MapSprite, id: item, attribute: palette_group_address}
+  - {as: "Assets::Sprite::Item::GridAnimationID", type: MapSprite, id: item/grid, attribute: animation_id}
+  - {as: "Assets::Sprite::Item::ParachuteAnimationID", type: MapSprite, id: item/parachute, attribute: animation_id}
+  - {as: "Assets::Sprite::Item::BridgeAnimationID", type: MapSprite, id: item/bridge, attribute: animation_id}
+  - {as: "Assets::Sprite::Item::PauseAnimationID", type: MapSprite, id: item/pause, attribute: animation_id}
+  - {as: "Assets::Sprite::Item::BombAnimationID", type: MapSprite, id: item/bomb, attribute: animation_id}
+
+  # Animations
+  - {as: "Assets::Animation::BallFallDown", type: MapSprite, id: ball/fall_down, attribute: animation_id}
+  - {as: "Assets::Animation::BallExplode", type: MapSprite, id: ball/explode_down, attribute: animation_id}
+  - {as: "Assets::Animation::ParachuteOpen", type: MapSprite, id: parachute/open_down, attribute: animation_id}
+  - {as: "Assets::Animation::BombPlaced", type: MapSprite, id: bomb/placed_down, attribute: animation_id}
+  - {as: "Assets::Animation::BombExplode", type: MapSprite, id: bomb/explode_down, attribute: animation_id}
+
+  # Sounds
+  - {as: "Assets::Stream::Ready", type: Stream, id: ready, attribute: address}
+  - {as: "Assets::Stream::Go", type: Stream, id: go, attribute: address}
+  - {as: "Assets::Stream::Yatta", type: Stream, id: yatta, attribute: address}
+  - {as: "Assets::Sfx::ItemBuy", type: SfxLib, id: default/item_buy, attribute: sfx_id}
+  - {as: "Assets::Sfx::DoorOpen", type: SfxLib, id: default/door_open, attribute: sfx_id}
+  - {as: "Assets::Sfx::BreakFloor", type: SfxLib, id: default/break_floor, attribute: sfx_id}
+  - {as: "Assets::Sfx::BreakWall", type: SfxLib, id: default/break_wall, attribute: sfx_id}
+  - {as: "Assets::Sfx::ItemCollect", type: SfxLib, id: default/item_collect, attribute: sfx_id}
+  - {as: "Assets::Sfx::Explosion", type: SfxLib, id: default/explosion, attribute: sfx_id}
+  - {as: "Assets::Sfx::BallHitWall", type: SfxLib, id: default/ball_hitwall, attribute: sfx_id}
+  - {as: "Assets::Sfx::BallExplode", type: SfxLib, id: default/ball_explode, attribute: sfx_id}

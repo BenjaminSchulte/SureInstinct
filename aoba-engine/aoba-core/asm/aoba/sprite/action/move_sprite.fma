@@ -1,0 +1,429 @@
+module Aoba::Sprite::Action::MoveSprite
+
+  ;; Temporary RAM
+  scope :TempRAM, in: ActionRAM
+
+  ;; Shared sub RAM
+  scope :SharedTempRAM, in: TempRAM, shared: true
+
+  ;; The instance
+  declare :sprite, as: :uint16, in: TempRAM
+
+  ;; Relative target in pixel
+  declare :relative_x, as: :int16, in: TempRAM
+
+  ;; Relative target in pixel
+  declare :relative_y, as: :int16, in: TempRAM
+
+  ;; Moves the sprite using the angle and its speed
+  ;;
+  ;; @param X sprite
+  def set_simple_movespeed_from_angle_and_speed
+    Thread.assert_thread thread_id
+    Debug.assert_register_size A: 16
+    X.is_a! Instance
+
+    STZ   X[:speed_x]
+    STZ   X[:speed_x_decimal]
+    STZ   X[:speed_y]
+    STZ   X[:speed_y_decimal]
+
+    CPU.set A: 8
+    LDA   X[:move_angle]
+
+    BMI   _negative_lookup
+    BZE   _is_angle_00
+    CMP   #$20
+    BEQ   _is_angle_20
+    CMP   #$40
+    BEQ   _is_angle_40
+    CMP   #$60
+    BNE   _complex
+
+  _is_angle_60: ;up/left
+    CPU.set A: 16
+    LDA   X[:walk_speed]
+    EOR   #$FFFF
+    INC   A
+    STA   X[:speed_x_decimal] + 1
+    STA   X[:speed_y_decimal] + 1
+    BPL   _60_skip_negative
+    LDA   X[:speed_x]
+    ORA   #$FF00
+    STA   X[:speed_x]
+    LDA   X[:speed_y]
+    ORA   #$FF00
+    STA   X[:speed_y]
+  _60_skip_negative:
+    RTS
+
+  _is_angle_00: ;right
+    CPU.set A: 16
+    LDA   X[:walk_speed]
+    STA   X[:speed_x_decimal] + 1
+    RTS
+
+  _is_angle_20: ;up/right
+    CPU.set A: 16
+    LDA   X[:walk_speed]
+    STA   X[:speed_x_decimal] + 1
+    EOR   #$FFFF
+    INC   A
+    STA   X[:speed_y_decimal] + 1
+    BPL   _20_skip_negative
+    LDA   X[:speed_y]
+    ORA   #$FF00
+    STA   X[:speed_y]
+  _20_skip_negative:
+    RTS
+
+  _is_angle_40: ;up
+    CPU.set A: 16
+    LDA   X[:walk_speed]
+    EOR   #$FFFF
+    INC   A
+    STA   X[:speed_y_decimal] + 1
+    BPL   _40_skip_negative
+    LDA   X[:speed_y]
+    ORA   #$FF00
+    STA   X[:speed_y]
+  _40_skip_negative:
+    RTS
+
+  _complex:
+    A.pretend_size 8
+    JSR   set_movespeed_from_angle_and_speed
+    CPU.set A: 16
+    RTS
+
+  _negative_lookup:
+    A.pretend_size 8
+    CMP   #$80
+    BEQ   _is_angle_80
+    CMP   #$A0
+    BEQ   _is_angle_A0
+    CMP   #$C0
+    BEQ   _is_angle_C0
+    CMP   #$E0
+    BNE   _complex
+
+  _is_angle_E0: ;down/right
+    CPU.set A: 16
+    LDA   X[:walk_speed]
+    STA   X[:speed_x_decimal] + 1
+    STA   X[:speed_y_decimal] + 1
+    RTS
+
+  _is_angle_80: ;left
+    CPU.set A: 16
+    LDA   X[:walk_speed]
+    EOR   #$FFFF
+    INC   A
+    STA   X[:speed_x_decimal] + 1
+    BPL   _80_skip_negative
+    LDA   X[:speed_x]
+    ORA   #$FF00
+    STA   X[:speed_x]
+  _80_skip_negative:
+    RTS
+
+  _is_angle_A0: ;down/left
+    CPU.set A: 16
+    LDA   X[:walk_speed]
+    STA   X[:speed_y_decimal] + 1
+    EOR   #$FFFF
+    INC   A
+    STA   X[:speed_x_decimal] + 1
+    BPL   _A0_skip_negative
+    LDA   X[:speed_x]
+    ORA   #$FF00
+    STA   X[:speed_x]
+  _A0_skip_negative:
+    RTS
+
+  _is_angle_C0: ;down
+    CPU.set A: 16
+    LDA   X[:walk_speed]
+    STA   X[:speed_y_decimal] + 1
+    RTS
+  end
+
+
+  ;; Moves the sprite using the angle and its speed
+  ;;
+  ;; @param X sprite
+  def set_movespeed_from_angle_and_speed
+    Thread.assert_thread thread_id
+    Debug.assert_register_size A: 8
+    X.is_a! Instance
+    PHP
+    LDA   X[:move_angle]
+    BIT   #$7F
+    BZE   _is_x_only_movement
+    BIT   #$3F
+    BNZ   _is_complex_movement
+
+    ;; Moves only along the Y axis
+  _is_y_only_movement:
+    BPL   _is_up_movement
+
+  _is_down_movement:
+    STZ   X[:speed_y] + 1
+    STZ   X[:speed_y_decimal]
+    CPU.set A: 16
+    STZ   X[:speed_x]
+    STZ   X[:speed_x_decimal]
+    LDA   X[:walk_speed]
+    STA   X[:speed_y_decimal] + 1
+    PLP
+    RTS
+
+  _is_up_movement:
+    A.pretend_size 8
+    LDA   #$FF
+    STA   X[:speed_y] + 1
+    STZ   X[:speed_y_decimal]
+    CPU.set A: 16
+    STZ   X[:speed_x]
+    STZ   X[:speed_x_decimal]
+    LDA   X[:walk_speed]
+    EOR   #$FFFF
+    INC   A
+    STA   X[:speed_y_decimal] + 1
+    PLP
+    RTS
+  
+    ;; ----
+
+    ;; Moves only along the X axis
+  _is_x_only_movement:
+    BPL   _is_right_movement
+
+  _is_left_movement:
+    A.pretend_size 8
+    LDA   #$FF
+    STA   X[:speed_x] + 1
+    STZ   X[:speed_x_decimal]
+    CPU.set A: 16
+    STZ   X[:speed_y]
+    STZ   X[:speed_y_decimal]
+    LDA   X[:walk_speed]
+    EOR   #$FFFF
+    INC   A
+    STA   X[:speed_x_decimal] + 1
+    PLP
+    RTS
+
+  _is_right_movement:
+    STZ   X[:speed_x] + 1
+    STZ   X[:speed_x_decimal]
+    CPU.set A: 16
+    STZ   X[:speed_y]
+    STZ   X[:speed_y_decimal]
+    LDA   X[:walk_speed]
+    STA   X[:speed_x_decimal] + 1
+    PLP
+    RTS
+  
+    ;; ----
+
+    ;; Moves along a more complex axis
+  _is_complex_movement:
+    ;; Decimal won't really matter on lowest byte
+    STZ   X[:speed_x_decimal]
+    STZ   X[:speed_y_decimal]
+    STZ   X[:speed_x] + 1
+    STZ   X[:speed_y] + 1
+
+    CPU.set A: 16
+    TXY ;Y=sprite
+
+    ;; Stores the angle to _calc0
+    AND   dp(x00FF)
+    ASL   A
+    TAX
+    PHX
+
+    ;; Stores the walk speed
+    LDA   Y[:walk_speed]
+    STA   dp(_calc0 + 2)
+    
+    ;; Calculates the X angle
+    LDA   Math.cos_table.long, X
+    __calculate_speed_on_angle
+    STA   Y[:speed_x_decimal] + 1
+    BPL   _complex_skip_negate_x
+    CPU.set A: 8
+    LDA   #$FF
+    STA   Y[:speed_x] + 1
+    CPU.set A: 16
+  _complex_skip_negate_x:
+
+    ;; Calculates the Y angle
+    PLA
+    EOR   #$80 * 2
+    TAX
+    LDA   Math.sin_table.long, X
+    __calculate_speed_on_angle
+    STA   Y[:speed_y_decimal] + 1
+    BPL   _complex_skip_negate_y
+    CPU.set A: 8
+    LDA   #$FF
+    STA   Y[:speed_y] + 1
+    CPU.set A: 16
+  _complex_skip_negate_y:
+
+    LDX   Y[:speed_x_decimal]
+    LDA   Y[:speed_x]
+    LDX   Y[:speed_y_decimal]
+    LDA   Y[:speed_y]
+
+    PLP
+  end
+
+  ;; @param A factor ($FF00..$100)
+  ;; @param dp(_calc0+2) speed
+  ;; @ignore-thread-safety
+  def __calculate_speed_on_angle
+    if SNES::ENABLE_SA1
+      __calculate_speed_on_angle_sa1
+    else
+      __calculate_speed_on_angle_snes
+    end
+  end
+
+  ;; Calculates the speed on the SNES
+  macro __calculate_speed_on_angle_sa1
+    STA   SA1.MA.long
+    CPU.set A: 8
+    LDA   #0
+    STA   SA1.MCNT.long
+    CPU.set A: 16
+    LDA   dp(_calc0 + 2)
+    STA   SA1.MB.long
+    NOP
+    NOP
+    NOP
+    LDA   SA1.MR.long + 1
+  end
+
+  ;; Calculates the speed on the SNES
+  macro __calculate_speed_on_angle_snes
+    STA   dp(_calc0)
+    BPL   _skip_negate
+    EOR   #$FFFF
+    INC   A
+  _skip_negate:
+    CMP   #$100
+    BEQ   _special_movement
+
+    CPU.with_bank $00, from_bank: VARIABLE_RAM_BANK do
+      PHY
+      CPU.set A: 8, XY: 8
+      STA   CPU.WRMPYA
+      LDX   dp(_calc0 + 2)
+      STX   CPU.WRMPYB
+      LDX   dp(_calc0 + 3)
+      CLC
+      LDA   CPU.RDMPY + 1
+      STX   CPU.WRMPYB
+      CPU.set A: 16, XY: 16
+      PLY
+      AND   dp(x00FF)
+      ADC   CPU.RDMPY
+    end
+
+  _do_reverse:
+    LDX   dp(_calc0)
+    BPL   _skip_reverse_negate
+    EOR   #$FFFF
+    INC   A
+  _skip_reverse_negate:
+    RTS
+
+    ;; ---
+
+  _special_movement:
+    LDA   dp(_calc0 + 2)
+    BRA   _do_reverse
+  end
+
+  ;; Sets the animation from the angle
+  ;;
+  ;; @param X sprite
+  def set_direction_from_angle
+    Thread.assert_thread thread_id
+    Debug.assert_register_size A: 8
+    X.is_a! Instance
+
+    LDA   X[:move_angle]
+    LSR   A
+    LSR   A
+    LSR   A
+    LSR   A
+    LSR   A
+    INC   A
+    LSR   A
+    AND   #BasicFlag.DIRECTION_MASK
+    STA   X[:direction]
+  end
+
+  ;; Moves the sprite using the angle and its speed
+  ;;
+  ;; @param X sprite
+  def move_from_angle_and_speed
+    Thread.assert_thread thread_id
+    Debug.assert_register_size A: 8
+    X.is_a! Instance
+
+    set_movespeed_from_angle_and_speed
+    set_direction_from_angle
+
+    unless config.walk_animation_id.nil?
+      CPU.set A: 16
+      LDA   #config.walk_animation_id
+      ManageSprite.assign_animation_id
+      CPU.set A: 8
+    end
+  end
+
+  ;; Moves the sprite using a relative target position
+  ;;
+  ;; Requires sprite, relative_x, relative_y to be set
+  def move_sprite_relative
+    Thread.assert_thread thread_id
+
+    LDX   dp(sprite)
+    X.is_a! Instance
+
+    ;; Calculates the move target to X and Y
+    LDY   dp(relative_y)
+    TYA
+    CLC
+    ADC   X[:y]
+    STA   X[:move_target_y]
+
+    LDA   dp(relative_x)
+    CLC
+    ADC   X[:x]
+    STA   X[:move_target_x]
+    LDX   dp(relative_x)
+    JSL   Math.xy_to_direction_long
+
+    LDX   dp(sprite)
+    X.is_a! Instance
+
+    ;; Stores the result angle
+    CPU.set A: 8
+    STA   X[:move_angle]
+    LDA   X[:renderable_configuration_flags]
+    ORA   #RenderableConfigurationFlag.FORCE_LOOP_ANIMATION
+    STA   X[:renderable_configuration_flags]
+    LDA   X[:automation_flags]
+    ORA   #AutomationFlag.SPEED_IS_LOCKED
+    STA   X[:automation_flags]
+    move_from_angle_and_speed
+    CPU.set A: 16
+  end
+
+end

@@ -1,0 +1,85 @@
+module Aoba::Thread
+
+  ;; Helper to allocate thread callbacks
+  class ThreadCallbackBuilder
+    macro initialize(name)
+      @_name = name
+      @_bank = nil
+      @_priority = $80
+      @_block = nil
+    end
+
+    macro locate_at(bank=nil)
+      @_bank = bank
+    end
+
+    macro priority(priority)
+      @_priority = priority
+    end
+
+    macro execute(&block)
+      @_block = block
+    end
+
+    macro _create
+      _self = self
+      raise "Missing bank configuration for thread" if @_bank.nil?
+
+      _callback = ::Function.new @_name do
+        A.pretend_size 16
+        X.pretend_size 16
+        _self._block.call
+        RTL
+      end
+      _callback.override_located_at bank: @_bank
+
+      _config = ::DataBlock.new "#{@_name}_CONFIG" do
+        dw   _callback.to_sym - 1
+        db   _callback.to_sym.bank
+        db    _self._priority
+      end
+
+      ThreadCallback.new _config.to_sym
+    end
+  end
+
+  ;; The thread configuration
+  class ThreadConfig
+    declare :callback, as: :uint24
+    declare :priority, as: :uint8
+  end
+
+  ;; A thread callback
+  class ThreadCallback
+    macro initialize(config)
+      @config = config
+    end
+
+    macro allocate_and_queue_icb
+      load_address
+      JSL   Aoba::Thread.allocate_and_queue_icb_long
+    end
+
+    macro allocate_icb
+      load_address
+      JSL   Aoba::Thread.allocate_icb
+    end
+
+    macro allocate_and_queue
+      load_address
+      JSL   Aoba::Thread.allocate_and_queue_long
+    end
+
+    macro load_address
+      LDY   #@config.bank << 8
+      LDX   #@config
+    end
+  end
+
+  macro new(name, &block)
+    tc = ThreadCallbackBuilder.new(name)
+    block.call with_context tc
+    tc._create
+  end
+
+end

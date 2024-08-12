@@ -1,0 +1,27 @@
+module Aoba::Audio::Event::PlaySfx
+
+  ;; The event ID
+  ID = $0A
+
+  ;; The event
+  class Event < Base
+    ;; The ID of this SFX
+    declare :id, as: :uint8
+
+    ;; The panning of this SFX
+    declare :panning, as: :uint8
+  end
+
+  ;; Temporary RAM
+  scope :TempRAM, in: ActionRAM
+
+  ;; Loads the tileset
+  ;; @ignore-thread-safety
+  event_handler = make_audio_event do
+    Y.is_a! Event
+
+    LDX   Y[:id]
+    SNES_RAM_JMP Aoba::Audio::Action::PlaySfx.invoke_icb, :JMP, :JMP
+  end
+
+end

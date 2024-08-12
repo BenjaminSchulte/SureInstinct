@@ -1,0 +1,37 @@
+module Aoba::Palette::Event::FadePaletteGroup
+
+  ;; The event
+  class Event < Base
+    ;; The config address
+    declare :config, as: :uint16
+  end
+
+  ;; Configuration
+  Config = FadePalette::Config
+
+  ;; Loads the palette
+  ;; @ignore-thread-safety
+  ID = List.create "FadePaletteGroup" do
+    Y.is_a! Event
+    LDX   Y[:config]
+    X.is_a! Config
+    PHX
+
+    ;; Loads the palette to the cache
+    LDY   X[:palette_mask]
+    Debug.access_8bit_through_16bit
+    LDA   X[:speed]
+    STA   dp(Action::FadePalette.fade_speed)
+    LDA   X[:palette_address]
+    TAX
+    LDA   dp(Action::FadePalette.fade_speed)
+    JSR   Action::FadePalette.fade_all_to_palette_group
+
+    ;; Frees the configuration
+    PLX
+    Thread.safe do
+      JSL   Memory.free_miniblock_long
+    end
+  end
+
+end

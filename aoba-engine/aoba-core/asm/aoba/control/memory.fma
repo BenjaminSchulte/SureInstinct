@@ -1,0 +1,162 @@
+module Aoba::Control
+
+  locate_at bank: SYSTEM_ROM_BANK
+
+  module Flag
+    MOUSE_CONNECTED = $80
+
+    MOUSE_UPDATE_SPEED = $40
+
+    MOUSE_SPEED_MASK = $03
+  end
+
+  module ListenerFlag
+    MOUSE_EVENTS = $01
+  end
+
+  ;; Gamepad event listener
+  class Listener
+    ;; MUST BE FIRST - Points to the next gamepad
+    declare :next_listener, as: Listener.pointer(:uint16)
+
+    ;; The target thread
+    declare :thread_id, as: :uint8
+
+    ;; The flags
+    declare :listener_flags, as: :uint8
+
+    ;; The current pressed keys
+    declare :keydown_triggermask, as: :uint16
+
+    ;; The current pressed keys
+    declare :keyup_triggermask, as: :uint16
+  end
+
+  ;; The controller key mapping
+  class Mapping
+    declare :key_r, as: :uint16
+    declare :key_l, as: :uint16
+    declare :key_x, as: :uint16
+    declare :key_a, as: :uint16
+    declare :key_right, as: :uint16
+    declare :key_left, as: :uint16
+    declare :key_down, as: :uint16
+    declare :key_up, as: :uint16
+    declare :key_start, as: :uint16
+    declare :key_select, as: :uint16
+    declare :key_y, as: :uint16
+    declare :key_b, as: :uint16
+  end
+
+  ;; Represents a player
+  class GamepadPlayer
+    ;; MUST BE FIRST - The event listeners
+    declare :listener, as: Listener.pointer(:uint16)
+
+    ;; The gamepad index
+    declare :id, as: :uint8
+
+    ;; The currently pressed keys
+    declare :keys, as: :uint16
+
+    ;; The current new pressed buttons
+    declare :_keydown, as: :uint16
+
+    ;; The current new pressed buttons
+    declare :_keyup, as: :uint16
+
+    ;; The currently pressed keys
+    declare :old_keys, as: :uint16
+
+    ;; Processes flags
+    declare :flags, as: :uint8
+
+    ;; Current mouse position X
+    declare :mouse_x, as: :uint16
+
+    ;; Current mouse position y
+    declare :mouse_y, as: :uint16
+
+    ;; Maps all keys to its matching bitmask
+    include Mapping
+  end
+
+  ;; Pointer to the listener RAM
+  declare :listener_ram, as: :uint16, in: ::Memory::VariableRAM
+
+  ;; Pointer to the first listener
+  declare :free_listeners, as: Listener.pointer(:uint16), in: ::Memory::VariableRAM
+
+  ;; Maps the SNES slot to the player
+  declare :gamepad_map, as: GamepadPlayer.pointer(:uint16), length: MAX_GAMEPADS, in: ::Memory::VariableRAM
+
+  ;; Maps the SNES slot to the player
+  declare :free_gamepads, as: GamepadPlayer.pointer(:uint16), length: MAX_GAMEPADS, in: ::Memory::VariableRAM
+
+  ;; The actual gamepads
+  declare :gamepads, as: GamepadPlayer, length: MAX_GAMEPADS, in: ::Memory::VariableRAM
+
+  ;; Global event hook
+  declare :global_listeners, as: Listener.pointer(:uint16), in: ::Memory::VariableRAM
+
+  datablock id_to_gamepad_map
+    MAX_GAMEPADS.times do |i|
+      dw   gamepads + i * GamepadPlayer.size
+    end
+  end
+
+  ;; Initializes the RAM
+  ;; @ignore-thread-safety
+  def initialize
+    LDX   #MAX_CONTROL_LISTENERS * Listener.size
+    JSR   ::Aoba::Memory.allocate
+    X.is_a! Listener
+    STX   listener_ram
+    STX   free_listeners
+    STZ   global_listeners
+
+    ;; Sets up linked list for listeners
+    LDY   #MAX_CONTROL_LISTENERS - 1
+  _loop_listeners:
+    TXA
+    CLC
+    ADC   #Listener.size
+    STA   X[:next_listener]
+    TAX
+    DEY
+    BNZ   _loop_listeners
+    STZ   X[:next_listener]
+
+    ;; Sets up gamepad controls
+    MAX_GAMEPADS.times do |i|
+      STZ   gamepad_map + i + i
+      LDA   #gamepads + i * GamepadPlayer.size
+      STA   free_gamepads + i + i
+      STZ   gamepads + i * GamepadPlayer.size + GamepadPlayer.offset_of(:listener)
+    end
+
+    ;; Sets up IDs
+    CPU.set A: 8
+    LDA   #0
+    (MAX_GAMEPADS - 1).times do |i|
+      STA   gamepads + i * GamepadPlayer.size + GamepadPlayer.offset_of(:id)
+      INC   A
+      INC   A
+    end
+    STA   gamepads + (MAX_GAMEPADS - 1) * GamepadPlayer.size + GamepadPlayer.offset_of(:id)
+    CPU.set A: 16
+
+    ;; Sets up the default key mapping (inkey = outkey)
+    LDA   #LAST_KEY_BIT
+    LDX   #NUM_KEYS * 2 - 2
+  _loop_set_keymap:
+    MAX_GAMEPADS.times do |i|
+      STA   gamepads + i * GamepadPlayer.size + GamepadPlayer.offset_of(:key_r), X
+    end
+    LSR   A
+    DEX
+    DEX
+    BPL   _loop_set_keymap
+  end
+
+end

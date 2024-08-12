@@ -1,0 +1,62 @@
+module Channel
+
+  ;; A = sample volume
+  def update_volume
+    MOV   Y, A
+
+    MOV   A, dp(voice_bit_pointer)
+    AND   A, dp(enabled_voices)
+    BEQ   _return
+
+    ; Volume = sample_volume (A) * channel_volume  * song_volume
+    MOV   X, dp(pointer)
+    MOV   A, addr(volumes, X)
+    ASL   A
+    MUL   YA
+    MOV   A, dp(Script.main_volume)
+    ASL   A
+    MUL   YA
+
+    ; Check panning
+    MOV   A, addr(pannings, X)
+    CMP   A, #$80
+    BEQ   _is_center
+    BLT   _is_left
+
+  _is_right:
+    MOV   A, dp(voice_base_pointer)
+    INC   A
+    MOV   dp(SPC.DSP_ADDR), A
+    MOV   dp(SPC.DSP_DATA), Y
+
+    MOV   dp(SPC.DSP_ADDR), dp(voice_base_pointer)
+    MOV   A, addr(pannings, X)
+    EOR   A, #$FF
+    INC   A
+  _set_left:
+    ASL   A
+    MUL   YA
+    MOV   dp(SPC.DSP_DATA), Y
+  _return:
+    RET
+
+  _is_left:
+    MOV   A, dp(voice_base_pointer)
+    MOV   dp(SPC.DSP_ADDR), A
+    MOV   dp(SPC.DSP_DATA), Y
+    INC   A
+    MOV   dp(SPC.DSP_ADDR), A
+
+    MOV   A, addr(pannings, X)
+    BRA   _set_left
+
+  _is_center:
+    MOV   A, dp(voice_base_pointer)
+    MOV   dp(SPC.DSP_ADDR), A
+    MOV   dp(SPC.DSP_DATA), Y
+    INC   A
+    MOV   dp(SPC.DSP_ADDR), A
+    MOV   dp(SPC.DSP_DATA), Y
+  end
+
+end

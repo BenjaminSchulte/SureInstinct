@@ -1,0 +1,99 @@
+module Aoba::VBlank
+
+  ;; Flags
+  module Flag
+    ;; Notifies the thread after finishing
+    NOTIFY_SENDER_THREAD = $10
+
+    ;; DMA flag (only works for VRAM)
+    ;DMA_FIXED_ADDRESS = $20
+
+    ;; Whether the task has been processed already
+    PROCESSED = $40
+
+    ;; Bitmask for targets
+    TARGET_BITMASK = $F
+  end
+
+  ;; DMA flags
+  module DmaFlag
+    ;; Transfer direction
+    READ = $80
+
+    ;; Transfer direction
+    WRITE = $00
+
+    ;; Prevents incrementing source address
+    FIXED_TRANSFER = $08
+  end
+
+  ;; VRAM Flag
+  module VramFlag
+    ;; Increment low
+    INCREMENT_BYTE = $00
+
+    ;; Icnrement low
+    INCREMENT_WORD = $80
+
+    ;; Write to high byte
+    HIGH_TARGET = $40
+  end
+
+  ;; Modes
+  module Target
+    ;; Target
+    CGRAM = 1
+
+    ;; Target
+    VRAM = 2
+
+    ;; Target
+    OAM = 3
+
+    ;; Target
+    VRAM_SCROLL_Y = 4
+
+    ;; Target
+    VRAM_SCROLL_X = 5
+
+    ;; Copy 4 blocks to 4 different positions
+    VRAM_4_IN_1 = 6
+
+    ;; Writes a single tile X, but two tiles Y
+    VRAM_TILEMAP_X1_Y2 = 7
+
+    ;; Copies a single tile (special case)
+    VRAM_TILE = 8
+  end
+
+  ;; The maximum size of the queue
+  MAX_QUEUE_SIZE ||= $E0
+
+  ;; The register base for all callbacks
+  REGISTER_BASE = $4300
+
+  ;; Maximum stack size for a single command
+  VBLANK_MAX_COMMAND_STACK = $10
+
+  ;; The maximum VBLANK duration (in ticks)
+  macro VBLANK_MAX_DURATION
+    return (1364 * SNES::Arch::ESTIMATED_VBLANK_ROWS) / TICKS_PER_DMA_COPY_BYTE
+  end
+
+  ;; The CGRAM header duration
+  ;; 1 byte equals around 4 ticks
+  CGRAM_VBLANK_DURATION ||= 328 / TICKS_PER_DMA_COPY_BYTE
+
+  ;; The CGRAM header duration
+  ;; 1 byte equals around 4 ticks
+  OAM_VBLANK_DURATION ||= 328 / TICKS_PER_DMA_COPY_BYTE
+
+  ;; The VRAM header duration
+  ;; 1 byte equals around 4 ticks
+  VRAM_VBLANK_DURATION ||= 328 / TICKS_PER_DMA_COPY_BYTE
+
+  ;; The VRAM header duration
+  ;; 1 byte equals around 4 ticks
+  OAM_VBLANK_DURATION ||= 328 / TICKS_PER_DMA_COPY_BYTE
+
+end

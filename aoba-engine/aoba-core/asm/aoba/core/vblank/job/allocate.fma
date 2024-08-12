@@ -1,0 +1,57 @@
+module Aoba::VBlank::Job
+
+  ;; Allocates a Job
+  ;;
+  ;; @param A flags
+  ;; @param X dmaflags + userflags
+  ;; @returns X Job
+  def allocate_icb
+    routine do
+      is_thread_safe
+      input A
+
+      execute do
+        X.is_a! JobInstance
+
+        ;; Pops a record from the stack
+        SEI
+        PHX
+        LDX   free_jobs
+        BNZ   _has_free_job
+
+        fatal_error "TODO: Handle nonfree job"
+
+      _has_free_job:
+        LDY   X[:next_job]
+        STY   free_jobs
+        CLI
+
+        Debug.mark_ram_X_unused JobInstance.size
+        
+        ;; Prepares the job
+        STZ   X[:next_job]
+        STA   X[:flags]
+        PLA
+        STA   X[:dma_flags]
+        LDA   Memory.active_thread_id.long
+        STA   X[:thread_id]
+      end
+    end
+  end
+
+  ;; Allocates a Job
+  def allocate_icb_long
+    allocate_icb
+    RTL
+  end
+
+  ;; Allocates a Job
+  ;; @ignore_thread_safety
+  def allocate_long
+    CPU.with_bank! VARIABLE_RAM_BANK do
+      allocate_icb
+    end
+    RTL
+  end
+
+end

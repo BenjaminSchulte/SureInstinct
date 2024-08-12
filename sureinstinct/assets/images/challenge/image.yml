@@ -1,0 +1,10 @@
+name: Challenge
+
+color_depth: 16
+tile_size: {width: 8, height: 8}
+
+variants:
+  default:
+    image: image.png
+    priority: ../stageselect/bg1-priority.png
+    palette: ../stageselect/bg1-palette.png

@@ -1,0 +1,94 @@
+module Memory
+  STACK_SIZE = $20
+
+  ;; The ROM memory map
+  ROM = ::MemoryMap.new
+  ROM.used_for_static_data
+  ;ROM.used_for_dynamic_data
+  ROM.no_banks $0000..$FFFF
+  ROM.address $0000..$FFFF, located_at: 0
+  
+  SPCRAM = ROM
+
+  scope :Page0, in: SPCRAM, address: $00..$EF
+  scope :Page1, in: SPCRAM, address: $100..($1FF - STACK_SIZE)
+  scope :stack, in: SPCRAM, address: ($1FF - STACK_SIZE)..$1FF, length: STACK_SIZE
+  scope :RAM, in: SPCRAM, address: $200..$FFFF
+
+  scope :SharedPage0, in: Page0, shared: true
+end
+
+module SPC
+  scope :_registers, in: Memory::ROM
+  declare :CONTROL, as: :uint8, in: _registers, at: $F1
+  declare :DSP_ADDR, as: :uint8, in: _registers, at: $F2
+  declare :DSP_DATA, as: :uint8, in: _registers, at: $F3
+  declare :PORT0, as: :uint8, in: _registers, at: $F4
+  declare :PORT1, as: :uint8, in: _registers, at: $F5
+  declare :PORT2, as: :uint8, in: _registers, at: $F6
+  declare :PORT3, as: :uint8, in: _registers, at: $F7
+  declare :TIMER0, as: :uint8, in: _registers, at: $FA
+  declare :TIMER1, as: :uint8, in: _registers, at: $FB
+  declare :TIMER2, as: :uint8, in: _registers, at: $FC
+  declare :COUNTER0, as: :uint8, in: _registers, at: $FD
+  declare :COUNTER1, as: :uint8, in: _registers, at: $FE
+  declare :COUNTER2, as: :uint8, in: _registers, at: $FF
+
+  CTRL_TIMER0 = $1
+  CTRL_TIMER1 = $2
+  CTRL_TIMER2 = $4
+
+  CTRL_PC10 = $10
+  CTRL_PC32 = $20
+end
+
+module DSP
+  ; Channel registers
+  VOL_L = $00
+  VOL_R = $01
+  PITCH_L = $02
+  PITCH_H = $03
+  SRCN = $04
+  ADSR_L = $05
+  ADSR_R = $06
+  GAIN = $07
+  ENVX = $08
+  OUTX = $09
+
+  ; General registers
+  MVOL_L = $0C
+  MVOL_R = $1C
+  EVOL_L = $2C
+  EVOL_R = $3C
+  KON = $4C
+  KOFF = $5C
+  FLG = $6C
+  ENDX = $7C
+
+  EFB = $0D
+  PMON = $2D
+  NON = $3D
+  EON = $4D
+  DIR = $5D
+  ESA = $6D
+  EDL = $7D
+
+  ; Echo registers
+  COEF = $0F
+
+  ; Flags
+  FLG_RESET = $80
+  FLG_MUTE = $40
+  FLG_ECHO_DISABLE = $20
+end
+
+macro __breakpoint
+  PUSH  A
+  MOV   A, #$FF
+  MOV   addr($FFDE), A
+  MOV   addr($FFDF), A
+  MOV   A, #$7F
+  MOV   addr($FFFF), A
+  POP   A
+  BRK
+end

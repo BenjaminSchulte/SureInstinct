@@ -1,0 +1,17 @@
+functions:
+  Debug.BRK:
+    external: __aobascript_Debug_BRK
+
+  Debug.PrintRegisters:
+    external: __aobascript_Debug_PrintRegisters
+
+  Debug.Log:
+    external: __aobascript_Debug_Log
+    generator: aoba.debug.log
+    parameters:
+      message: {type: text}
+
+globals:
+  - Debug.BRK
+  - Debug.PrintRegisters
+  - Debug.Log

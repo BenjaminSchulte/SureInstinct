@@ -1,0 +1,59 @@
+MAX_NUM_LEVELS = 5
+NUM_MISSIONS = 4 ;;; IF YOU CHANGE THIS, THE CODE MUST BE ADJUSTED FOR THE OFFSET CALCULATION
+
+scope :LevelStatusStorage, root: true, global: true, persistent: true
+
+declare :num_unlocked_levels, in: LevelStatusStorage, as: :number, min: 0, max: 15, default: 1
+declare :num_visible_levels, in: LevelStatusStorage, as: :number, min: 0, max: 15, default: 0
+
+macro add_menu(id)
+  dw   0
+  db   __asset("Image16", "stageselect/name_#{id}", "variant_index")
+  dw   0
+
+  NUM_MISSIONS.times do |mission|
+    dw   0
+  end
+  NUM_MISSIONS.times do |mission|
+    dw   0
+  end
+  NUM_MISSIONS.times do |mission|
+    dw   0
+  end
+
+  db 0
+  db 0
+  db 0
+end
+
+macro add_level(id)
+  dw   __asset("Level", id, "address")
+  db   __asset("Image16", "stageselect/name_#{id}", "variant_index")
+  dw   __asset("Image16", "map_#{id}", "address")
+  
+  NUM_MISSIONS.times do |mission|
+    dw   declare("level_#{id}_best_score#{mission}", as: :number, in: LevelStatusStorage, min: 0, max: 65535, default: 0).id
+  end
+  NUM_MISSIONS.times do |mission|
+    dw   declare("level_#{id}_best_time#{mission}", as: :number, in: LevelStatusStorage, min: 0, max: 65535, default: 0).id
+  end
+  NUM_MISSIONS.times do |mission|
+    dw   declare("level_#{id}_rank#{mission}", as: :number, in: LevelStatusStorage, min: 0, max: 6, default: 0).id
+  end
+
+  db 0
+  db 0
+  db 0
+end
+
+datablock level_list
+  dw   MAX_NUM_LEVELS
+  dw   num_unlocked_levels.id
+  dw   num_visible_levels.id
+  add_level :tutorial
+  add_level :stage1
+  add_level :stage2
+  add_level :stage3
+  add_menu :challenge
+  ;add_level :debug
+end

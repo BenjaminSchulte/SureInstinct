@@ -1,0 +1,45 @@
+module Aoba::Tileset::Loader
+
+  class TileLayerIndexParameter < Parameter
+    macro initialize(storage, layer)
+      super
+
+      @storage = storage
+      @layer = layer
+
+      @TempRAM = MemoryScope.new("ImageParameter", in: nil, for: ::SNES::MemoryMap::RAM)
+      @_tileset_index = MemoryVariable.new("_tileset_index", as: Aoba::Compression::TilesetIndex::State, in: @TempRAM)
+    end
+
+    macro preconfigure
+      @loader.SharedTempRAM.include @TempRAM
+    end
+
+    macro size_in_bytes
+      return 3
+    end
+
+    macro load
+      ;; Configures the decompression for the BG layer
+      CPU.set A: 8
+      LDA   #FIXED_RAM_BANK
+      STA   dp(@_tileset_index.target_address + 2)
+
+      @loader.read_header_at @offset + 2
+      STA   dp(@_tileset_index.source_address + 2)
+      CPU.set A: 16
+
+      @loader.read_header_at @offset
+      STA   dp(@_tileset_index.source_address)
+      LDA   #@storage.tiles[@layer]
+      STA   dp(@_tileset_index.target_address)
+
+      ;; Decompresses the BG layer
+      TDC
+      ORA   #@_tileset_index
+      JSL   Aoba::Compression::TilesetIndex.execute_long
+      LDX   dp(@loader._current_tileset)
+    end
+  end
+
+end

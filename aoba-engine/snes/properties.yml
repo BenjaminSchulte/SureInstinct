@@ -1,0 +1,20 @@
+debug_enabled:
+  name: Enable debugging
+  description: Prints debugging logs and adds some additional security checks
+  type: boolean
+  default: false
+  property: Debug::ENABLED
+
+debug_color_log:
+  name: Colored log
+  description: Debug output log uses colored output
+  type: boolean
+  default: true
+  property: Debug::COLORED_LOG
+
+enable_sa1:
+  name: SA1 enabled
+  description: Enables the SA-1 enhancement chip. This improves the performance of the game but might not work on every cartridge anymore.
+  type: boolean
+  default: false
+  property: SNES::ENABLE_SA1

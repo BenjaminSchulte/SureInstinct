@@ -1,0 +1,28 @@
+module Aoba::Composer::Event::FadeScreen
+
+  ;; The event
+  class Event < Base
+    ;; The target brightness
+    declare :brightness, as: :uint8
+
+    ;; The speed (number of frames per tick)
+    declare :speed, as: :uint8
+  end
+
+  ;; Starts fading
+  ;; @ignore-thread-safety
+  ID = List.create "FadeScreen" do
+    Y.is_a! Event
+
+    CPU.set A: 8
+    LDA   Y[:brightness]
+    STA   Action::FadeScreen.target_brightness
+    LDA   Y[:speed]
+    CPU.set A: 16
+    
+    ;CPU.with_bank FIXED_RAM_BANK, from_bank: VARIABLE_RAM_BANK do
+    JSR   Action::FadeScreen.start
+    ;end
+  end
+
+end

@@ -1,0 +1,21 @@
+module Aoba::Font::Event
+  class Base < Aoba::Thread::Event::Base
+    declare :event_id, as: :uint8
+  end
+
+  List = Aoba::Thread::EventHandlerList.new(FONT_ROM_BANK)
+end
+
+require "render_text"
+require "resume_render_text"
+
+module Aoba::Font::Event
+
+  datablock routines
+    dw   RenderText.event_handler             ; 1
+    dw   ResumeRenderText.event_handler       ; 2
+  end
+
+  MAX_EVENT_ID = 2
+
+end

@@ -1,0 +1,24 @@
+module Aoba::Compression::DialogTiles
+
+  locate_at bank: COMPRESSION_DIALOGTILES_ROM_BANK
+
+  class State
+
+    ;; The total size of bytes
+    declare :size, as: :uint16
+
+    ;; The tile index offset
+    declare :tile_index_offset, as: :uint16
+    
+    ;; The current decompress mdoe
+    declare :mode, as: :uint16
+    
+    ;; The current loop times
+    declare :repeat_times, as: :uint16
+
+    ;; The current tile
+    declare :current_tile, as: :uint16
+
+  end
+
+end

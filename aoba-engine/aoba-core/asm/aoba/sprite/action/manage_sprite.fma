@@ -1,0 +1,536 @@
+module Aoba::Sprite::Action::ManageSprite
+
+  ;; Creates the sprite
+  ;;
+  ;; @returns X Instance
+  ;; @ignore-thread-safety
+  def allocate
+    ;; Allocates the sprite RAM
+    LDX   #Instance.size
+    JSL   Memory.waitfor_allocate_long
+    X.is_a! Instance
+
+    ;; Resets the sprite instance
+    Instance.event.invoke :reset16
+    CPU.set A: 8
+    Instance.event.invoke :reset8
+    CPU.set A: 16
+
+    JMP   configure_sprite_id
+  end
+
+  ;; Recalculates the sprite after position
+  ;; @param X Instance
+  def recalculate_after_set_position
+    TXY
+    Y.is_a! Instance
+    LDX   #0
+    LDA   Y[:x]
+    BMI   _skip_calc_x
+    (SPRITE_MAX_VISIBLE_POSITION_X >> 5).fast_divided_register_A
+    AND   #$FE
+    TAX
+  _skip_calc_x:
+    LDA   axis_collision_bitmask.long, X
+    STA   Y[:collision_x_bitmask]
+
+    LDX   #0
+    LDA   Y[:y]
+    BMI   _skip_calc_y
+    (SPRITE_MAX_VISIBLE_POSITION_Y >> 5).fast_divided_register_A
+    AND   #$FE
+    TAX
+  _skip_calc_y:
+    LDA   axis_collision_bitmask.long, X
+    STA   Y[:collision_y_bitmask]
+
+    TYX
+    JMP   Collision::NPC.recalculate_bounding_box_in_X
+  end
+
+  ;; Assigns a frame directly
+  ;;
+  ;; @param A frame group ID
+  ;; @param X Instance
+  ;; @param Y frame ID * 2
+  def assign_direct_frame
+    X.is_a! Instance
+    CMP   X[:calculated_animation_id]
+    BNE   _changed_frame_group_id
+
+    TYA
+    CMP   X[:animation_script_pointer]
+    BNE   _changed_frame_id
+
+    LDA   X[:animation_flags] - 1
+    BPL   _changed_direct_mode
+
+    RTS
+    
+    ; ---
+
+  _changed_frame_group_id:
+    STA   X[:calculated_animation_id]
+  _changed_frame_id:
+    TYA
+    STA   X[:animation_script_pointer]
+  _changed_direct_mode:
+    LDA   X[:animation_flags] - 1
+    ORA   #AnimationFlag.DIRECT_FRAME_MODE << 8
+    STA   X[:animation_flags] - 1
+    STZ   X[:animation_id]
+    STZ   X[:animation_frame_reference_pointer]
+
+    JMP   Rendering.queue_sprite
+  end
+
+  ;; Sets the sprite from the sprite ID
+  ;;
+  ;; @param A sprite ID
+  ;; @param X Instance
+  def assign_sprite_id
+    X.is_a! Instance
+    STA   X[:sprite_id]
+    PHX
+    TXY
+
+    ;; Reads the sprite address
+    ASL   A
+    TAX
+    CPU.set A: 8
+    LDA   SpriteIndexBanks.long, X
+    STA   Y[:sprite_header] + 2
+    CPU.set A: 16
+    LDA   SpriteIndexAddresses.long, X
+    STA   Y[:sprite_header]
+
+    PLX
+    X.is_a! Aoba::Sprite::Instance
+
+    __configure_palette
+    __configure_sprite_slot_allocation
+  end
+  ;; Configures a palette
+  macro __configure_palette
+    ;; Copies the sprite header pointer to DP
+    LDA   X[:sprite_header]
+    STA   dp(_calc0)
+    CPU.set A: 8
+    LDA   X[:sprite_header] + 2
+    STA   dp(_calc0) + 2
+    STX   dp(_calc1)
+
+    ;; Loads the palette group, index and ID
+    LDY   #SpriteRomHeader.offset_of(:default_palette_index)
+    LDA   _calc0.indirect.long, Y
+    STA   X[:current_palette_index]
+    STZ   X[:new_palette_index]
+    CPU.set A: 16
+    AND   dp(x00FF)
+    INC   A
+    ASL   A
+    CLC
+    ADC   X[:palette_group_id]
+    TXY
+    TAX
+    LDA   Aoba::Palette::DATA_ROM_BANK.as_bank(0).long, X
+    STA   Y[:palette_id]
+    TYX
+
+    Action::ManagePalette.allocate_sprite_slot
+  end
+
+  ;; Configures the sprite allocation configuration
+  macro __configure_sprite_slot_allocation
+    CPU.set A: 8
+    LDY   #SpriteRomHeader.offset_of(:max_frame_slot_size)
+    LDA   _calc0.indirect.long, Y
+    CMP   #MAX_SLOTS_PER_DEFAULT_SPRITE + 1
+    BLT   _skip_slot_allocation
+
+    ;; Allocates the mini RAM block for the sprite slot
+    CPU.set A: 16
+    AND   dp(x00FF)
+    ASL   A
+    ASL   A
+    CLC
+    ADC   #Slot::SlotAllocation.size - MAX_SLOTS_PER_DEFAULT_SPRITE * 4
+    TAX
+    LDA   thread_id
+    SEI
+    JSL   Memory.allocate_miniblock_long
+    CLI
+
+    ;; Stores the slot pointer    
+    LDY   dp(_calc1)
+    Y.is_a! Instance
+    X.is_a! Slot::SlotAllocation
+    STZ   X[:allocated_slot_size]
+    TXA
+    STA   Y[:slot_pointer]
+    TYX
+
+    X.is_a! Instance
+
+    ;; Marks this to be custom allocated
+    CPU.set A: 8
+    LDA   X[:basic_flags]
+    ORA   #BasicFlag.HAS_DETACHED_SPRITE_SLOT_ALLOCATION
+    STA   X[:basic_flags]
+  
+  _skip_slot_allocation:
+    CPU.set A: 16
+  end
+
+  ;; Assigns the animation ID
+  ;;
+  ;; @param A animation ID
+  ;; @param X Instance
+  def assign_animation_and_reset_movement
+    Thread.assert_thread thread_id
+    Debug.assert_register_size A: 16
+
+    X.is_a! Instance
+    STZ   X[:speed_x]
+    STZ   X[:speed_x_decimal]
+    STZ   X[:speed_y]
+    STZ   X[:speed_y_decimal]
+    STZ   X[:walk_speed]
+
+    JMP   assign_animation_id
+  end
+
+  ;; Assigns the animation ID
+  ;;
+  ;; @param A animation ID
+  ;; @param X Instance
+  def assign_animation_id
+    Thread.assert_thread thread_id
+    Debug.assert_register_size A: 16
+
+    X.is_a! Instance
+    CPU.set A: 8
+    STA   X[:animation_id]
+    CPU.set A: 16
+    AND   dp(x00FF)
+
+  _is_directional_animation:
+    ASL   A
+    ASL   A
+    CPU.set A: 8
+    ORA   X[:direction]
+    PHA
+    LDA   #1
+    STA   X[:animation_duration]
+    PLA
+    CPU.set A: 16
+    
+  _is_new_animation:
+    STA   X[:calculated_animation_id]
+    STZ   X[:animation_script_pointer]
+    Debug.access_8bit_through_16bit
+    LDA   X[:animation_flags]
+    AND   #$FFFF ^ AnimationFlag.DIRECT_FRAME_MODE
+    STA   X[:animation_flags]
+    JMP   Rendering.queue_sprite
+  end
+  
+  ;; Unqueue this from the parent sprite
+  macro _unqueue_from_parent_sprite
+    ;; X=self A=next Y=previous
+    LDA   X[:next_sprite]
+    LDY   X[:previous_sprite]
+    BNZ   _has_previous_sprite
+
+  _is_first_sprite:
+    X.is_a! Instance
+    Y.is_a! Instance
+    LDY   X[:parent_sprite]
+    STA   Y[:attached_sprite_above]
+    LDY   #0
+    BRA   _test_next_sprite
+
+  _has_previous_sprite:
+    STA   Y[:next_sprite]
+
+    ;; X=self A=next Y=previous
+  _test_next_sprite:
+    CMP   #0
+    BZE   _is_last_sprite
+
+    ;; X=self A=next Y=previous
+  _has_next_sprite:
+    TAX
+    TYA
+    X.is_a! Instance
+    Y.is_a! Instance
+    STA   X[:previous_sprite]
+
+  _is_last_sprite:
+    LDA   #0
+    STA   X[:parent_sprite]
+  end
+
+  ;; Unqueues the sprite
+  ;;
+  ;; @param X Instance
+  def unqueue
+    routine do
+      make_thread_safe
+
+      execute do
+        X.is_a! Instance
+        Y.is_a! Instance
+
+        LDA   X[:parent_sprite]
+        BZE   _no_parent_sprite
+
+        _unqueue_from_parent_sprite
+        BRA   _skip_unqueue
+
+      _no_parent_sprite:
+        ;; Tests/Sets the queue flag
+        LDA   X[:basic_flags]
+        BIT   #BasicFlag.IN_QUEUE
+        BZE   _skip_unqueue
+        AND   #$FFFF ^ BasicFlag.IN_QUEUE
+        STA   X[:basic_flags]
+
+        ;; X=self A=next Y=previous
+        LDA   X[:next_sprite]
+        LDY   X[:previous_sprite]
+        BNZ   _has_previous_sprite
+
+      _is_first_sprite:
+        STA   first_sprite
+        BRA   _test_next_sprite
+
+        ; --
+
+      _has_previous_sprite:
+        STA   Y[:next_sprite]
+
+        ;; X=self A=next Y=previous
+      _test_next_sprite:
+        CMP   #0
+        BZE   _is_last_sprite
+
+        ;; X=self A=next Y=previous
+      _has_next_sprite:
+        TAX
+        TYA
+        STA   X[:previous_sprite]
+
+      _is_last_sprite:
+      _skip_unqueue:
+      end
+    end
+  end
+
+  ;; Queues the sprite
+  ;;
+  ;; @param X Instance
+  def queue
+    routine do
+      is_thread_safe
+
+      execute do
+        X.is_a! Instance
+
+        ;; Tests/Sets the queue flag
+        LDA   X[:basic_flags]
+        BIT   #BasicFlag.IN_QUEUE | BasicFlag.DESTROYED
+        BNZ   _skip_queue
+        ORA   #BasicFlag.IN_QUEUE
+        Debug.access_8bit_through_16bit
+        STA   X[:basic_flags]
+
+        ;; Adds as first sprite
+        LDA   first_sprite
+        STA   X[:next_sprite]
+        STZ   X[:previous_sprite]
+        STX   first_sprite
+
+        ;; Updates the 2nd sprite
+        TAY
+        BZE   _no_old_sprite
+        
+        TXA
+        Y.is_a! Instance
+        STA   Y[:previous_sprite]
+      
+      _skip_queue:
+      _no_old_sprite:
+      end
+    end
+  end
+
+  ;; Attaches a sprite
+  ;; @param X parent sprite
+  ;; @param Y child
+  def attach_sprite
+    X.is_a! Instance
+    Y.is_a! Instance
+
+    LDA   #0
+    STA   Y[:next_sprite]
+    STA   Y[:previous_sprite]
+
+    LDA   X[:attached_sprite_above]
+    BZE   _is_first_attached_sprite
+
+  _has_attached_sprite:
+    STA   Y[:next_sprite]
+    PHX
+    TAX
+    TYA
+    X.is_a! Instance
+    STA   X[:previous_sprite]
+    PLX
+
+  _is_first_attached_sprite:
+    TYA
+    STA   X[:attached_sprite_above]
+    TXA
+    STA   Y[:parent_sprite]
+  end
+
+  ;; Updates all attached sprites
+  macro _update_all_attached_sprites
+    PHX
+    LDA   X[:renderable_configuration_flags]
+    AND   #RenderableConfigurationFlag::IS_VISIBLE_ON_SCREEN
+    PHA
+
+    TYX
+  _loop:
+    STX   dp(current_sprite)
+
+    X.is_a! Instance
+    LDA   X[:renderable_configuration_flags]
+    AND   #RenderableConfigurationFlag::IS_VISIBLE_ON_SCREEN
+    ORA   1, S
+    STA   X[:renderable_configuration_flags]
+
+    Action::Rendering.on_timer
+
+    LDX   dp(current_sprite)
+    X.is_a! Instance
+    LDY   X[:next_sprite]
+    TYX
+    BNZ   _loop
+
+    PLA
+    PLX
+  end
+
+  ;; Updates all sprites
+  def update_all_sprites
+    Thread.assert_thread thread_id
+
+    ;; Sprites are freezed
+    LDA   global_flags
+    LSR   A
+    BCS   _rts
+
+    ::Aoba::Event.invoke :snes_nosa1_update unless SNES::ENABLE_SA1
+
+    LDX   first_sprite
+    X.is_a! Instance
+    BZE   _skip_loop
+
+  _loop:
+    STX   dp(current_sprite)
+    LDA   X[:basic_flags]
+    AND   #BasicFlag::SKIP_UPDATE_ROUTINE
+    BNZ   _skip_sprite
+
+    Action::Rendering.on_timer
+
+    Instance.event.invoke :update
+
+    LDX   dp(current_sprite)
+    X.is_a! Instance
+    LDY   X[:attached_sprite_above]
+    BZE   _no_attached_sprite_above
+
+    _update_all_attached_sprites
+
+  _no_attached_sprite_above:
+  _skip_sprite:
+    X.is_a! Instance
+    LDY   X[:next_sprite]
+    TYX
+    BNZ   _loop
+
+  _skip_loop:
+  _rts:
+  end
+
+  ;; Finds a sprite ID
+  def configure_sprite_id
+    X.is_a! Instance
+    LDY   #MAX_NUM_SPRITES * 2 - 2
+    
+  _lookup_loop:
+    LDA   sprite_index_table, Y
+    BIT   #$FFFC
+    BZE   _found_slot
+    DEY
+    DEY
+    BNZ   _lookup_loop ; prevents zero ID
+
+    fatal_error "no free slots in sprite index table"
+
+  _found_slot:
+    INC   A
+    XBA
+    LSR   A
+    LSR   A
+    CPU.set A: 8
+    STA   dp(_calc0)
+    TYA
+    LSR   A
+    ORA   dp(_calc0)
+    STA   X[:id]
+    CPU.set A: 16
+    TXA
+    STA   sprite_index_table, Y
+  end
+
+  ;; Looks up a sprite by its ID
+  ;;
+  ;; @param A sprite ID
+  ;; @returns X Instance
+  def find_sprite_by_sprite_id
+    PHP
+    SEI
+    Debug.only do
+      PHA
+    end
+    AND   #MAX_NUM_SPRITES.bitmask
+    ASL   A
+    TAX
+    LDA   sprite_index_table, X
+    TAX
+    Debug.only do
+      AND   #$FFFC
+      BZE   _fatal_error
+
+      X.is_a! Instance
+      PLA
+      EOR   X[:id]
+      AND   #$FF
+      BNZ   _fatal_error
+    end
+    PLP
+    RTS
+
+  _fatal_error:
+    Debug.fatal "Could not find sprite ID"
+    PLP
+    Debug.BRK
+    RTS
+  end
+
+end

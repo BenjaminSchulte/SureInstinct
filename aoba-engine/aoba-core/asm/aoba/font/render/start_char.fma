@@ -1,0 +1,267 @@
+module Aoba::Font::Render::Stage::StartChar
+
+  ;; RAM
+  ;; scope :TempRAM, in: StageRAM
+  ;; !!WARNING!! if you need temporary RAM in here, you should keep in mind,
+  ;; that the RenderChar stage ram is also being used in this stage
+
+  ;; Reads the character offset
+  macro _read_character_offset
+    ASL   A
+    TAY
+    LDA   font_address.long.indirect, Y
+  end
+
+  ;; Copies the character header to the next stages ram
+  macro _copy_character_header
+    INC   A
+    INC   A
+    TAY
+
+    ;; Reads the number of tiles 
+    LDA   font_address.long.indirect, Y
+    AND   dp(x00FF)
+    STA   dp(RenderChar.num_tiles_x)
+    INY
+
+    ;; Reads the character height
+    LDA   font_address.long.indirect, Y
+    STA   dp(RenderChar.character_height)
+    INY
+    INY
+
+    ;; Reads the offset to the left
+    LDA   font_address.long.indirect, Y
+    STA   dp(RenderChar.offset_left)
+    INY
+    INY
+
+    ;; Data pointer
+    STY   dp(RenderChar.current_character_offset)
+  end
+
+  ;; Calculates the start position
+  macro _calculate_start_position
+    CPU.set A: 8
+    STZ   dp(calc0 + 1)
+
+    ;; Generates a 16bit value from offset_left
+    LDA   dp(RenderChar.offset_left)
+    STA   dp(calc0)
+    BPL   _is_positive
+    DEC   dp(calc0 + 1)
+  _is_positive:
+
+    ;; Calculates the new position
+    CPU.set A: 16
+    LDX   dp(state)
+    X.is_a! State
+    LDA   X[:current_x_position]
+    CLC
+    ADC   dp(calc0)
+    BPL   _result_is_positive
+    LDA   #0
+
+    ;; Stores the result
+  _result_is_positive:
+    STA   X[:current_x_position]
+    AND   #$7
+    ASL   A
+    STA   dp(RenderChar.shift_pixels)
+  end
+
+  ;; Calculates the line length of this row
+  def execute
+    Thread.assert_thread thread_id
+
+    ;; Resumes with the next character
+  _skip_character:
+    LDX   dp(state)
+    X.is_a! State
+    LDA   dp(current_line)
+    CMP   X[:end_of_line]
+    BNE   _start
+
+    ;; We reached the end of the line
+  _end_of_line:
+    CPU.set A: 8
+    LDA   dp(internal_status)
+    AND   #InternalStatus.END_OF_INPUT | InternalStatus.END_OF_PAGE
+    TSB   dp(status)
+    CPU.set A: 16
+    LDA   dp(current_next_line)
+    INC   A
+    INC   A
+    STA   dp(current_line)
+    SEC
+    RTS
+
+    ;; The next character is a command
+  _special_command:
+    JSR   _execute_special_command
+    BCC   _skip_character
+    RTS
+
+  _execute_special_command:
+    INX
+    INX
+    STX   dp(current_line)
+    AND   dp(x00FF)
+    ASL   A
+    TAX
+    JMP   command_action.indirect, X
+
+    ;; Reads the current character
+  _start:
+    TAX
+  _not_end_of_line:
+    LDA   0, X
+    BMI   _special_command
+
+    _read_character_offset
+    _copy_character_header
+    _calculate_start_position
+
+    INC   dp(current_line)
+    INC   dp(current_line)
+
+    CLC
+
+  _rts:
+    RTS
+  end
+
+  ;; Sets the color
+  def _set_color
+    ; $E1 -> 0, $E2 -> 1, $E3 -> 2
+    CPU.set A: 8
+    LSR   A
+    DEC   A
+    LDX   dp(state)
+    X.is_a! State
+    STA   dp(calc0)
+    LDA   X[:color_and_flags]
+    AND   #$FF ^ Flag::COLOR_MASK
+    ORA   dp(calc0)
+    STA   X[:color_and_flags]
+    CPU.set A: 16
+    CLC
+  end
+
+  ;; No action for rendering
+  def _nop
+    CLC
+  end
+
+  ;; Starts an option
+  def _option
+    A.pretend_size 16
+    LDX   dp(state)
+
+    ;; Calculates the next address
+    X.is_a! State
+    LDA   X[:current_x_position]
+    STA   dp(calc0)
+    CLC
+    AND   #$F
+    BZE   _skip_align_to_tile
+    EOR   #$F
+    ADC   dp(calc0)
+  _skip_align_to_tile:
+    STA   dp(calc0)
+    ADC   #OPTION_NUM_TILES * 16
+    STA   X[:current_x_position]
+
+    ;; Calculates the tile index
+    LDA   dp(calc0)
+    LSR   A
+    LSR   A
+    LSR   A
+    LSR   A
+    CPU.set A: 8
+    XBA
+    ORA   X[:current_line_index]
+    XBA
+    CPU.set A: 16
+    STA   dp(calc0)
+
+    ;; Reads the write offset
+    CPU.set A: 8
+    TDC
+    XBA
+    LDA   X[:current_option_offset]
+    STA   dp(calc0 + 2)
+    STZ   dp(calc0 + 3)
+    INC   A
+    INC   A
+    STA   X[:current_option_offset]
+    CPU.set A: 16
+    ;STA   dp(calc0 + 2)
+
+    ;; Writes the value
+    TXA
+    CLC
+    ADC   dp(calc0 + 2)
+    TAY
+    Y.is_a! State
+    LDA   dp(calc0)
+    STA   Y[:option_address]
+    CLC
+  end
+
+  ;; Delay one frame
+  def _delay
+    CPU.set A: 8
+    ;; Updates the status
+    LDA   dp(status)
+    AND   #$FF ^ Status.ACTION_BITMASK
+    ORA   #Status.ACTION_WAIT
+    STA   dp(status)
+    
+    ;; Reads the delay in frames
+    LDX   dp(current_line)
+    LDA   0, X
+    INX
+    STX   dp(current_line)
+
+    LDX   dp(state)
+    X.is_a! State
+    STA   X[:action_parameter]
+    CPU.set A: 16
+    SEC
+  end
+
+  ;; Waits for confirm
+  def _confirm 
+    A.pretend_size 16
+    CPU.set A: 8
+    LDA   dp(status)
+    AND   #$FF ^ Status.ACTION_BITMASK
+    ORA   #Status.ACTION_CONFIRM
+    STA   dp(status)
+    CPU.set A: 16
+    SEC
+  end
+
+  ;; Length of the command
+  datablock command_action
+    dw   _nop          ; $E0 - end of text
+    dw   _set_color    ; $E1 - color 0
+    dw   _set_color    ; $E2 - color 1
+    dw   _set_color    ; $E3 - color 2
+    dw   _nop          ; $E4 - align left
+    dw   _nop          ; $E5 - align middle
+    dw   _nop          ; $E6 - align right
+    dw   _nop          ; $E7 - new line
+    dw   _nop          ; $E8 - new page
+    dw   _option       ; $E9 - option
+    dw   _confirm      ; $EA - wait for confirm
+    dw   _delay        ; $EB - delay
+    dw   _nop          ; $EC
+    dw   _nop          ; $ED
+    dw   _nop          ; $EE
+    dw   _nop          ; $EF
+  end
+
+
+end

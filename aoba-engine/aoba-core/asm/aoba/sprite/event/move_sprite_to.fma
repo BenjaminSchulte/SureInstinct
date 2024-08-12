@@ -1,0 +1,35 @@
+module Aoba::Sprite::Event::MoveSpriteTo
+
+  ;; The event
+  class Event < MoveSpriteRelative::Event
+    ;; The sprite ID
+    declare :sprite_id, as: :uint8
+
+    ;; The speed ID
+    declare :speed_id, as: :uint8
+    
+    ;; The number of half fields X
+    declare :x, as: :int8
+    
+    ;; The number of half fields Y
+    declare :y, as: :int8
+  end
+
+  ;; Creates the sprite
+  ;; @ignore-thread-safety
+  ID = List.create "MoveSpriteTo" do
+    Y.is_a! Event
+    LDA   Y[:sprite_id]
+    Action::ManageSprite.find_sprite_by_sprite_id
+    X.is_a! Instance
+    STX   dp(Action.MoveSprite.sprite)
+
+    ;;
+    Debug.BRK
+    NOP
+    NOP
+    NOP
+    NOP
+  end
+
+end

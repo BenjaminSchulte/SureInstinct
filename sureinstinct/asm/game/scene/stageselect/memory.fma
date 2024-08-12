@@ -1,0 +1,66 @@
+module Game::Scene::StageSelect
+
+  locate_at bank: CUSTOM_ROM_BANK
+
+  scope :SceneVariableRAM, in: nil, for: SNES::MemoryMap::RAM
+  
+  scope :SceneFixedRAM, in: nil, for: SNES::MemoryMap::RAM
+
+  ;; Level list pointer
+  declare :level_list_pointer, as: :uint24, in: ::Memory::VariableRAM
+  
+  ;; Event listener
+  declare :wait_before_confirm, as: :uint16, in: SceneVariableRAM
+
+  ;; Number of levels
+  declare :max_num_stages, as: :uint16, in: SceneVariableRAM
+
+  ;; Number of stages unlocked
+  declare :num_stages_available, as: :uint16, in: SceneVariableRAM
+
+  ;; Number of stages unlocked
+  declare :num_stages_visible, as: :uint16, in: SceneVariableRAM
+
+  ;; The current selected level
+  declare :selected_stage, as: :uint16, in: SceneVariableRAM
+  
+  ;; Global calc register
+  declare :calc0, as: :uint16, in: SceneVariableRAM
+
+  
+
+  ;; Level list format
+  class LevelListRomFormat
+    declare :max_num_stages, as: :uint16
+    declare :unlocked_level_variable, as: :uint16
+    declare :visible_level_variable, as: :uint16
+  end
+
+  class LevelListLevelRomFormat
+    declare :level_address, as: :uint16
+    declare :stage_name_image, as: :uint8
+    declare :minimap_address, as: :uint16
+
+    declare :best_score_variable0, as: :uint16
+    declare :best_score_variableX, as: :uint16, length: NUM_MISSIONS_PER_STAGE - 1
+    declare :best_time_variable0, as: :uint16
+    declare :best_time_variableX, as: :uint16, length: NUM_MISSIONS_PER_STAGE - 1
+    declare :rank_variable0, as: :uint16
+    declare :rank_variableX, as: :uint16, length: NUM_MISSIONS_PER_STAGE - 1
+
+
+    declare :_align, as: :uint8, size: 3
+  end
+
+  @locate_at bank: CUSTOM_ROM_BANK
+  def _level_id_to_data_pointer
+    raise "LevelListLevelRomFormat.size changed" unless LevelListLevelRomFormat.size == 32
+
+    32.multiplicated_register_A
+    CLC
+    ADC   #LevelListRomFormat.size
+    ADC   level_list_pointer
+    RTL
+  end
+
+end

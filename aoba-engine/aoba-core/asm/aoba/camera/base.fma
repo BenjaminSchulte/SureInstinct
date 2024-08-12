@@ -1,0 +1,71 @@
+module Aoba::Camera
+
+  class BaseBuilder
+    macro initialize(camera)
+      @camera = camera
+    end
+
+    macro locate_at(*args, **kwargs)
+      @camera.class.__static_locate_at_args = args
+      @camera.class.__static_locate_at_kwargs = kwargs
+    end
+
+    macro use(other)
+      other.include_to_camera @camera
+    end
+  end
+
+  class Base < StaticRoutineEngineObject
+    register A: 16, XY: 16
+
+    macro initialize
+      super
+
+      @@__static_locate_at_kwargs = {bank: LEVEL_ROM_BANK}
+      @RAM = MemoryScope.new("camera", in: nil, for: ::SNES::MemoryMap::RAM)
+      @parent_camera = nil
+    end
+
+    macro parent_objects
+      return [self.parent_camera]
+    end
+
+    macro finalize
+      setup_static_routines
+    end
+
+    macro has_variable_layer_option?
+      false
+    end
+
+    ;; Returns BCC if parallax mode is not necessary
+    macro update_variable_layer
+      raise "update_variable_layer not supported by this camera"
+    end
+
+    macro include_to_camera(camera)
+      camera.parent_camera = self
+    end
+
+    macro include_to_tilemap_renderer(renderer)
+      renderer.camera = self
+    end
+
+    macro include_as_scene_object(scene, **kwargs)
+      SceneObject.new(self).include_to_scene_mode scene, **kwargs
+    end
+
+    macro include_to_sprite_thread(thread)
+      thread.camera = self
+    end
+
+    macro configure_for_scene(scene)
+      scene.FixedRAM.include @RAM
+    end
+
+    macro update_composer_scrolling
+      raise "Camera does not support update_composer_scrolling"
+    end
+  end
+
+end

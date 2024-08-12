@@ -1,0 +1,10 @@
+/dist/*
+!/dist/.gitkeep
+/obj/*
+!/obj/.gitkeep
+/release/*
+!/release/.gitkeep
+/.localconfig.yml
+/node_modules
+/html/*.sfc
+/html/*.sfc.zip

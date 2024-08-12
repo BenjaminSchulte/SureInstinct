@@ -1,0 +1,11 @@
+module Aoba::Math
+  ;; Waits for an event
+  ;;
+  ;; @param bitmask
+  Aoba::Script.callback "Math_RandomOffsetSize", bank: SYSTEM_ROM_BANK do
+    LDA   dp(Aoba::Script.register_a)
+    random_from_AL_size_AH_icb
+    STA   dp(Aoba::Script.register_a)
+    STZ   dp(Aoba::Script.register_a + 2)
+  end
+end

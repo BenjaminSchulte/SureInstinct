@@ -1,0 +1,138 @@
+module Aoba::Dialog::Action::Render
+
+  ;; Target datablock for Y rows
+  datablock _upload_current_tile_data_y_target_offset
+    MAX_NUM_ROWS.times do |row|
+      dw   row * MAX_NUM_TILES_PER_ROW * 2 * 16
+    end
+  end
+
+  ;; Uploads the current tiles data
+  macro _upload_current_tile_data
+    ;; Tiles align at $40 per X tile, however
+    ;; each tile is already incremented by two in current_x_tile
+    LDA   dp(current_x_tile)
+    AND   dp(Aoba::Script.x00FF)
+    8.multiplicated_register_A
+    STA   dp(Aoba::Script.calc0)
+    ASL   A
+
+    ;; Store RAM origin to calc0+2
+    CLC
+    ADC   X[:font_state] + Font::Render::State.offset_of(:target_buffer)
+    STA   dp(Aoba::Script.calc0 + 2)
+
+    ;; Adjust the base tile
+    LDA   dp(current_tiles_y)
+    AND   dp(Aoba::Script.x00FF)
+    ASL   A
+    TAX
+    LDA   dp(Aoba::Script.calc0)
+    CLC
+    ADC   _upload_current_tile_data_y_target_offset.long, X
+    STA   dp(Aoba::Script.calc0)
+
+    ;; We decompressed the window. Let's try to upload it next VBLANK
+    LDA   #Aoba::VBlank::Target::VRAM_4_IN_1
+    JSL   Aoba::VBlank::Job.allocate_icb_long
+    
+    ;; Configures the job
+    X.is_a! Aoba::VBlank::Job::JobInstance
+    LDA   dp(Aoba::Script.calc0 + 2)
+    STA   X[:source_address]
+    CPU.set A: 8
+    LDA   #VARIABLE_RAM_BANK
+    STA   X[:source_address] + 2
+    CPU.set A: 16
+
+    ;; Store VRAM target to calc0
+    LDA   dp(Aoba::Script.calc0)
+    CLC
+    ADC   vram_text_tiles_address
+    STA   X[:target_address]
+
+    ;; Write the data size
+    LDA   #$40
+    STA   X[:data_size]
+
+    ;; Upload data and wait for it
+    JSL   Aoba::VBlank::Job.try_queue_icb_long
+  end
+
+  datablock _upload_current_map_data_target_address
+    MAX_NUM_ROWS.times do |row|
+      dw   row * 64
+    end
+  end
+
+  datablock _upload_current_map_data_tile_base
+    _flags = $2000 | (FONT_PALETTE << 10)
+
+    MAX_NUM_ROWS.times do |row|
+      dw   (row * MAX_NUM_TILES_PER_ROW * 2 * 2) | _flags
+    end
+  end
+
+  ;; Uploads the current tilemap tile
+  macro _upload_current_map_data
+    ;; yyyyyyyyxxxxxx00
+    ;LDA   dp(current_y_tile)
+    ;AND   dp(x00FF)
+    ;LSR   A
+    ;STA   dp()
+    ;; Writes the target address to calc0
+
+    ;; Writes the tile data to calc0 + 2
+    LDA   dp(current_tilemap_y)
+    AND   dp(Aoba::Script.x00FF)
+    ASL   A
+    TAX
+    LDA   _upload_current_map_data_target_address.long, X
+    STA   dp(Aoba::Script.calc0)
+    LDA   _upload_current_map_data_tile_base.long, X
+    STA   dp(Aoba::Script.calc0 + 2)
+
+    ;; We decompressed the window. Let's try to upload it next VBLANK
+    LDA   #Aoba::VBlank::Target::VRAM_TILEMAP_X1_Y2
+    JSL   Aoba::VBlank::Job.allocate_icb_long
+    
+    ;; Configures the job
+    X.is_a! Aoba::VBlank::Job::JobInstance
+    LDA   dp(current_x_tile)
+    AND   dp(Aoba::Script.x00FF)
+    CLC
+    ADC   dp(Aoba::Script.calc0 + 2)
+    STA   X[:source_address] ;used as data
+    CPU.set A: 8
+    LDA   #2 ;used as data increment
+    STA   X[:source_address] + 2
+    CPU.set A: 16
+
+    ;; Store VRAM target to calc0
+    LDA   dp(current_x_tile)
+    AND   dp(Aoba::Script.x00FF)
+    LSR   A
+    LSR   A
+    CLC
+    ADC   dp(Aoba::Script.calc0)
+    ADC   vram_text_tilemap_address
+    STA   X[:target_address]
+
+    ;; Write the data size
+    LDA   #4
+    STA   X[:data_size]
+
+    ;; Upload data and wait for it
+    JSL   Aoba::VBlank::Job.try_queue_icb_long
+  end
+
+  ;; Uploads the current tile
+  macro _upload_current_tile
+    X.is_a! Aoba::Dialog::Hdma::Configuration
+
+    _upload_current_tile_data
+    _upload_current_map_data
+    _advance_to_next_tile
+  end
+
+end

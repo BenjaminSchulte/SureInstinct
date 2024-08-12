@@ -1,0 +1,63 @@
+module Aoba::Palette::Api
+
+  def __configure_fade_to_palette
+    CPU.set A: 8
+    PHX
+    PHY
+    PHA
+
+    ;; Allocates the configuration
+    LDA   Aoba::Palette.thread_id
+    LDX   #Aoba::Palette::Event::FadePalette::Config.size
+    SEI
+    JSL   Aoba::Memory.allocate_miniblock_long
+    CLI
+    X.is_a! Aoba::Palette::Event::FadePalette::Config
+    PLA
+    STA   X[:speed]
+    CPU.set A: 16
+    PLA
+    STA   X[:palette_mask]
+    PLA
+    STA   X[:palette_address]
+  end
+
+  ;; @param A speed
+  ;; @param X palette address
+  ;; @param Y palette mask
+  def fade_to_palette_long
+    __configure_fade_to_palette
+    PHX
+
+    ;; Allocates the event
+    LDA   #Aoba::Thread::Event::USEREVENT_ID
+    JSL   Aoba::Thread::Event.allocate_icb_long
+    X.is_a! Aoba::Palette::Event::FadePalette::Event
+    LDA   #Aoba::Palette::Event::FadePalette::ID
+    STA   X[:event_id]
+    PLA
+    STA   X[:config]
+    LDA   Aoba::Palette.thread_id
+    JML   Aoba::Thread.send_event_icb_long
+  end
+
+  ;; @param A speed
+  ;; @param X palette address
+  ;; @param Y palette mask
+  def fade_to_palette_group_long
+    __configure_fade_to_palette
+    PHX
+
+    ;; Allocates the event
+    LDA   #Aoba::Thread::Event::USEREVENT_ID
+    JSL   Aoba::Thread::Event.allocate_icb_long
+    X.is_a! Aoba::Palette::Event::FadePaletteGroup::Event
+    LDA   #Aoba::Palette::Event::FadePaletteGroup::ID
+    STA   X[:event_id]
+    PLA
+    STA   X[:config]
+    LDA   Aoba::Palette.thread_id
+    JML   Aoba::Thread.send_event_icb_long
+  end
+
+end

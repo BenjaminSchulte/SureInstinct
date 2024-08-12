@@ -1,0 +1,191 @@
+module Game::Level
+
+  locate_at bank: Aoba::LEVEL_ROM_BANK
+
+  module ModifiedAttribute
+    KEYS_RED    = $0001
+    KEYS_GREEN  = $0002
+    KEYS_BLUE   = $0004
+    KEYS_YELLOW = $0008
+    COINS       = $0010
+    SCORE       = $0020
+    HP          = $0040
+    CURRENT_ITEM= $0080
+    PARACHUTE   = $0100
+    BRIDGE      = $0200
+    BOMB        = $0400
+    ITEM_TIME   = $0800
+
+    TIME        = $1000 ; should always be last in list
+    ALL         = $1FFF
+  end
+
+  module GlobalIngameFlag
+    SPIKES_ENABLED = $01
+
+    USERINTERFACE_READY = $02
+
+    CUSTOM_BALL_ANIMATION = $08
+
+    CONTROLS_DISABLED = $20
+
+    GAME_PAUSED = $40
+
+    TIME_PAUSED = $80
+  end
+
+  ;; Cache to store the collision pointer
+  declare :no_collision_index, as: :uint16, in: IngameSceneVariableRAM
+  declare :laser1h_collision_index, as: :uint16, in: IngameSceneVariableRAM
+  declare :laser1v_collision_index, as: :uint16, in: IngameSceneVariableRAM
+
+  ;; Palette fading
+  declare :top_palette_address, as: :uint16, in: IngameSceneVariableRAM
+  declare :bottom_palette_address, as: :uint16, in: IngameSceneVariableRAM
+  declare :pause_palette_address, as: :uint16, in: IngameSceneVariableRAM
+
+  ;; Used for background calculation
+  declare :abyss_last_x, as: :uint16, in: IngameSceneVariableRAM
+  declare :abyss_last_y, as: :uint16, in: IngameSceneVariableRAM
+
+  declare :current_level_switch, as: :uint16, in: IngameSceneVariableRAM
+  declare :level_switch_mask, as: :uint16, in: IngameSceneVariableRAM
+
+  ;; Bitmask which attributes have been modified
+  declare :modified_attributes, as: :uint16, in: IngameSceneVariableRAM
+
+  ;; The current selected extra
+  declare :selected_item, as: :uint16, in: IngameSceneVariableRAM
+
+  ;; Number of keys (red)
+  declare :num_keys_red, as: :uint16, in: IngameSceneVariableRAM
+  num_keys_green = num_keys_red + 1
+
+  ;; Number of keys (blue)
+  declare :num_keys_blue, as: :uint16, in: IngameSceneVariableRAM
+  num_keys_yellow = num_keys_blue + 1
+
+  ;; Number of coins
+  declare :num_parachute, as: :uint16, in: IngameSceneVariableRAM
+  num_bridge = num_parachute + 1
+
+  ;; Number of coins
+  declare :num_bomb, as: :uint16, in: IngameSceneVariableRAM
+  num_lives = num_bomb + 1
+
+  ;; Number of coins
+  declare :num_coins, as: :uint16, in: IngameSceneVariableRAM
+
+  ;; Current score
+  declare :score, as: :uint16, in: IngameSceneVariableRAM
+
+  ;; Start frame
+  declare :last_frame_number, as: :uint16, in: IngameSceneVariableRAM
+
+  ;; Start frame
+  declare :global_ingame_flags, as: :uint8, in: IngameSceneVariableRAM
+
+  ;; Start frame high
+  declare :time_ms, as: :uint16, in: IngameSceneVariableRAM
+
+  ;; Start frame high
+  declare :time_seconds, as: :uint16, in: IngameSceneVariableRAM
+  time_minutes = time_seconds + 1
+
+  ;; Time in frames
+  declare :duration_in_frames, as: :uint32, in: IngameSceneVariableRAM
+
+  ;; Current HP
+  declare :hp, as: :uint16, in: IngameSceneVariableRAM
+
+  ;; Current ball power
+  declare :ball_power, as: :uint16, in: IngameSceneVariableRAM
+
+  ;; Current steal item 
+  declare :current_steal_timer, as: :uint16, in: IngameSceneVariableRAM
+
+  ;; Current steal item 
+  declare :current_steal_item_index, as: :uint16, in: IngameSceneVariableRAM
+
+  ;; Current steal item 
+  declare :current_steal_price, as: :uint16, in: IngameSceneVariableRAM
+
+  ;; Current steal item 
+  declare :current_steal_item, as: :uint16, in: IngameSceneVariableRAM
+
+  ;; Current maximum speed of the ball
+  declare :max_ball_speed, as: :uint16, in: IngameSceneVariableRAM
+
+  ;; Current maximum speed of the ball
+  declare :negative_max_ball_speed, as: :uint16, in: IngameSceneVariableRAM
+
+  ;; Timer for ball speed ups
+  declare :ball_speedup_timer, as: :uint16, in: IngameSceneVariableRAM, length: MAX_SPEEDUP_ITEMS
+
+  declare :current_stage_number, as: :uint16, in: IngameSceneVariableRAM
+
+  ;; Time to wait for enemies to attack the player after certain events
+  declare :dead_wait_time, as: :uint16, in: IngameSceneVariableRAM
+
+  ;; SFX wait time
+  declare :sfx_wait_time, as: :uint16, in: IngameSceneVariableRAM
+
+
+  ;; Resets all attributes
+  def reset_attributes
+    Debug.enter_threadsafe_ram_access
+
+    STZ   num_keys_red
+    STZ   num_keys_blue
+    STZ   num_coins
+    STZ   score
+    STZ   sfx_wait_time
+
+    LDA   #2 << 8 ; lives
+    STA   num_bomb
+
+    SEI
+    LDA   #ModifiedAttribute::ALL
+    STA   modified_attributes
+
+    LDA   global_ingame_flags
+    AND   #$FF00
+    ORA   #GlobalIngameFlag.TIME_PAUSED | GlobalIngameFlag.GAME_PAUSED | GlobalIngameFlag.CONTROLS_DISABLED
+    Debug.access_8bit_through_16bit
+    STA   global_ingame_flags
+    CLI
+
+    STZ   last_frame_number
+    STZ   time_ms
+    STZ   time_seconds
+    STZ   duration_in_frames
+    STZ   duration_in_frames + 2
+    LDA   #MAX_HP
+    STA   hp
+    STZ   ball_power
+    LDA   #BALL_MAX_SPEED
+    STA   max_ball_speed
+    LDA   #-BALL_MAX_SPEED
+    STA   negative_max_ball_speed
+    MAX_SPEEDUP_ITEMS.times do |i|
+      STZ   ball_speedup_timer[i]
+    end
+    STZ   abyss_last_x
+    STZ   abyss_last_y
+    STZ   selected_item
+    STZ   num_parachute
+    STZ   current_level_switch
+    STZ   level_switch_mask
+
+    UserInterface.thread.start
+
+    SEI
+    LDA   Game.global_game_flags
+    ORA   #Game::GlobalGameFlag.IS_INGAME
+    STA   Game.global_game_flags
+    CLI
+
+    Debug.leave_threadsafe_ram_access
+  end
+
+end

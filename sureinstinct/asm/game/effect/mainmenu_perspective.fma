@@ -1,0 +1,304 @@
+module Game::Effect::MainMenuPerspective
+  locate_at bank: Aoba::EFFECT_ROM_BANK
+
+
+  CENTER_X = -20
+  CENTER_Y = 12
+  MAX_NUM_PARTICLES = 96
+  MAX_SPAWN = 1
+
+  class Particle
+    declare :x_decimal, as: :uint8
+    declare :x, as: :uint16
+    declare :_unused, as: :uint8
+    declare :y_decimal, as: :uint8
+    declare :y, as: :uint16
+    declare :_unused2, as: :uint8
+    declare :speed_x, as: :uint16
+    declare :speed_y, as: :uint16
+
+    ;; free space 8 bit
+  end
+
+  OAM_TABLE_SIZE = Aoba::Sprite::DirectOamRecord.size * MAX_NUM_PARTICLES
+  RAM_SIZE = OAM_TABLE_SIZE + Particle.size * MAX_NUM_PARTICLES
+
+  class Configuration
+    declare :oam_table, as: :uint16
+    declare :particle_table, as: :uint16
+    declare :sprite, as: :uint16
+  end
+
+
+
+
+  ;; Temporary RAM for calculations
+  scope :TempRAM, in: Aoba::Effect::ActionRAM
+
+  declare :max_num_spawn, as: :uint16, in: TempRAM
+  declare :record_counter, as: :uint16, in: TempRAM
+  declare :sprite_configuration, as: :uint16, in: TempRAM
+  declare :calc2, as: :uint16, in: TempRAM
+
+  macro _spawn_bottom
+    LDX   dp(Aoba::Effect._calc0) + 2
+    X.is_a! Aoba::Sprite::DirectOamRecord
+    Y.is_a! Particle
+    
+    LDA   #$40
+  end
+
+  def _spawn
+    X.is_a! Aoba::Sprite::DirectOamRecord
+    Y.is_a! Particle
+
+    JSL   Aoba::Math.random_icb_long
+    AND   #$FF
+    STA   X[:x]
+    STA   Y[:x]
+    
+    LDA   #SNES::Arch::SCREEN_HEIGHT
+    STA   X[:y]
+    STA   Y[:y]
+
+    LDA   #0
+    STA   Y[:x_decimal]
+    STA   Y[:y_decimal]
+
+    JSL   Aoba::Math.random_icb_long
+    STA   dp(Aoba::Effect._calc0) + 2
+    AND   #$F8
+    CLC
+    ADC   #$40
+    ASL   A
+    ASL   A
+    EOR   #$FFFF
+    INC   A
+    STA   Y[:speed_y]
+    LDA   #0
+    STA   Y[:speed_x]
+
+    LDA   dp(Aoba::Effect._calc0) + 2
+    BIT   #$80
+    BNZ   _star
+  _point:
+    LDA   dp(sprite_configuration)
+    INC   A
+    BRA   _after_decision
+  _star:
+    LDA   dp(sprite_configuration)
+    CLC
+    ADC   #16
+  _after_decision:
+    X.is_a! Aoba::Sprite::DirectOamRecord
+    STA   X[:configuration]
+
+    LDA   X[:flags]
+    AND   #$FF00
+    STA   X[:flags]
+  end
+
+  def _update_particles
+    LDY   dp(Aoba::Effect.current_memory)
+    Y.is_a! Configuration
+    LDX   Y[:sprite]
+    X.is_a! Aoba::Sprite::Instance
+    LDA   X[:renderable_flags] - 1
+    AND   #$FE00
+    STA   dp(sprite_configuration)
+    LDA   X[:slot_pointer]
+    TAX
+    X.is_a! Aoba::Sprite::Slot::SlotAllocation
+    Debug.access_8bit_through_16bit
+    LDA   X[:used_slot_size]
+    AND   #$FF
+    BNZ   _has_palette_slot
+    RTS
+    ;; ---
+  _has_palette_slot:
+    LDA   X[:slot_oam_data] + 2
+    ORA   dp(sprite_configuration)
+    STA   dp(sprite_configuration)
+    
+    LDA   #MAX_SPAWN
+    STA   dp(max_num_spawn)
+    LDA   #MAX_NUM_PARTICLES
+    STA   dp(record_counter)
+
+    LDX   Y[:oam_table]
+    X.is_a! Aoba::Sprite::DirectOamRecord
+    LDA   Y[:particle_table]
+    TAY
+    Y.is_a! Particle
+    BRA   _loop
+
+    ;; ----
+
+  _spawn_new_record:
+    DEC   dp(max_num_spawn)
+    BMI   _next
+
+    _spawn
+    BRA   _next
+
+  _remove:
+    LDA   #$FFFF
+    STA   X[:flags]
+    BRA   _next
+
+  _loop:
+    Debug.allow_invalid_ram_access 1
+    LDA   X[:flags] - 1
+    BMI   _spawn_new_record
+    
+    LDA   Y[:speed_y]
+    CLC
+    ADC   Y[:y_decimal]
+    STA   Y[:y_decimal]
+    Debug.access_8bit_through_16bit
+    LDA   Y[:y_decimal] + 2
+    ADC   #$FFFF
+    STA   Y[:y_decimal] + 2
+    LDA   Y[:y]
+    BMI   _remove
+    STA   X[:y]
+
+  _next:
+    TXA
+    CLC
+    ADC   #Aoba::Sprite::DirectOamRecord.size
+    TAX
+    TYA
+    CLC
+    ADC   #Particle.size
+    TAY
+    DEC   dp(record_counter)
+    BNZ   _loop
+
+  _rts:
+  end
+
+
+
+  ;; ===============================================================================
+
+  macro _initialize_direct_oam_table
+    LDX   #RAM_SIZE
+    SEI
+    JSL   Aoba::Memory.allocate_long
+    CLI
+    LDY   dp(Aoba::Effect.current_memory)
+    Y.is_a! Configuration
+    TXA
+    STA   Y[:oam_table]
+    CLC
+    ADC   #OAM_TABLE_SIZE
+    STA   Y[:particle_table]
+    LDY   #MAX_NUM_PARTICLES
+    JSL   Aoba::Sprite::Api.clear_direct_oam_table_long
+  end
+
+  macro _create_sprite
+    ;; Allocates the configuration RAM
+    LDA   Aoba::Sprite.thread_id
+    LDX   #Aoba::Sprite::Event::CreateSprite::EventConfig.size
+    SEI
+    JSL   Aoba::Memory.allocate_miniblock_long
+    CLI
+    X.is_a! Aoba::Sprite::Event::CreateSprite::EventConfig
+    
+    ;; Creates the sprite
+    LDA   #0
+    STA   X[:x]
+    LDA   #0
+    STA   X[:y]
+    LDA   #Animation::Animation::stand
+    STA   X[:animation]
+    LDA   #Animation::Direction::down | $2100
+    STA   X[:direction]
+    LDA   #Assets::Particle1::CommonPaletteID
+    STA   X[:palette_group_address]
+    LDA   #Assets::Particle1::SpriteID
+    STA   X[:sprite_id]
+    JSL   Aoba::Sprite::Api.create_sprite_icb_long
+
+    LDY   dp(Aoba::Effect.current_memory)
+    Y.is_a! Configuration
+    TXA
+    STA   Y[:sprite]
+
+    ;; Configures the sprite
+    X.is_a! Aoba::Sprite::Instance
+    LDA   X[:basic_flags]
+    ORA   #Aoba::Sprite::BasicFlag.SKIP_MOVE_ROUTINE
+    STA   X[:basic_flags]
+    LDA   X[:renderable_configuration_flags]
+    ORA   #Aoba::Sprite::RenderableConfigurationFlag.NO_CAMERA_RELATIVE
+    STA   X[:renderable_configuration_flags]
+    LDA   #MAX_NUM_PARTICLES << 8
+    STA   X[:direct_oam_record_table_size] - 1
+    LDA   Y[:oam_table]
+    STA   X[:direct_oam_record_table]
+    JSL   Aoba::Sprite::Api.queue_sprite_icb_long
+  end
+
+  ;; The actual effect
+  ParticleEffect = Aoba::Effect.create "MainMenuParticle" do
+    with_variables Configuration
+
+    start do
+      _initialize_direct_oam_table
+      _create_sprite
+
+      queue_update 1
+    end
+
+    update do
+      _update_particles
+
+      LDA   Game::Scene::MainMenu.effect_active
+      BPL   _resume
+      trigger_finish
+      RTS
+
+    _resume:
+      queue_update 1
+    end
+
+    finish do
+      LDY   dp(Aoba::Effect.current_memory)
+      Y.is_a! Configuration
+      LDX   Y[:sprite]
+      X.is_a! Aoba::Sprite::Instance
+      LDA   X[:id]
+      JSL   Aoba::Sprite::Api.destroy_sprite_icb_long
+
+      LDY   dp(Aoba::Effect.current_memory)
+      LDX   Y[:oam_table]
+      LDY   #RAM_SIZE
+      SEI
+      JSL   Aoba::Memory.free_long
+      CLI
+      STZ   Game::Scene::MainMenu.effect_active
+    end
+  end
+
+  Aoba::Script.callback "MainMenuPerspective_StartParticleEffect", bank: Aoba::EFFECT_ROM_BANK do
+    LDA   #1
+    STA   Game::Scene::MainMenu.effect_active
+
+    ParticleEffect.start
+  end
+
+  Aoba::Script.callback "MainMenuPerspective_StopParticleEffect", bank: Aoba::EFFECT_ROM_BANK do
+    LDA   #$FFFF
+    STA   Game::Scene::MainMenu.effect_active
+
+  _wait_for_finish:
+    LDY   #1
+    JSL   Aoba::Thread.delay_long
+    LDA   Game::Scene::MainMenu.effect_active
+    BNZ   _wait_for_finish
+  end
+
+end

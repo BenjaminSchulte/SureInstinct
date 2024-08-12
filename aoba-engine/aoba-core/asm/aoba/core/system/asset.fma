@@ -1,0 +1,111 @@
+module Aoba::Assets
+
+  ;; Stores the result as bank/size and address uint16 lists
+  class AssetRegistryBankAddressAndData
+    macro initialize(name, item_name="data")
+      @name = name
+
+      @banks = DataBlock.new("#{name}_banks")
+      @addresses = DataBlock.new("#{name}_addresses")
+      self[item_name] = @banks.to_sym + 1
+    end
+
+    macro add(item, data=0)
+      @banks.db item.to_sym.bank
+      @banks.db data
+      @addresses.dw item.to_sym
+    end
+  end
+
+  ;; Stores the result as bank and address uint16 lists, but shares the banks
+  class AssetRegistryBank8Address
+    macro initialize(name)
+      @name = name
+
+      @banks = DataBlock.new("#{name}_banks")
+      @addresses = DataBlock.new("#{name}_addresses")
+    end
+
+    macro add(item)
+      @banks.db item.to_sym.bank
+      @addresses.dw item.to_sym
+    end
+  end
+
+  ;; Stores the result as bank and address uint16 lists, but shares the banks
+  class AssetRegistryBankAddress
+    macro initialize(name)
+      @name = name
+
+      Compiler.warn "TODO: share bank index lists"
+      @banks = DataBlock.new("#{name}_banks")
+      @addresses = DataBlock.new("#{name}_addresses")
+    end
+
+    macro add(item)
+      @banks.dw item.to_sym.bank
+      @addresses.dw item.to_sym
+    end
+  end
+
+  ;; Stores the result as a single uint16 list
+  class AssetRegistryDataByte
+    macro initialize(name, item_name="ids")
+      @name = name
+
+      Compiler.warn "TODO: share bank byte lists"
+      @values = DataBlock.new(name)
+      self[item_name] = @values
+    end
+
+    macro add(item)
+      @values.db item
+      @values.db 0
+    end
+  end
+
+  ;; Stores the result as a single uint16 list
+  class AssetRegistryDataWord
+    macro initialize(name, item_name="ids")
+      @name = name
+
+      @values = DataBlock.new(name)
+      self[item_name] = @values
+    end
+
+    macro add(item)
+      @values.dw item
+    end
+  end
+
+  ;; Registry for assets
+  class AssetRegistry
+    macro initialize
+      @next_id = 0
+      @assets = []
+    end
+
+    macro allocate_id
+      id = @next_id
+      @next_id += 1
+      id
+    end
+
+    macro register(asset, expected_asset_id=nil)
+      asset.id = allocate_id
+
+      if expected_asset_id != nil && asset.id != expected_asset_id
+        raise "The asset ID #{asset.id} did not match the expected ID #{expected_asset_id}"
+      end
+
+      @assets << asset
+      add_asset_to_index asset
+      asset
+    end
+
+    macro add_asset_to_index
+      raise "build_asset_index is not implemented for #{@@name}"
+    end
+  end
+
+end

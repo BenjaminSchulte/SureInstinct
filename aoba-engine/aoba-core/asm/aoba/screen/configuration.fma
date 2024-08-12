@@ -1,0 +1,49 @@
+module Aoba::Screen
+
+  module Flag
+    ;; Registers which use 8bit
+    INIDISP = $0001
+
+    BGMODE  = $0001
+    MOSAIC  = $0001
+    BG1SC   = $0002
+    BG2SC   = $0002
+    BG3SC   = $0004
+    BG4SC   = $0004
+    BG12NBA = $0008
+    BG34NBA = $0008
+
+    W12SEL  = $0010
+    W34SEL  = $0010
+    WOBJSEL = $0020
+    WH0     = $0020
+    WH1     = $0040
+    WH2     = $0040
+    WH3     = $0080
+    WBGLOG  = $0080
+    WOBJLOG = $0100
+    TM      = $0100
+    TS      = $0200
+    TMW     = $0200
+    TSW     = $0400
+    CGWSEL  = $0400
+    CGADSUB = $0800
+    COLDATA = $0800
+    OBSEL   = $1000
+
+    ALL_8   = $1FFF
+
+    ;; Registers which use 16bit
+    BG1HOFS = $01
+    BG1VOFS = $02
+    BG2HOFS = $04
+    BG2VOFS = $08
+    BG3HOFS = $10
+    BG3VOFS = $20
+    BG4HOFS = $40
+    BG4VOFS = $80
+
+    ALL_16  = $FF
+  end
+
+end

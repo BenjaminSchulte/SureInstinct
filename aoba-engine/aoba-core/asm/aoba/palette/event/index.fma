@@ -1,0 +1,17 @@
+module Aoba::Palette::Event
+  class Base < Aoba::Thread::Event::Base
+    declare :event_id, as: :uint8
+  end
+
+  List = Aoba::Thread::EventHandlerList.new(PALETTE_ROM_BANK)
+end
+
+require "load_tilemap_palette"
+require "update_sprite_palettes"
+require "upload_palette_row"
+require "load_raw_palette"
+require "load_palette_group"
+require "fade_palette"
+require "fade_palette_group"
+require "restore_palette"
+require "unload_palette"

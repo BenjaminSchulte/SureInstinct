@@ -1,0 +1,8 @@
+module Aoba
+
+  COMPRESSION_SIMPLEPALETTE_ROM_BANK ||= $C0
+
+end
+
+require "memory"
+require "decompress"

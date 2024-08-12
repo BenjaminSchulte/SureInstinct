@@ -1,0 +1,146 @@
+.TRACK 0
+t60 o5 v32
+
+@"bassdrum2" a10
+@"snare2" a8 a10 a12
+v127 @"bassdrum3" a10 v32
+@"snare2" a10
+@"bassdrum4" a10 r12 
+
+/ o5 v32
+
+@"bassdrum4" a8
+@"snare2" a:18
+@"snare3" a12 
+@"bassdrum2" a10 a10
+@"snare2" a10
+@"bassdrum5" a12
+@"snare3" a12 
+
+@"bassdrum4" a8
+@"snare2" a:18
+@"snare3" a12
+@"bassdrum2" a12 
+@"bassdrum3" a12
+@"snare2" a:18 a12
+@"bassdrum5" a12
+@"snare3" a12 
+@"bassdrum4" a8
+@"snare2" a:18
+@"snare3" a12
+@"bassdrum2" a10 a10
+@"snare2" a10
+@"bassdrum5" a12
+@"snare3" a12
+
+@"bassdrum4" a8 
+@"snare2" a:18
+@"snare3" a12
+@"bassdrum2" a12
+@"bassdrum3" a12 
+@"snare2" a12
+@"bassdrum3" a12
+@"snare4" a12 a12
+@"bassdrum3" a12 
+@"snare4" a12
+
+@"bassdrum4" a8
+@"snare2" a:18
+@"snare3" a12 
+@"bassdrum2" a10 a10
+@"snare2" a10
+@"bassdrum5" a12
+@"snare3" a12 
+
+@"bassdrum4" a8
+@"snare2" a:18
+@"snare3" a12
+@"bassdrum2" a12 
+@"bassdrum3" a12
+@"snare2" a:18 a12
+@"bassdrum5" a12
+@"snare3" a12 
+@"bassdrum4" a8
+@"snare2" a:18
+@"snare3" a12
+@"bassdrum2" a10 a10
+@"snare2" a10
+@"bassdrum5" a12
+@"snare3" a12
+@"bassdrum4" a:18 
+v127
+@"bassdrum3" a12 a10 a10 a10
+v64
+@"bassdrum5" a10
+@"bassdrum2" a10
+@"snare4" a10 
+
+.TRACK 1
+r12 v64 o5
+
+@"bassdrum5" a:18
+@"snare2" a6
+
+r6 
+
+/ o5
+
+@"bass1" b:18
+@"bass2" b10
+@"funkbass1" b10 b12 
+@"bass1" b10
+@"bass2" b10 b10 >
+@"funkbass1" d12 d12
+@"bass1" e:18 
+@"bass2" e:18
+@"funkbass1" e10 e12 e12
+@"bass1" e10
+@"bass2" a10 
+@"bass1" e12 d12 < b:18
+@"bass2" b10
+@"funkbass1" b10 b12 
+@"bass1" b10
+@"bass2" b10 b10 >
+@"funkbass1" d12 d12
+@"bass1" e:18 
+@"bass2" e:18
+@"funkbass1" e10 e12 e12
+@"bass1" e10
+@"bass2" a10 
+@"bass1" e12 d12 < b:18
+@"bass2" b10
+@"funkbass1" b10 b12 
+@"bass1" b10
+@"bass2" b10 b10 >
+@"funkbass1" d12 d12
+@"bass1" e:18 
+@"bass2" e:18
+@"funkbass1" e10 e12 e12
+@"bass1" e10
+@"bass2" a10 
+@"bass1" e12 d12 < b:18
+@"bass2" b10
+@"funkbass1" b10 b12 
+@"bass1" b10
+@"bass2" b10 b10 >
+@"funkbass1" d12 d12
+@"bass1" e:42 d12 e10 d10 c10 < g12 a+12
+
+.TRACK 2
+
+
+.TRACK 3
+
+
+.TRACK 4
+
+
+.TRACK 5
+
+
+.TRACK 6
+
+
+.TRACK 7
+
+

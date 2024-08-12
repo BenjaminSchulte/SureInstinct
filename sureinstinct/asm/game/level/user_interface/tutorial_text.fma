@@ -1,0 +1,87 @@
+module Game::Level::UserInterface::TutorialText
+
+  declare :tutorial_text_timer, as: :uint16, in: IngameSceneVariableRAM
+  declare :tutorial_text_valid, as: :uint16, in: IngameSceneVariableRAM
+
+  datablock _images
+    dw Assets::Image::TutorialText1
+    dw Assets::Image::TutorialText2
+    dw Assets::Image::TutorialText3
+    dw Assets::Image::TutorialText4
+    dw Assets::Image::TutorialText5
+    dw Assets::Image::TutorialText6
+    dw Assets::Image::TutorialText7
+    dw Assets::Image::TutorialText8
+    dw Assets::Image::TutorialText9
+    dw Assets::Image::TutorialText10
+    dw Assets::Image::TutorialText11
+  end
+
+  def reload_tutorial_text
+    close_menu
+
+    LDA   #50 * 8
+    STA   tutorial_text_timer
+    STA   tutorial_text_valid
+
+    LDA   current_level_switch
+    DEC   A
+    ASL   A
+    TAX
+    LDA   _images.long, X
+    JSR   load_menu_tiles_in_effect_thread
+    
+    open_menu -4, 5, 100
+  end
+
+  ;; The effect
+  effect = Aoba::Effect.create "TutorialText" do
+    start do
+      reload_tutorial_text
+      queue_update 1
+    end
+
+    update do
+      LDA   menu_state
+      CMP   #MenuState::TUTORIAL_TEXT
+      BNE   _force_stop
+      LDA   tutorial_text_valid
+      BZE   _reload
+      DEC   tutorial_text_timer
+      BPL   _resume
+
+      close_menu
+      LDA   #MenuState::NONE
+      STA   menu_state
+    _force_stop:
+      trigger_finish
+      RTS
+
+    _reload:
+      reload_tutorial_text
+    _resume:
+      queue_update 1
+      RTS
+    end
+
+    finish do
+      Debug.log "FINISH EFFECT"
+      NOP
+    end
+  end
+
+  def trigger_long
+    STZ   tutorial_text_valid
+    LDA   #MenuState::TUTORIAL_TEXT
+    CMP   menu_state
+    BEQ   _rts
+
+  _is_new_text:
+    STA   menu_state
+    effect.start
+
+  _rts:
+    RTL
+  end
+
+end

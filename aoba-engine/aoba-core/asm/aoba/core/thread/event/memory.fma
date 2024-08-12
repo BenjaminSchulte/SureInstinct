@@ -1,0 +1,63 @@
+module Aoba::Thread::Event
+
+  class Base
+    ;; Points to the next event
+    declare :next_event, as: Base.pointer(:uint16)
+
+    ;; The sender thread ID
+    declare :sender_thread_id, as: :uint8
+    ; - no space
+    ;; The bitmask
+    declare :event_bitmask, as: :uint8
+  end
+
+  class ReadyEvent < Base
+    ;; The event ID
+    declare :event_id, as: :uint8
+
+    ;; The userdata
+    declare :userdata, as: :uint16
+  end
+
+  ;; Points to the instance ram
+  declare :instance_ram_pointer, as: :uint16, in: ::Memory::VariableRAM
+
+  ;; Points to the first free event
+  declare :free_events, as: Base.pointer(:uint16), in: ::Memory::VariableRAM
+
+  ;; Counter for how many events have been allocated
+  declare :allocated_events_counter, as: :uint16, in: ::Memory::VariableRAM
+
+  ;; Counter for how many events have been allocated
+  declare :max_allocated_events, as: :uint16, in: ::Memory::VariableRAM
+
+  ;; Initialize thread events
+  ;;
+  ;; @ignore-thread-safety
+  def initialize
+    ;; Allocates RAM
+    LDX   #(Base.size + THREADEVENT_USERDATA_SIZE) * NUM_THREADEVENTS
+    Memory.allocate
+    STX   instance_ram_pointer
+    X.is_a! Base
+
+    ;; Sets up the linked list
+    STX   free_events
+    LDY   #NUM_THREADEVENTS - 1
+    TXA
+  _loop:
+    CLC
+    ADC   #Base.size + THREADEVENT_USERDATA_SIZE
+    Debug.profile_threadevent_register_address
+    STA   X[:next_event]
+    TAX
+    DEY
+    BNZ   _loop
+    Debug.profile_threadevent_register_address
+    STZ   X[:next_event]
+
+    STZ   allocated_events_counter
+    STZ   max_allocated_events
+  end
+
+end

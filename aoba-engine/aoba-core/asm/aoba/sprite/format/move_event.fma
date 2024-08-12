@@ -1,0 +1,59 @@
+module Aoba::Sprite::MoveEvent
+
+  class Action < BaseActionCollectionAction
+    macro initialize(id)
+      super id
+    end
+
+    macro calc0
+    end
+
+    macro calc1
+      return Aoba::Sprite::Action::Move.pos_x
+    end
+
+    macro calc2
+      return Aoba::Sprite::Action::Move.pos_y_decimal
+    end
+
+    macro calc3
+      return Aoba::Sprite::Action::Move.pos_y
+    end
+  end
+
+  macro create(id, &block)
+    action = Action.new(id)
+    result = _create_collection_action action, "move_event_#{id}", SPRITE_ROM_BANK do
+      Y.is_a! Instance
+      block.call
+    end
+  end
+
+  _nop = create :nop do
+  end
+  
+  class CollectionBuilder < BaseActionCollectionBuilder
+    macro initialize(instance)
+      super instance, _nop
+    end
+  end
+
+  class Collection < BaseActionCollection
+    macro initialize
+      super "move_event", SPRITE_ROM_BANK
+    end
+    
+    macro include_to_sprite_thread(thread)
+      thread.move_events = self  
+    end
+
+    macro self.create(&block)
+      collection = Collection.new
+      builder = CollectionBuilder.new(collection)
+      block.call with_context builder
+      collection.finalize
+      return collection
+    end
+  end
+
+end

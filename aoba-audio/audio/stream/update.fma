@@ -1,0 +1,114 @@
+module Stream
+
+  declare :num_data_blocks, as: :uint8, in: ::Memory.Page0
+
+  ;; Updates the pointer opcodes
+  def update_pointer_opcodes
+    MOVW  YA, dp(Stream.stream_buffer_offset)
+    MOV   addr(update._op0 + 1), A
+    MOV   addr(update._op1 + 1), A
+    MOV   addr(update._op2 + 1), A
+    MOV   addr(update._op3 + 1), A
+    MOV   addr(update._op0 + 2), Y
+    MOV   addr(update._op1 + 2), Y
+    MOV   addr(update._op2 + 2), Y
+    MOV   addr(update._op3 + 2), Y
+  end
+
+  ;; Updates the stream
+  def update
+  _repeat:
+    MOV   A, dp(SPC.PORT0)
+    NOP
+    CMP   A, dp(SPC.PORT0)
+    BNE   _repeat
+
+    ASL   A
+    BCS   process_stream
+    RET
+
+  process_stream:
+    MOV   A, #$80
+    MOV   dp(SPC.PORT0), A
+    MOV   dp(IPC.last_ipc_value), A
+
+    MOV   Y, #0
+    MOV   dp(num_data_blocks), dp(stream_block_size)
+  _loop:
+    MOV   A, dp(SPC.PORT0)
+  _op0:
+    MOV   addr(0, Y), A
+    INC   Y
+    MOV   A, dp(SPC.PORT1)
+  _op1:
+    MOV   addr(0, Y), A
+    EOR   dp(IPC.last_ipc_value), #$80
+    MOV   dp(SPC.PORT0), dp(IPC.last_ipc_value)
+    MOV   A, dp(SPC.PORT2)
+    MOV   X, dp(SPC.PORT3)
+    INC   Y
+  _op2:
+    MOV   addr(0, Y), A
+    MOV   A, X
+    INC   Y
+  _op3:
+    MOV   addr(0, Y), A
+    INC   Y
+    DEC   dp(num_data_blocks)
+    BNZ   _loop
+
+  _end_of_data:
+    ; Commit one last time
+    EOR   dp(IPC.last_ipc_value), #$80
+    MOV   dp(SPC.PORT0), dp(IPC.last_ipc_value)
+
+    ; Play if data is enough
+    MOV   A, dp(Stream.number_of_blocks_till_play)
+    BZE   _already_playing
+
+    DEC   A
+    MOV   dp(Stream.number_of_blocks_till_play), A
+    BNZ   _already_playing
+
+    MOV   dp(SPC.DSP_ADDR), #DSP.KOFF
+    MOV   dp(SPC.DSP_DATA), #0
+
+    MOV   dp(SPC.DSP_ADDR), #DSP.KON
+    MOV   dp(SPC.DSP_DATA), #STREAM_CHANNEL_BIT
+
+  _already_playing:
+    ; Update target pointer
+    DEC   dp(Stream.number_of_blocks_till_loop)
+    BZE   _loop_sample
+
+  _no_loop_sample:
+    CLRC
+    ADC   dp(Stream.stream_buffer_offset), dp(Stream.stream_byte_size)
+    ADC   dp(Stream.stream_buffer_offset + 1), #0
+    BRA   _after_update_target
+
+  _loop_sample:
+    ; Set loop bit
+    MOV   A, Y
+    SETC
+    SBC   A, #9
+    MOV   Y, A
+    MOV   A, indirect(Stream.stream_buffer_offset, Y)
+    OR    A, #$3
+    MOV   indirect(Stream.stream_buffer_offset, Y), A
+
+    MOV   dp(Stream.number_of_blocks_till_loop), #STREAM_BUFFER_TIMES
+
+    MOVW  YA, dp(Stream.stream_buffer_start)
+    MOVW  dp(Stream.stream_buffer_offset), YA
+
+  _after_update_target:
+    ; Send data which indicates that there is no stream!
+    AND   dp(IPC.last_ipc_value), #$7F
+    MOV   dp(SPC.PORT0), dp(IPC.last_ipc_value)
+
+    ;MOV   dp(SPC.DSP_DATA), #0
+    JMP   update_pointer_opcodes
+  end
+
+end

@@ -1,0 +1,13 @@
+module Script::Action::SetPanning
+
+  def process
+    MOV   X, A
+    MOV   A, indirect(Script.address, X)
+    INCW  dp(Script.address)
+
+    MOV   addr(Channel.pannings, Y), A
+    MOV   A, addr(Channel.sample_volumes, Y)
+    JMP   Channel.update_volume
+  end
+
+end

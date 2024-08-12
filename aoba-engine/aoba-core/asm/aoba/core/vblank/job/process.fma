@@ -1,0 +1,456 @@
+module Aoba::VBlank::Job
+
+  ;; Queues CGRAM copy
+  def _queue_cgram_copy
+    X.is_a! Aoba::VBlank::Job::JobInstance
+    CPU.set A: 16
+    LDA   X[:data_size]
+    add_cgram_usage_icb
+
+    cgram_copy_queue_job.queue do |origin, target, origin_bank, size|
+      CPU.set A: 8
+      LDA   X[:source_address] + 2
+      STA   origin_bank
+      LDA   X[:target_address]
+      STA   target
+      CPU.set A: 16
+      LDA   X[:source_address]
+      STA   origin
+      LDA   X[:data_size]
+      STA   size
+    end
+  end
+
+  ;; Queues the actual copy script
+  ;;
+  ;; @ignore-thread-safety
+  def _queue_vram_copy
+    X.is_a! Aoba::VBlank::Job::JobInstance
+    CPU.set A: 16
+    LDA   X[:data_size]
+    add_vram_usage_icb
+
+    vram_copy.queue do |flags, origin, origin_bank, target, size|
+      LDA   X[:dma_flags]
+      STA   flags
+      LDA   X[:source_address] + 2
+      STA   origin_bank
+      LDA   X[:source_address]
+      STA   origin
+      LDA   X[:target_address]
+      STA   target
+      LDA   X[:data_size]
+      STA   size
+    end
+  end
+
+  ;; Queues the actual copy script
+  ;;
+  ;; @ignore-thread-safety
+  def _queue_vram_tile_copy
+    X.is_a! Aoba::VBlank::Job::JobInstance
+    CPU.set A: 16
+    LDA   X[:data_size]
+    add_vram_usage_icb
+
+    vram_tile_copy.queue do |flags, origin, origin_bank, target, size, target2|
+      LDA   X[:dma_flags]
+      STA   flags
+      LDA   X[:source_address] + 2
+      STA   origin_bank
+      LDA   X[:source_address]
+      STA   origin
+      LDA   X[:target_address]
+      STA   target
+      CLC
+      ADC   #32
+      STA   target2
+      LDA   X[:data_size]
+      LSR   A
+      STA   size
+    end
+  end
+
+  ;; Queues the actual copy script
+  ;;
+  ;; @ignore-thread-safety
+  def _queue_vram_y_copy
+    X.is_a! Aoba::VBlank::Job::JobInstance
+    CPU.set A: 16
+    LDA   X[:data_size]
+    ;ASL   A
+    add_vram_usage_icb
+    vram_multi_copy.queue do |copy_mode, origin, origin_bank, target, size, origin_2, target_2|
+      CPU.set A: 8
+      LDA   #$80
+      STA   copy_mode
+      LDA   X[:source_address] + 2
+      STA   origin_bank
+      CPU.set A: 16
+      LDA   X[:source_address]
+      STA   origin
+      CLC
+      ADC   #$100
+      STA   origin_2
+      LDA   X[:target_address]
+      STA   target
+      CLC
+      ADC   #64*32
+      STA   target_2
+      LDA   X[:data_size]
+      STA   size
+    end
+  end
+
+  ;; Queues the actual copy script
+  ;;
+  ;; @ignore-thread-safety
+  def _queue_vram_x_copy
+    X.is_a! Aoba::VBlank::Job::JobInstance
+    CPU.set A: 16
+    LDA   X[:data_size]
+    ;ASL   A
+    add_vram_usage_icb
+    vram_multi_copy.queue do |copy_mode, origin, origin_bank, target, size, origin_2, target_2|
+      CPU.set A: 8
+      LDA   #$81
+      STA   copy_mode
+      LDA   X[:source_address] + 2
+      STA   origin_bank
+      CPU.set A: 16
+      LDA   X[:source_address]
+      STA   origin
+      CLC
+      ADC   #$80
+      STA   origin_2
+      LDA   X[:target_address]
+      STA   target
+      CLC
+      ADC   #64*32
+      STA   target_2
+      LDA   X[:data_size]
+      STA   size
+    end
+  end
+
+  ;; Queues the actual copy script
+  ;;
+  ;; @ignore-thread-safety
+  def _queue_vram_4_in_1_copy
+    X.is_a! Aoba::VBlank::Job::JobInstance
+    CPU.set A: 16
+    LDA   X[:data_size]
+    ;ASL   A
+    add_vram_usage_icb
+    vram_4_in_1_copy.queue do |origin, origin_bank, target, size, target_2, target_3, target_4|
+      CPU.set A: 8
+      LDA   X[:source_address] + 2
+      STA   origin_bank
+      CPU.set A: 16
+      LDA   X[:data_size]
+      LSR   A
+      LSR   A
+      STA   size
+      LSR   A
+      STA   origin ; temp calc
+
+      LDA   X[:target_address]
+      STA   target
+      CLC
+      ADC   origin ; temp calc
+      STA   target_3
+      ADC   origin ; temp calc
+      STA   target_2
+      ADC   origin ; temp calc
+      STA   target_4
+
+      LDA   X[:source_address]
+      STA   origin
+    end
+  end
+
+  ;; Queues the actual copy script
+  ;;
+  ;; @ignore-thread-safety
+  def _queue_vram_tile_x1_y2_copy
+    X.is_a! Aoba::VBlank::Job::JobInstance
+    CPU.set A: 16
+    LDA   #4
+    ;ASL   A
+    add_vram_usage_icb
+    vram_tiles2.queue do |target1, data1, target2, data2|
+      LDA   X[:source_address]
+      STA   data1
+      LDA   X[:source_address] + 2
+      AND   #$FF
+      CLC
+      ADC   data1
+      STA   data2
+
+      LDA   X[:target_address]
+      STA   target1
+      CLC
+      ADC   #32
+      STA   target2
+    end
+  end
+
+  ;; Queues the actual copy script
+  ;;
+  ;; @ignore-thread-safety
+  def _queue_oam_copy
+    X.is_a! Aoba::VBlank::Job::JobInstance
+    CPU.set A: 16
+    LDA   X[:data_size]
+    add_oam_usage_icb
+
+    oam_copy.queue do |origin, origin_bank, target, size|
+      CPU.set A: 8
+      LDA   X[:source_address] + 2
+      STA   origin_bank
+      CPU.set A: 16
+      LDA   X[:source_address]
+      STA   origin
+      LDA   #0
+      STA   target
+      LDA   X[:data_size]
+      STA   size
+    end
+  end
+
+  def force_queue_icb
+    routine A: 8 do
+      is_thread_safe
+
+      execute do
+        ;; TODO: Routine writes REP twice
+        X.is_a! JobInstance
+
+        ;; Tests the flag
+        Debug.access_8bit_through_16bit
+        LDA   X[:flags]
+        BIT   #Flag::PROCESSED
+        BNZ   _skip
+        ORA   #Flag::PROCESSED
+        STA   X[:flags]
+
+        ;; Executes the job depending on its type
+        AND   #Flag::TARGET_BITMASK
+        BZE   _option_00
+        DEC   A
+        BZE   _option_01_cgram
+        DEC   A
+        BZE   _option_02_vram
+        DEC   A
+        BZE   _option_03_oam
+        DEC   A
+        BZE   _option_04_vram_y
+        DEC   A
+        BZE   _option_05_vram_x
+        DEC   A
+        BZE   _option_06_vram_4_in_1
+        DEC   A
+        BZE   _option_07_vram_tile_x1_y2
+        DEC   A
+        BZE   _option_08_vram_tile_copy
+      _option_00:
+        fatal_error "Unsupported Job task"
+
+      _option_01_cgram:
+        _queue_cgram_copy
+        BRA   _skip
+
+      _option_02_vram:
+        _queue_vram_copy
+        BRA   _skip
+
+      _option_03_oam:
+        _queue_oam_copy
+        BRA   _skip
+
+      _option_04_vram_y:
+        _queue_vram_y_copy
+        BRA   _skip
+
+      _option_05_vram_x:
+        _queue_vram_x_copy
+        BRA   _skip
+
+      _option_06_vram_4_in_1:
+        _queue_vram_4_in_1_copy
+        BRA    _skip
+
+      _option_07_vram_tile_x1_y2:
+        _queue_vram_tile_x1_y2_copy
+        BRA    _skip
+
+      _option_08_vram_tile_copy:
+        _queue_vram_tile_copy
+        ;BRA    _skip
+
+      _skip:
+        SEI
+        LDA   queued_jobs
+        STA   X[:next_job]
+        STX   queued_jobs
+      end
+    end
+  end
+
+  def force_queue_icb_long
+    force_queue_icb
+    RTL
+  end
+
+  ;; Allocates a Job
+  ;; @ignore_thread_safety
+  def force_queue_long
+    CPU.with_bank! VARIABLE_RAM_BANK do
+      force_queue_icb
+    end
+    RTL
+  end
+
+  ;; Returns the job duration for the current job
+  ;;
+  ;; @ignore-thread-safety
+  def _calculate_job_duration
+    X.is_a! JobInstance
+    Debug.access_8bit_through_16bit
+    LDA   X[:flags]
+    AND   #Flag::TARGET_BITMASK
+    TAY
+    LDA   X[:data_size]
+    CLC
+
+    DEY
+    BZE   _option_01_cgram
+    DEY
+    BZE   _option_02_vram
+    DEY
+    BZE   _option_03_oam
+    DEY
+    BZE   _option_04_vram_y
+    DEY
+    BZE   _option_05_vram_x
+    DEY
+    BZE   _option_06_vram_4_in_1
+    DEY
+    BZE   _option_07_vram_tile_x1_y2
+    DEY
+    BZE   _option_08_vram_tile_copy
+  _no_vram:
+    fatal_error "Not yet supported VBLANK mode"
+
+  _option_01_cgram:
+    ADC   #CGRAM_VBLANK_DURATION
+    RTS
+
+  _option_03_oam:
+    ADC   #OAM_VBLANK_DURATION
+    RTS
+
+  _option_02_vram:
+  _option_04_vram_y:
+  _option_05_vram_x:
+  _option_06_vram_4_in_1:
+  _option_07_vram_tile_x1_y2:
+  _option_08_vram_tile_copy:
+    ADC   #VRAM_VBLANK_DURATION
+    RTS
+  end
+
+  def try_queue_icb
+    routine do
+      is_thread_safe
+      declare :job, as: :uint16
+
+      execute do |job|
+        X.is_a! JobInstance
+        STX   dp(job)
+
+        ;; Loop until VBLANK has enough space to copy this block of data
+      _retry_vblank_space:
+        PHP
+        SEI
+        _calculate_job_duration
+        CLC
+        ADC   usage_counter
+        CMP   #VBLANK_MAX_DURATION
+        BGE   _vblank_missing_space
+
+        LDA   queue_offset
+        CMP   #MAX_QUEUE_SIZE - VBLANK_MAX_COMMAND_STACK + queue.to_sym
+        BLT   _vblank_space_left
+
+        Debug.only do
+          Debug.warn "VBLANK STACK SIZE EXCEEDED - FORCE DELAY 1 FRAME"
+          NOP
+        end
+
+      _vblank_missing_space:
+        PLP
+        Debug.todo "VBLANK out of space - Wait until queue has been processed (todo: no delay!)"
+        LDY   #1
+        Thread.delay_icb
+        LDX   dp(job)
+        BRA   _retry_vblank_space
+
+        ;; Enough space is left, let's queue the task
+      _vblank_space_left:
+        force_queue_icb
+        PLP ; Enable interrupts again
+      end
+    end
+  end
+
+  def try_queue_icb_long
+    try_queue_icb
+    RTL
+  end
+
+
+  def try_queue_and_wait_icb
+    routine do
+      is_thread_safe
+      
+      declare :event_stack, as: :uint16
+      declare :last_event_stack, as: :uint16
+
+      execute do |event_stack, last_event_stack|
+        try_queue_icb
+
+        Aoba::Thread.__create_delay event_stack, last_event_stack, Aoba::Thread::Event.SYSTEMEVENT_ID, false do |_wrong, _correct|
+          X.is_a! Aoba::Thread::Event::Base
+
+          LDA   X[:sender_thread_id]
+          CMP   #VBLANKCOPY_THREAD_ID
+          BEQ   _correct
+        end
+
+        ;; Waits for the response
+        ;CPU.set A: 8
+        ;LDA   #
+        ;Aoba::Thread.wait_for_event_icb
+
+        ;; Tests whether the event is the one we are waiting for
+        ;X.is_a! 
+        ;LDA   X[:sender_thread_id]
+        ;CMP   #VBLANKCOPY_THREAD_ID
+        ;BEQ   _vblank_done
+        ;fatal_error "TODO: Postpone current event"
+
+      ;_vblank_done:
+        ;; Free event
+        ;Debug.BRK
+        ;Aoba::Thread::Event.free_icb
+      end
+    end
+  end
+
+  def try_queue_and_wait_icb_long
+    try_queue_and_wait_icb
+    RTL
+  end
+
+end

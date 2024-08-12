@@ -1,0 +1,154 @@
+module Aoba::Tilemap::Renderer
+  class BaseBuilder
+    macro initialize(renderer)
+      @renderer = renderer
+    end
+
+    macro configure_generator(bank, temp_ram)
+      temp_ram.include @renderer.TempRAM
+      @renderer.class.__static_locate_at_kwargs = {bank: bank}
+    end
+
+    macro vram_address(address)
+      @renderer.vram_address = address
+    end
+
+    macro screen_size(width, height)
+      @renderer.screen_tile_width = width
+      @renderer.screen_tile_height = height
+    end
+
+    macro render_layer(layer, to_bgs, format_from=nil)
+      ref = @renderer.tilemap_layer(layer)
+      raise "Renderer can only render uniform tile formats yet" unless ref.tileset_layer.has_uniform_tile_format?
+      if @renderer.tile_format.nil?
+        @renderer.tile_format = ref.tileset_layer.any_tile_format
+      elsif @renderer.tile_format != ref.tileset_layer.any_tile_format
+        raise "Renderer can only render uniform tile formats yet"
+      else
+        @renderer.tile_format = ref.tileset_layer.any_tile_format
+      end
+      @renderer.layers << layer
+      @renderer.layer_target_bgs[layer] = to_bgs
+    end
+    
+    macro use(other)
+      other.include_to_tilemap_renderer @renderer
+    end
+  end
+
+  class Base < Aoba::StaticRoutineEngineObject
+    register A: 16, XY: 16
+
+    ;; Initialize
+    macro initialize
+      super
+
+      @RAM = MemoryScope.new("__tilemap_renderer", in: nil, for: ::SNES::MemoryMap::RAM)
+      @TempRAM = MemoryScope.new("__tilemap_renderer", in: nil, for: ::SNES::MemoryMap::RAM)
+
+      @storage = nil
+      @tileset_storage = nil
+      @camera = nil
+      @tile_format = nil
+      @screen_tile_width = 16
+      @screen_tile_height = 16
+      @parent_tilemap_renderer = nil
+      @layers = []
+      @layer_target_bgs = {}
+      @vram_address = nil
+      @event = Aoba::Event::Emitter.new
+    end
+
+    macro configure_for_scene(scene)
+      @event.invoke :configure_for_scene, scene
+    end
+
+    macro _configure_vram(scene, vram)
+    end
+
+    macro include_as_scene_object(scene, as, vram)
+      vram_obj = scene.vram_layout.objects[vram]
+      _configure_vram scene, vram_obj
+
+      SceneObject.new(self).include_to_scene_mode(scene, as)
+    end
+
+    ;; Returns the parent objects
+    macro parent_objects
+      return [self.storage, self.tileset_storage, self.camera, self.tile_format, self.parent_tilemap_renderer]
+    end
+
+    ;; Returns the number of bgs
+    macro num_bgs
+      raise @layers.count
+    end
+
+    ;; Copies main attributes from another renderer
+    macro copy_attributes_from_renderer(other)
+      @vram_address = other.vram_address
+      @storage = other.storage
+      @tileset_storage = other.tileset_storage
+      @camera = other.camera
+      @tile_format = other.tile_format
+      @screen_tile_width = other.screen_tile_width
+      @screen_tile_height = other.screen_tile_height
+      @layers = other.layers
+    end
+
+    ;; Includes default properties from another renderer
+    macro include_to_tilemap_renderer(other)
+      other.copy_attributes_from_renderer self
+      other.parent_tilemap_renderer = self
+    end
+
+    macro include_to_level_loader(loader)
+      loader.tilemap_renderer = self
+      loader.event.on :finish do
+        invoke_icb
+      end
+    end
+
+    ;; Screen height in bgtiles
+    macro screen_bgtile_width
+      return @screen_tile_width * @tile_format.num_bgtiles_x
+    end
+
+    ;; Screen height in bgtiles
+    macro screen_bgtile_height
+      return @screen_tile_height * @tile_format.num_bgtiles_x
+    end
+
+    ;; Screen width which is being rendered as minimum
+    macro screen_render_tile_width
+      return (256 / @tile_format.tile_width).ceil + 1
+    end
+
+    ;; Returns the tilemap
+    macro tilemap
+      return @storage.tilemap
+    end
+
+    ;; Returns the tilemap
+    macro tilemap_layer(layer)
+      return @storage.tilemap_layer(layer)
+    end
+
+    ;; Invoke
+    macro invoke_icb
+      raise "No renderer invoke_icb routine"
+    end
+
+    ;; Initialize
+    macro finalize
+      _self = self
+
+      if @vram_address.nil?
+        @vram_address = MemoryVariable.new("vram_base_address", as: :uint8, in: @RAM)
+      end
+
+      setup_static_routines
+    end
+  end
+
+end

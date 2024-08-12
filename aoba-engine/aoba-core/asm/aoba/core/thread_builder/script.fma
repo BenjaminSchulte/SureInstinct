@@ -1,0 +1,13 @@
+module Aoba::Thread::Builder
+
+  macro __create_thread_script_commands(name, thread)
+    Aoba::Script.callback "#{name}_StartThread", bank: SYSTEM_ROM_BANK do
+      thread.allocate_and_queue
+    end
+
+    Aoba::Script.callback "#{name}_WaitForThreadReady", bank: SYSTEM_ROM_BANK do
+      Aoba::Thread.wait_for_thread thread.thread_id
+    end
+  end
+
+end

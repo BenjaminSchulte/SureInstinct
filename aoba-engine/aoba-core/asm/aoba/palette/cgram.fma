@@ -1,0 +1,19 @@
+module Aoba::Palette::CGRAM
+
+  macro _create_upload_cgram_job(first_color, num_colors)
+    LDA   #FIXED_RAM_BANK << 8 | first_color
+    LDX   #cgram + first_color * 2
+    LDY   #num_colors * 2
+    JSL   Aoba::VBlank::queue_cgram_update_long
+  end
+
+  ;; @ignore-thread-safety
+  def upload_tileset_cgram
+    _create_upload_cgram_job 0, 128
+  end
+
+  macro upload_sprite_cgram
+    _create_upload_cgram_job 128, 128
+  end
+
+end

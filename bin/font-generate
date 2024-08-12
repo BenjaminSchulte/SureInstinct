@@ -1,0 +1,6 @@
+#!/bin/bash
+
+set -e 
+cmake --build ./aoba-build/build --config Debug --target aoba-fontgen -j 7
+
+./aoba-build/build/src/fontgen/aoba-fontgen $1

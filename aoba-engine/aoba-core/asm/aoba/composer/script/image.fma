@@ -1,0 +1,43 @@
+module Aoba::Composer
+
+  ;; Loads image tiles
+  Aoba::Script.callback "Image_LoadTiles", bank: COMPOSER_ROM_BANK do
+
+    ;; Send the ready event request to the level thread
+    LDA   #Aoba::Thread::Event.USEREVENT_ID
+    JSL   Aoba::Thread::Event.allocate_icb_long
+    X.is_a! Aoba::Composer::Event::LoadImage::Event
+    LDA   #Aoba::Composer::Event::LoadImage::ID
+    STA   X[:event_id]
+    LDA   dp(Aoba::Script.register_a)
+    STA   X[:image_address]
+    LDA   dp(Aoba::Script.register_x)
+    LSR   A
+    STA   X[:vram_address]
+    LDA   Aoba::Composer.thread_id
+    JML   Aoba::Thread.send_event_icb_long
+  end
+
+  ;; Loads image tiles
+  Aoba::Script.callback "Image_LoadTilemap", bank: COMPOSER_ROM_BANK do
+
+    ;; Send the ready event request to the level thread
+    LDA   #Aoba::Thread::Event.USEREVENT_ID
+    JSL   Aoba::Thread::Event.allocate_icb_long
+    X.is_a! Aoba::Composer::Event::LoadImageTiles::Event
+    LDA   #Aoba::Composer::Event::LoadImageTiles::ID
+    STA   X[:event_id]
+    LDA   dp(Aoba::Script.register_a)
+    STA   X[:image_address]
+    CPU.set A: 8
+    LDA   dp(Aoba::Script.register_a + 2)
+    STA   X[:variant_index]
+    LDA   dp(Aoba::Script.register_x) + 1
+    LSR   A
+    STA   X[:vram_address]
+    CPU.set A: 16
+    LDA   Aoba::Composer.thread_id
+    JML   Aoba::Thread.send_event_icb_long
+  end
+
+end

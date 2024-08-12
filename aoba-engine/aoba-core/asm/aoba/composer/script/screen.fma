@@ -1,0 +1,17 @@
+module Aoba::Composer
+
+  Aoba::Script.callback "Composer_SetScreenMode", bank: COMPOSER_ROM_BANK do
+    CPU.set A: 8
+    LDA   #Aoba::Thread::Event.USEREVENT_ID
+    JSL   Aoba::Thread::Event.allocate_icb_long
+    X.is_a! Aoba::Composer::Event::SetScreenMode::Event
+    Y.is_a! Tilemap.RomHeader
+    LDA   #Aoba::Composer::Event::SetScreenMode::ID
+    STA   X[:event_id]
+    LDA   dp(Aoba::Script.register_a)
+    STA   X[:mode]
+    LDA   Aoba::Composer.thread_id
+    CPU.set A: 16
+    JML   Aoba::Thread.send_event_icb_long
+  end
+end

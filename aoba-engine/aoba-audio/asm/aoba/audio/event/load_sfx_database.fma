@@ -1,0 +1,55 @@
+module Aoba::Audio::Event::LoadSfxDatabase
+
+  ;; The event ID
+  ID = $02
+
+  ;; The event
+  class Event < Base
+    declare :sfx_database_address, as: :uint24
+  end
+
+  ;; Temporary RAM
+  scope :TempRAM, in: ActionRAM
+
+  ;; Loads the tileset
+  ;; @ignore-thread-safety
+  event_handler = make_audio_event do
+    Y.is_a! Event
+
+    ;; Configure source address
+    LDA   Y[:sfx_database_address] + 2
+    LDX   Y[:sfx_database_address]
+    PHB
+    PHA
+    PLB
+
+    ;; Loads the instrument list
+    SNES_RAM_JMP Action::LoadInstrumentList.load_list, :JSR, :JSR
+
+Debug.log "LOADED INSTRUMENT LIST FIN!"
+    Mutex.lock
+    unsafe_wait_for_ready nil
+
+    ;; Read size of the data (divided by three)
+    CPU.set A: 16
+    LDA   0, X
+    TAY
+    STA   CPU.APUIO2.long
+    CPU.set A: 8
+
+    ;; Uploads the sfx library
+    LDA   last_ipc_value.long
+    AND   #IPC.IPC_TOGGLE_BIT
+    EOR   #IPC.IPC_TOGGLE_BIT | IPC.CMD_UPLOAD_SFX_DATABASE
+    STA   CPU.APUIO0.long
+    STA   last_ipc_value.long
+    INX
+    INX
+    unsafe_wait_for_ready nil
+    
+    SNES_RAM_JMP IPC.transfer, :JSR, :JSR
+    Mutex.unlock
+    PLB
+  end
+
+end

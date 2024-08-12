@@ -1,0 +1,8 @@
+require "tileset_loader"
+require "parameter"
+require "tile_layer_index_parameter"
+require "tile_animation_parameter"
+require "compressed_data_parameter"
+require "value_parameter"
+require "image_parameter"
+require "custom_parameter"

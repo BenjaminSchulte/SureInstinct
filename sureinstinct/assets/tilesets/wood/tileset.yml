@@ -1,0 +1,109 @@
+animations:
+  abyss:
+    tiles: main
+    palette: main-palette.png
+    image: abyss-animation.png
+    frames:
+      - column: 0
+      - delay: 1
+      - action: user_command
+        command: 133
+  acid:
+    tiles: main
+    palette: main-palette.png
+    image: acid-animation.png
+    frames:
+      - delay: 11
+        column: 0
+      - delay: 11
+        column: 1
+      - delay: 11
+        column: 2
+      - delay: 11
+        column: 1
+  coin:
+    tiles: main
+    palette: main-palette.png
+    image: coin-animation.png
+    frames:
+      - delay: 7
+        column: 0
+      - delay: 7
+        column: 1
+      - delay: 7
+        column: 2
+      - delay: 7
+        column: 3
+      - delay: 7
+        column: 4
+      - delay: 7
+        column: 5
+      - delay: 7
+        column: 6
+      - delay: 7
+        column: 7
+  fan:
+    tiles: main
+    palette: main-palette.png
+    image: fan-animation.png
+    frames:
+      - delay: 4
+        column: 0
+      - delay: 4
+        column: 1
+  laser1:
+    tiles: main
+    palette: main-palette.png
+    image: laser1-animation.png
+    frames:
+      - column: 0
+      - action: user_command
+        command: 129
+      - delay: 4
+      - delay: 3
+        column: 1
+      - delay: 8
+        column: 0
+      - delay: 6
+        column: 1
+      - delay: 4
+        column: 0
+      - delay: 6
+        column: 1
+      - delay: 8
+        column: 0
+      - delay: 6
+        column: 1
+      - delay: 4
+        column: 0
+      - delay: 6
+        column: 1
+      - delay: 8
+        column: 0
+      - delay: 6
+        column: 1
+      - delay: 4
+        column: 0
+      - action: user_command
+        command: 130
+      - delay: 60
+        column: 2
+      - delay: 13
+        column: 3
+  spikes:
+    tiles: main
+    palette: main-palette.png
+    image: spikes-animation.png
+    frames:
+      - delay: 30
+        column: 1
+      - delay: 20
+        column: 2
+      - column: 0
+      - action: user_command
+        command: 131
+      - delay: 50
+      - action: user_command
+        command: 132
+      - delay: 3
+        column: 2

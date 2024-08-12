@@ -1,0 +1,13 @@
+name: "Stage 3: Breaking Bat"
+scripts:
+  []
+tilemap: stage3
+palette: wood/main
+top_palette: wood/main
+bottom_palette: wood/dark
+pause_palette: wood/pause
+custom_properties:
+  name: Breaking Bat
+  stage: Stage 3
+  stage_index: 3
+  start_position: {x: 15.5, y: 27.5}

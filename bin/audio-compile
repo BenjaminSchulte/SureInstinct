@@ -1,0 +1,23 @@
+#!/bin/bash
+
+set -e
+
+TARGET=$1
+ROMBASENAME=$2
+
+function recompile {
+  fma -l spc -o./$TARGET/obj/audioengine.bin ./aoba-audio/audio.fma
+  ./bin/audio-calculate-symbols $TARGET > ./$TARGET/obj/audioengine.fma
+  cp ./$TARGET/obj/audioengine.spc.sym ./$TARGET/dist/$ROMBASENAME.smp.sym
+}
+
+if [ ! -f ./$TARGET/obj/audioengine.bin ]; then
+  recompile
+else
+  latestEngineFile=`find ./aoba-audio -type f -exec stat --format '%Y :%y %n' "{}" \; | sort -nr | cut -d: -f2- | head -n1`
+  currentEngineBinary=`find ./$TARGET/obj/audioengine.bin -type f -exec stat --format '%Y :%y %n' "{}" \; | sort -nr | cut -d: -f2- | head -n1`
+
+  if [[ "$latestEngineFile" > "$currentEngineBinary" ]]; then
+    recompile
+  fi
+fi

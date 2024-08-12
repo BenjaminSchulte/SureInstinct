@@ -1,0 +1,107 @@
+module Aoba::Thread
+
+  locate_at bank: SYSTEM_ROM_BANK
+
+  ;; Thread instance
+  class Instance
+    ;; Points to the next thread
+    declare :next_thread, as: Instance.pointer(:uint16)
+
+    ;; The ID of this thread
+    declare :id, as: :uint8
+
+    ;; The parent thread ID
+    declare :parent_thread_id, as: :uint8
+
+    ;; The status of this thread
+    declare :status, as: :uint8
+
+    ;; The event bitmask
+    declare :event_mask, as: :uint8
+
+    ;; The priority of this thread
+    declare :priority, as: :uint8
+
+    ;; The stack address
+    declare :stack_address, as: :uint16
+
+    ;; Points to the next event in this thread
+    declare :first_event, as: :uint16
+
+    ;; Points to the last event in this thread
+    declare :last_event, as: :uint16
+
+    ;; Points to the first miniblock section
+    declare :miniblock_section, as: :uint16
+
+    ;; Internal timer pointer
+    declare :timer, as: :uint16
+  end
+
+  ;; Stack pointer when entering the idle state
+  _fallback_stack_address = $E0..$FF
+  _fallback_stack_address = $60E0..$60FF if ENABLE_SA1
+  scope :fallback_stack, in: ::Memory::SharedQuickPage, at: _fallback_stack_address, length: $20
+
+  ;; Points to the instance list RAM
+  declare :instance_ram_pointer, as: :uint16, in: ::Memory::VariableRAM
+
+  ;; The current thread pointer
+  declare :current_thread, as: Instance.pointer(:uint16), in: ::Memory::VariableRAM
+
+  ;; Pointer to the first free thread
+  declare :free_threads, as: Instance.pointer(:uint16), in: ::Memory::VariableRAM
+
+  ;; Pointer to the first queued thread
+  declare :queued_threads, as: Instance.pointer(:uint16), in: ::Memory::VariableRAM
+
+  ;; Pointer to the first paused thread
+  declare :paused_threads, as: Instance.pointer(:uint16), in: ::Memory::VariableRAM
+
+  ;; Initializes the thread engine
+  ;;
+  ;; @ignore-thread-safety
+  def initialize
+    ;; Allocates the RAM
+    LDX   #Instance.size * NUM_THREADS
+    Memory.allocate
+    STX   instance_ram_pointer
+
+    ;; Clears start pointers
+    STZ   queued_threads
+    STZ   paused_threads
+    STZ   current_thread
+
+    ;; Sets up the linked list
+    STX   free_threads
+    X.is_a! Instance
+    LDY   #2
+  _loop:
+    TYA
+    STA   X[:id]
+    LDA   #Status.DESTROYED
+    STA   X[:status]
+    TXA
+    CLC
+    ADC   #Instance.size
+    STA   X[:next_thread]
+    TAX
+    INY
+    CPY   #NUM_THREADS + 1
+    BNE   _loop
+
+    ;; Stop the list at the end
+    STZ   X[:next_thread]
+    TYA
+    STA   X[:id]
+  end
+
+  ;; Ensures thread safety
+  macro safe
+    PHP
+    SEI
+    yield
+    PLP
+  end
+
+end

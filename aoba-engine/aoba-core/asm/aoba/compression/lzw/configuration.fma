@@ -1,0 +1,21 @@
+module Aoba::Compression::LZW
+
+  ;; The size of each LZW chunk
+  LZW_CHUNK_SIZE ||= $1000
+
+  ;; Start of the LZ77 data within the origin buffer
+  LZW_START_OF_LZ_DATA  = 2
+  
+  ;; The size of a control character in bits
+  LZW_CONTROL_CHAR_SIZE = 8
+  
+  ;; Mask for the dictionary offset
+  LZW_OFFSET_MASK       = $0F
+  
+  ;; The size of the dictionary in bits
+  LZW_OFFSET_LENGTH     = 4
+
+  ;; The size of the dictionary repeater
+  LZW_MAX_DICTIONARY_SIZE = 18
+
+end

@@ -1,0 +1,49 @@
+module Aoba::Audio::Api
+
+  ;; Plays an SFX
+  ;; @param AL sample to play
+  ;; @param AH panning
+  ;; @ignore-thread-safety
+  def play_sfx_icb_long
+    PHA
+    
+    ;; Allocates and configures the event
+    LDA   #Aoba::Thread::Event::USEREVENT_ID
+    JSL   Aoba::Thread::Event.allocate_icb_long
+    X.is_a! Aoba::Audio::Event::PlaySfx::Event
+    PLA
+    STA   X[:id]
+    CPU.set A: 8
+    LDA   #Aoba::Audio::Event::PlaySfx::ID
+    STA   X[:event_id]
+    LDA   Aoba::Audio.thread_id
+    CPU.set A: 16
+
+    JML   Aoba::Thread::send_event_icb_long
+  end
+
+
+  ;; @param AL panning
+  ;; @param AH volume
+  ;; @param X address of stream
+  def play_stream_icb_long
+    Debug.warn "Streaming might break commands if audio thread is active"
+
+    PHA
+    PHX
+
+    ;; Allocates and configures the event
+    LDA   #Aoba::Thread::Event::USEREVENT_ID
+    JSL   Aoba::Thread::Event.allocate_icb_long
+    X.is_a! Aoba::Audio::Event::PlayStream::Event
+    LDA   #Aoba::Audio::Event::PlayStream::ID
+    STA   X[:event_id]
+    PLA
+    STA   X[:stream_id]
+    PLA
+    STA   X[:panning]
+    LDA   Aoba::Audio.thread_id
+    JML   Aoba::Thread::send_event_icb_long
+  end
+
+end
